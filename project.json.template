@@ -1,0 +1,28 @@
+{
+  "_comment": "LYRA project identity. All agents and tooling read this file.",
+  "project_name": "your-project-name",
+  "expectations_path": "audits/expectations.md",
+  "stack": {
+    "language": "typescript",
+    "framework": "react",
+    "build": "vite",
+    "hosting": "netlify",
+    "database": "supabase",
+    "css": "tailwind"
+  },
+  "source_dirs": [
+    "src/",
+    "netlify/functions/"
+  ],
+  "config_files": [
+    "package.json",
+    "tsconfig.json",
+    "tailwind.config.ts",
+    "vite.config.ts",
+    "netlify.toml"
+  ],
+  "test_command": "npm test -- --run",
+  "lint_command": "npm run lint",
+  "build_command": "npm run build",
+  "typecheck_command": "npx tsc --noEmit"
+}

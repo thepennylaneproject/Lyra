@@ -1,0 +1,15 @@
+{
+  "projects": [
+    {"name": "relevnt", "path": "/Users/sarahsahl/Desktop/relevnt"},
+    {"name": "codra", "path": "/Users/sarahsahl/Desktop/codra"},
+    {"name": "ready", "path": "/Users/sarahsahl/Desktop/ready"},
+    {"name": "passagr", "path": "/Users/sarahsahl/Desktop/passagr"},
+    {"name": "mythos", "path": "/Users/sarahsahl/Desktop/mythos"},
+    {"name": "embr", "path": "/Users/sarahsahl/Desktop/embr"},
+    {"name": "founderos", "path": "/Users/sarahsahl/Desktop/founderos"},
+    {"name": "advocera", "path": "/Users/sarahsahl/Desktop/advocera"},
+    {"name": "dashboard", "path": "/Users/sarahsahl/Desktop/dashboard"},
+    {"name": "sarahsahl-pro", "path": "/Users/sarahsahl/Desktop/sarahsahl-pro"},
+    {"name": "restoration-project", "path": "/Users/sarahsahl/Desktop/restoration-project"}
+  ]
+}
