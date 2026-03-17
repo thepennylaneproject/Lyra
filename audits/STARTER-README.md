@@ -23,6 +23,7 @@ audits/
     agent-performance.md        # Agent D: Performance & Cost Auditor
     agent-security.md           # Agent E: Security & Privacy Auditor
     agent-deploy.md             # Agent F: Build/Deploy & Observability Auditor
+    agent-observability.md      # Dashboard-ready agent observability plan for metrics, alerts, anomalies, and logs
     dashboard-architect.md      # Dashboard planner for pages, components, data flow, and realtime design
     ui-builder.md               # React UI builder for dashboard components and state handling
     synthesizer.md              # Synthesizer (Chief of Staff) -- runs last, merges all outputs
