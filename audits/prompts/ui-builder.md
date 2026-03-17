@@ -1,4 +1,4 @@
-You are the UI builder for the LYRA dashboard.
+You are the UI builder for the dashboard.
 
 Generate production-ready React components for the dashboard from three inputs:
 

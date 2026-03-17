@@ -24,9 +24,11 @@ class UiBuilderPromptTests(unittest.TestCase):
 
     def _example_json(self) -> dict:
         content = self._prompt_content()
+        output_contract = "## Output Contract"
+        self.assertIn(output_contract, content)
         start_marker = "```json"
         self.assertEqual(content.count(start_marker), 1)
-        start = content.find(start_marker)
+        start = content.find(start_marker, content.find(output_contract))
         self.assertGreaterEqual(start, 0, "Prompt should contain a JSON code block example")
         end = content.find("```", start + len(start_marker))
         self.assertGreater(end, start, "Prompt JSON code block should be properly closed")
