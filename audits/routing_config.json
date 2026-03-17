@@ -1,0 +1,36 @@
+{
+  "_comment": "Lyra provider routing configuration. Edit this file to override default task-to-provider routing.",
+  "_doc": "Provider aliases: hf-nano, aimlapi-{nano,cheap,mid,expensive}, gpt-{mini,balanced,high,reasoning}, claude-{haiku,sonnet,opus}, gemini-{flash,flash-lite,pro}",
+  "routes": {
+    "lint_fix": {
+      "primary": "hf-nano",
+      "fallback": "aimlapi-cheap"
+    },
+    "audit_scan": {
+      "primary": "aimlapi-cheap",
+      "fallback": "aimlapi-mid"
+    },
+    "patch_generation": {
+      "primary": "aimlapi-mid",
+      "fallback": "aimlapi-expensive"
+    },
+    "refactor": {
+      "primary": "aimlapi-mid",
+      "fallback": "aimlapi-expensive"
+    },
+    "security_analysis": {
+      "primary": "aimlapi-mid",
+      "fallback": "claude-sonnet"
+    },
+    "complex_reasoning": {
+      "primary": "claude-sonnet",
+      "fallback": "claude-opus"
+    }
+  },
+  "rules": {
+    "max_cost_per_task": 0.02,
+    "confidence_threshold": 0.75,
+    "auto_escalate": true,
+    "max_retries": 2
+  }
+}

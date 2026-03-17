@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 import os
+
+if TYPE_CHECKING:
+    from repair_engine.providers.gateway import GatewayRouter
+    from repair_engine.providers.routing_config import RoutingConfig
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -58,6 +63,100 @@ class ApplyConfig:
 
 
 @dataclass
+class ProviderConfig:
+    """API keys and model overrides for all LLM providers.
+
+    All values read from environment variables. Override individual model tiers
+    with LYRA_AIMLAPI_*_MODEL, LYRA_OPENAI_*_MODEL, etc.
+    """
+
+    # ── API keys ──────────────────────────────────────────────────────────────
+    aimlapi_api_key: str = field(default_factory=lambda: os.getenv("AIMLAPI_API_KEY", ""))
+    hf_api_key: str = field(default_factory=lambda: os.getenv("HF_TOKEN", ""))
+    openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
+    gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+
+    # ── Model overrides (per tier) ────────────────────────────────────────────
+    # aimlapi
+    aimlapi_nano_model: str = field(default_factory=lambda: os.getenv("LYRA_AIMLAPI_NANO_MODEL", ""))
+    aimlapi_cheap_model: str = field(default_factory=lambda: os.getenv("LYRA_AIMLAPI_CHEAP_MODEL", ""))
+    aimlapi_mid_model: str = field(default_factory=lambda: os.getenv("LYRA_AIMLAPI_MID_MODEL", ""))
+    aimlapi_expensive_model: str = field(default_factory=lambda: os.getenv("LYRA_AIMLAPI_EXPENSIVE_MODEL", ""))
+    # HuggingFace
+    hf_nano_model: str = field(default_factory=lambda: os.getenv("LYRA_HF_NANO_MODEL", ""))
+    # OpenAI
+    openai_mini_model: str = field(default_factory=lambda: os.getenv("LYRA_OPENAI_MINI_MODEL", ""))
+    openai_balanced_model: str = field(default_factory=lambda: os.getenv("LYRA_OPENAI_BALANCED_MODEL", ""))
+    # Anthropic
+    anthropic_haiku_model: str = field(default_factory=lambda: os.getenv("LYRA_ANTHROPIC_HAIKU_MODEL", ""))
+    anthropic_sonnet_model: str = field(default_factory=lambda: os.getenv("LYRA_ANTHROPIC_SONNET_MODEL", ""))
+    anthropic_opus_model: str = field(default_factory=lambda: os.getenv("LYRA_ANTHROPIC_OPUS_MODEL", ""))
+    # Gemini
+    gemini_flash_model: str = field(default_factory=lambda: os.getenv("LYRA_GEMINI_FLASH_MODEL", ""))
+    gemini_pro_model: str = field(default_factory=lambda: os.getenv("LYRA_GEMINI_PRO_MODEL", ""))
+
+    # ── Routing config path ───────────────────────────────────────────────────
+    routing_config_path: str = field(
+        default_factory=lambda: os.getenv("LYRA_ROUTING_CONFIG", "audits/routing_config.json")
+    )
+
+    @property
+    def aimlapi_model_overrides(self) -> dict[str, str]:
+        return {k: v for k, v in {
+            "nano": self.aimlapi_nano_model,
+            "cheap": self.aimlapi_cheap_model,
+            "mid": self.aimlapi_mid_model,
+            "expensive": self.aimlapi_expensive_model,
+        }.items() if v}
+
+    @property
+    def openai_model_overrides(self) -> dict[str, str]:
+        return {k: v for k, v in {
+            "mini": self.openai_mini_model,
+            "balanced": self.openai_balanced_model,
+        }.items() if v}
+
+    @property
+    def anthropic_model_overrides(self) -> dict[str, str]:
+        return {k: v for k, v in {
+            "haiku": self.anthropic_haiku_model,
+            "sonnet": self.anthropic_sonnet_model,
+            "opus": self.anthropic_opus_model,
+        }.items() if v}
+
+    @property
+    def gemini_model_overrides(self) -> dict[str, str]:
+        return {k: v for k, v in {
+            "flash": self.gemini_flash_model,
+            "pro": self.gemini_pro_model,
+        }.items() if v}
+
+    def build_gateway(self, routing_config: "RoutingConfig | None" = None) -> "GatewayRouter":
+        """Build a GatewayRouter from this config.
+
+        Lazy import avoids circular dependency between config.py and providers/.
+        """
+        from repair_engine.providers.gateway import GatewayRouter
+        from repair_engine.providers.routing_config import RoutingConfig as RC
+
+        rc = routing_config or RC.load(self.routing_config_path)
+        return GatewayRouter.from_keys(
+            aimlapi_key=self.aimlapi_api_key,
+            hf_api_key=self.hf_api_key,
+            openai_api_key=self.openai_api_key,
+            anthropic_api_key=self.anthropic_api_key,
+            gemini_api_key=self.gemini_api_key,
+            aimlapi_model_overrides=self.aimlapi_model_overrides or None,
+            openai_model_overrides=self.openai_model_overrides or None,
+            anthropic_model_overrides=self.anthropic_model_overrides or None,
+            gemini_model_overrides=self.gemini_model_overrides or None,
+            hf_nano_model=self.hf_nano_model,
+            routing_config=rc,
+        )
+
+
+@dataclass
 class ArtifactConfig:
     runs_root: str = os.getenv("LYRA_REPAIR_RUNS_DIR", "audits/repair_runs")
     findings_file: str = os.getenv("LYRA_FINDINGS_FILE", "audits/open_findings.json")
@@ -71,4 +170,5 @@ class EngineConfig:
     integrations: IntegrationConfig = field(default_factory=IntegrationConfig)
     apply: ApplyConfig = field(default_factory=ApplyConfig)
     artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
+    providers: ProviderConfig = field(default_factory=ProviderConfig)
 
