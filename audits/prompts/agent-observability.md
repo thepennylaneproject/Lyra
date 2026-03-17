@@ -65,14 +65,14 @@ Return raw JSON only. The fenced block below is an illustrative schema example; 
   "alerts": [
     {
       "name": "Latency regression on critical agent",
-      "condition": "Trigger when agent_run_latency_p95 deviates materially above its recent baseline for two consecutive windows",
+      "condition": "Trigger when agent_run_latency_p95 is 20% above its rolling 7-day baseline for two consecutive 15-minute windows",
       "severity": "high",
       "notify": ["dashboard", "on-call"],
       "response": "Inspect recent model, prompt, or dependency changes and compare affected runs against the previous healthy baseline"
     },
     {
       "name": "Loop risk detected",
-      "condition": "Trigger when repeated tool calls or unchanged state transitions exceed the allowed threshold within a single run",
+      "condition": "Trigger when the same tool call or unchanged state transition repeats 5 times within a single run, or when token spend increases for 3 consecutive steps without a state change",
       "severity": "critical",
       "notify": ["dashboard", "on-call"],
       "response": "Abort affected runs, inspect trace logs, and quarantine the prompt, planner, or tool sequence causing non-progress"
