@@ -25,6 +25,8 @@ interface ProjectViewProps {
     status: FindingStatus
   ) => Promise<void>;
   refetchProject: () => Promise<Project | null>;
+  onQueueRepair?: (findingId: string, projectName: string) => Promise<void>;
+  queuedFindingIds?: Set<string>;
 }
 
 export function ProjectView({
@@ -32,6 +34,8 @@ export function ProjectView({
   onBack,
   onUpdateFinding,
   refetchProject,
+  onQueueRepair,
+  queuedFindingIds,
 }: ProjectViewProps) {
   const [filter, setFilter] = useState<FilterKey>("active");
   const [search, setSearch] = useState("");
@@ -174,8 +178,11 @@ export function ProjectView({
       {selectedFinding && (
         <FindingDetail
           finding={selectedFinding}
+          projectName={project.name}
           onClose={() => setSelected(null)}
           onAction={handleAction}
+          onQueueRepair={onQueueRepair}
+          queuedFindingIds={queuedFindingIds}
         />
       )}
 

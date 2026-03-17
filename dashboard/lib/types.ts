@@ -92,3 +92,16 @@ export interface OpenFindingsSchema {
   open_findings: Finding[];
   findings?: Finding[];
 }
+
+/** A finding queued to the repair engine from the dashboard. */
+export interface RepairJob {
+  finding_id: string;
+  project_name: string;
+  queued_at: string;
+  status: "queued" | "running" | "completed" | "failed";
+  patch_applied?: boolean;
+  cost_usd?: number;
+  provider_used?: string;
+  completed_at?: string;
+  error?: string;
+}

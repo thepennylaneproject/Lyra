@@ -1,18 +1,28 @@
+import { useState } from "react";
 import type { Finding, FindingStatus } from "@/lib/types";
 import { Badge } from "./Badge";
 import { STATUS_GROUPS } from "@/lib/constants";
 
 interface FindingDetailProps {
   finding: Finding;
+  projectName: string;
   onClose: () => void;
   onAction: (findingId: string, newStatus: FindingStatus) => void;
+  onQueueRepair?: (findingId: string, projectName: string) => Promise<void>;
+  queuedFindingIds?: Set<string>;
 }
 
 export function FindingDetail({
   finding,
+  projectName,
   onClose,
   onAction,
+  onQueueRepair,
+  queuedFindingIds,
 }: FindingDetailProps) {
+  const [queueing, setQueueing] = useState(false);
+  const [queueMsg, setQueueMsg] = useState<string | null>(null);
+  const isQueued = queuedFindingIds?.has(finding.finding_id) ?? false;
   const fix =
     typeof finding.suggested_fix === "object" ? finding.suggested_fix : {};
   return (
@@ -201,6 +211,7 @@ export function FindingDetail({
           gap: 8,
           marginTop: 16,
           flexWrap: "wrap",
+          alignItems: "center",
         }}
       >
         {STATUS_GROUPS.active.includes(finding.status) && (
@@ -240,6 +251,52 @@ export function FindingDetail({
           >
             Verify fix
           </button>
+        )}
+
+        {onQueueRepair && !isQueued && (
+          <button
+            type="button"
+            disabled={queueing}
+            onClick={async () => {
+              setQueueing(true);
+              setQueueMsg(null);
+              try {
+                await onQueueRepair(finding.finding_id, projectName);
+                setQueueMsg("Queued.");
+              } catch {
+                setQueueMsg("Failed to queue.");
+              } finally {
+                setQueueing(false);
+              }
+            }}
+            style={{
+              fontSize: "12px",
+              padding: "4px 12px",
+              marginLeft: "auto",
+              opacity: queueing ? 0.5 : 1,
+              cursor: queueing ? "default" : "pointer",
+            }}
+            title="Send this finding to the repair engine"
+          >
+            {queueing ? "Queueing…" : "⚙ Queue repair"}
+          </button>
+        )}
+        {isQueued && (
+          <span
+            style={{
+              fontSize: "11px",
+              color: "#EF9F27",
+              marginLeft: "auto",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            ⚙ Queued for repair
+          </span>
+        )}
+        {queueMsg && !isQueued && (
+          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+            {queueMsg}
+          </span>
         )}
       </div>
     </div>

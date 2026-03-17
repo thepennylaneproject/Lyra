@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ProjectCard } from "@/components/ProjectCard";
 import { ProjectView } from "@/components/ProjectView";
 import { ImportModal } from "@/components/ImportModal";
+import { EnginePanel } from "@/components/EnginePanel";
 import { STATUS_GROUPS, PRIORITY_ORDER, SEVERITY_ORDER, sortFindings } from "@/lib/constants";
 
 export default function Home() {
@@ -15,6 +16,7 @@ export default function Home() {
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [queuedFindingIds, setQueuedFindingIds] = useState<Set<string>>(new Set());
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -30,9 +32,22 @@ export default function Home() {
     }
   }, []);
 
+  const fetchQueue = useCallback(async () => {
+    try {
+      const res = await fetch("/api/engine/queue");
+      if (res.ok) {
+        const data = await res.json();
+        setQueuedFindingIds(
+          new Set((data.queue ?? []).map((j: { finding_id: string }) => j.finding_id))
+        );
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchProjects();
-  }, [fetchProjects]);
+    fetchQueue();
+  }, [fetchProjects, fetchQueue]);
 
   const refetchProject = useCallback(async (): Promise<Project | null> => {
     if (!activeProject) return null;
@@ -98,6 +113,19 @@ export default function Home() {
     }
   }, [activeProject]);
 
+  const handleQueueRepair = useCallback(
+    async (findingId: string, projectName: string) => {
+      const res = await fetch("/api/engine/queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ finding_id: findingId, project_name: projectName }),
+      });
+      if (!res.ok) throw new Error("Failed to queue");
+      setQueuedFindingIds((prev) => new Set([...prev, findingId]));
+    },
+    []
+  );
+
   const handleExport = useCallback((project: Project) => {
     const data = JSON.stringify(
       {
@@ -128,6 +156,8 @@ export default function Home() {
           onBack={() => setActiveProject(null)}
           onUpdateFinding={onUpdateFinding}
           refetchProject={refetchProject}
+          onQueueRepair={handleQueueRepair}
+          queuedFindingIds={queuedFindingIds}
         />
       </main>
     );
@@ -272,6 +302,8 @@ export default function Home() {
           />
         </div>
       )}
+
+      <EnginePanel onSyncComplete={fetchProjects} />
 
       {nextAction && (
         <div
