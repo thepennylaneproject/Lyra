@@ -212,7 +212,14 @@ export function getEnvLabelId(): string | null {
   return id || null;
 }
 
-export function getEnvProjectId(): string | null {
+export function getEnvProjectId(projectName?: string): string | null {
+  // Per-project lookup: LINEAR_PROJECT_ID_RELEVNT, LINEAR_PROJECT_ID_EMBR, etc.
+  if (projectName) {
+    const key = `LINEAR_PROJECT_ID_${projectName.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+    const perProject = getEnv(key);
+    if (perProject) return perProject;
+  }
+  // Fall back to global LINEAR_PROJECT_ID
   const id = getEnv("LINEAR_PROJECT_ID");
   return id || null;
 }

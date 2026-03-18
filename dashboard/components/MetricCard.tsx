@@ -1,7 +1,7 @@
 interface MetricCardProps {
-  label: string;
-  value: number | string;
-  sub?: string;
+  label:   string;
+  value:   string | number;
+  sub?:    string;
   accent?: string;
 }
 
@@ -9,26 +9,30 @@ export function MetricCard({ label, value, sub, accent }: MetricCardProps) {
   return (
     <div
       style={{
-        background: "var(--color-background-secondary)",
-        borderRadius: "var(--border-radius-md)",
-        padding: "12px 16px",
-        minWidth: 0,
+        padding:   "1rem 0",
+        minWidth:  0,
       }}
     >
       <div
         style={{
-          fontSize: "12px",
-          color: "var(--color-text-tertiary)",
-          marginBottom: 4,
+          fontSize:      "9px",
+          fontFamily:    "var(--font-mono)",
+          fontWeight:    500,
+          color:         "var(--ink-text-4)",
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          marginBottom:  "0.375rem",
         }}
       >
         {label}
       </div>
       <div
         style={{
-          fontSize: "22px",
-          fontWeight: 500,
-          color: accent ?? "var(--color-text-primary)",
+          fontSize:   "26px",
+          fontWeight: 300,
+          color:      accent ?? "var(--ink-text)",
+          lineHeight: 1,
+          fontVariantNumeric: "tabular-nums",
         }}
       >
         {value}
@@ -36,9 +40,10 @@ export function MetricCard({ label, value, sub, accent }: MetricCardProps) {
       {sub && (
         <div
           style={{
-            fontSize: "11px",
-            color: "var(--color-text-tertiary)",
-            marginTop: 2,
+            fontSize:   "11px",
+            color:      "var(--ink-text-4)",
+            fontFamily: "var(--font-mono)",
+            marginTop:  "0.25rem",
           }}
         >
           {sub}

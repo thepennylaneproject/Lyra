@@ -72,12 +72,13 @@ export function LinearSync({ projectName }: LinearSyncProps) {
     return (
       <div
         style={{
-          fontSize: "12px",
-          color: "var(--color-text-tertiary)",
+          fontSize:     "11px",
+          fontFamily:   "var(--font-mono)",
+          color:        "var(--ink-text-4)",
           marginBottom: "1rem",
         }}
       >
-        Linear sync: loading…
+        linear: loading…
       </div>
     );
   }
@@ -86,12 +87,13 @@ export function LinearSync({ projectName }: LinearSyncProps) {
     return (
       <div
         style={{
-          fontSize: "12px",
-          color: "var(--color-text-tertiary)",
+          fontSize:     "11px",
+          fontFamily:   "var(--font-mono)",
+          color:        "var(--ink-text-4)",
           marginBottom: "1rem",
         }}
       >
-        Linear sync: set LINEAR_API_KEY and LINEAR_TEAM_ID to enable.
+        linear: not configured
       </div>
     );
   }
@@ -99,37 +101,44 @@ export function LinearSync({ projectName }: LinearSyncProps) {
   return (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
+        display:      "flex",
+        alignItems:   "center",
+        gap:          "0.75rem",
         marginBottom: "1rem",
-        fontSize: "12px",
-        color: "var(--color-text-secondary)",
+        flexWrap:     "wrap",
       }}
     >
-      <span>Linear:</span>
+      <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+        linear
+      </span>
       {status.last_sync && (
-        <span>Last sync: {status.last_sync.slice(0, 19).replace("T", " ")}</span>
+        <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+          {status.last_sync.slice(0, 10)}
+        </span>
       )}
-      <span>{status.synced_count} synced</span>
+      <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-3)" }}>
+        {status.synced_count} synced
+      </span>
       {status.unsynced_unresolved > 0 && (
-        <span>{status.unsynced_unresolved} to push</span>
+        <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-amber)" }}>
+          {status.unsynced_unresolved} to push
+        </span>
       )}
       <button
         type="button"
         onClick={push}
         disabled={!!action}
-        style={{ fontSize: "11px", padding: "2px 8px" }}
+        style={{ fontSize: "10px", fontFamily: "var(--font-mono)", padding: "2px 8px" }}
       >
-        {action === "push" ? "…" : "Push"}
+        {action === "push" ? "…" : "push"}
       </button>
       <button
         type="button"
         onClick={pull}
         disabled={!!action}
-        style={{ fontSize: "11px", padding: "2px 8px" }}
+        style={{ fontSize: "10px", fontFamily: "var(--font-mono)", padding: "2px 8px" }}
       >
-        {action === "pull" ? "…" : "Pull"}
+        {action === "pull" ? "…" : "pull"}
       </button>
     </div>
   );

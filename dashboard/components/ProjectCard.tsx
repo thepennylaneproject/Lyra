@@ -1,5 +1,4 @@
 import type { Project } from "@/lib/types";
-import { Badge } from "./Badge";
 import { ProgressBar } from "./ProgressBar";
 import { STATUS_GROUPS } from "@/lib/constants";
 
@@ -9,16 +8,13 @@ interface ProjectCardProps {
 }
 
 export function ProjectCard({ project, onClick }: ProjectCardProps) {
-  const findings = project.findings ?? [];
-  const active = findings.filter((f) => STATUS_GROUPS.active.includes(f.status));
-  const blockers = active.filter((f) => f.severity === "blocker").length;
-  const resolved = findings.filter((f) =>
-    STATUS_GROUPS.resolved.includes(f.status)
-  ).length;
-  const canShip =
-    blockers === 0 &&
-    active.filter((f) => f.type === "question").length === 0 &&
-    findings.filter((f) => f.status === "fixed_pending_verify").length === 0;
+  const findings  = project.findings ?? [];
+  const active    = findings.filter((f) => STATUS_GROUPS.active.includes(f.status));
+  const pending   = findings.filter((f) => STATUS_GROUPS.pending.includes(f.status));
+  const resolved  = findings.filter((f) => STATUS_GROUPS.resolved.includes(f.status));
+  const blockers  = active.filter((f) => f.severity === "blocker").length;
+  const questions = active.filter((f) => f.type === "question").length;
+  const canShip   = blockers === 0 && questions === 0 && pending.length === 0 && findings.length > 0;
 
   return (
     <div
@@ -27,72 +23,97 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
       tabIndex={0}
       onKeyDown={(e) => e.key === "Enter" && onClick()}
       style={{
-        background: "var(--color-background-primary)",
-        border: "0.5px solid var(--color-border-tertiary)",
-        borderRadius: "var(--border-radius-lg)",
-        padding: "1rem 1.25rem",
-        cursor: "pointer",
-        transition: "border-color 0.15s",
+        background:   "var(--ink-bg-raised)",
+        border:       "0.5px solid var(--ink-border-faint)",
+        borderRadius: "var(--radius-lg)",
+        padding:      "1rem 1.25rem",
+        cursor:       "pointer",
+        transition:   "border-color 0.12s ease",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = "var(--color-border-secondary)";
+        (e.currentTarget as HTMLDivElement).style.borderColor = "var(--ink-border)";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "var(--color-border-tertiary)";
+        (e.currentTarget as HTMLDivElement).style.borderColor = "var(--ink-border-faint)";
       }}
     >
+      {/* Header */}
       <div
         style={{
-          display: "flex",
+          display:       "flex",
           justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 8,
+          alignItems:    "center",
+          marginBottom:  findings.length > 0 ? "0.75rem" : 0,
         }}
       >
         <span
           style={{
             fontWeight: 500,
-            fontSize: "14px",
-            color: "var(--color-text-primary)",
+            fontSize:   "13px",
+            color:      "var(--ink-text)",
           }}
         >
           {project.name}
         </span>
-        {canShip && findings.length > 0 && (
-          <Badge color="nit">Ship</Badge>
+        {canShip && (
+          <span
+            style={{
+              fontSize:   "10px",
+              fontFamily: "var(--font-mono)",
+              color:      "var(--ink-green)",
+              letterSpacing: "0.03em",
+            }}
+          >
+            ✓ ship
+          </span>
         )}
-        {blockers > 0 && <Badge color="blocker">{blockers}</Badge>}
+        {blockers > 0 && (
+          <span
+            style={{
+              fontSize:   "10px",
+              fontFamily: "var(--font-mono)",
+              color:      "var(--ink-red)",
+            }}
+          >
+            {blockers} blocker{blockers > 1 ? "s" : ""}
+          </span>
+        )}
         {findings.length === 0 && (
           <span
             style={{
-              fontSize: "11px",
-              color: "var(--color-text-tertiary)",
+              fontSize:   "10px",
+              fontFamily: "var(--font-mono)",
+              color:      "var(--ink-text-4)",
             }}
           >
-            No data
+            no data
           </span>
         )}
       </div>
+
       {findings.length > 0 && (
         <>
           <ProgressBar
-            value={resolved}
+            value={resolved.length}
             max={findings.length}
-            color="#1D9E75"
+            segments={[
+              { value: active.length,   color: "var(--ink-amber)" },
+              { value: pending.length,  color: "var(--ink-blue)" },
+              { value: resolved.length, color: "var(--ink-green)" },
+            ]}
           />
           <div
             style={{
-              display: "flex",
+              display:       "flex",
               justifyContent: "space-between",
-              marginTop: 6,
-              fontSize: "11px",
-              color: "var(--color-text-tertiary)",
+              marginTop:     "0.375rem",
+              fontSize:      "10px",
+              fontFamily:    "var(--font-mono)",
+              color:         "var(--ink-text-4)",
             }}
           >
             <span>{active.length} active</span>
-            <span>
-              {resolved}/{findings.length} resolved
-            </span>
+            <span>{resolved.length}/{findings.length} resolved</span>
           </div>
         </>
       )}

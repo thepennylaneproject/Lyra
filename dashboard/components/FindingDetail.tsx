@@ -3,13 +3,38 @@ import type { Finding, FindingStatus } from "@/lib/types";
 import { Badge } from "./Badge";
 import { STATUS_GROUPS } from "@/lib/constants";
 
+const SEVERITY_BORDER: Record<string, string> = {
+  blocker: "var(--ink-red)",
+  major:   "var(--ink-amber)",
+  minor:   "var(--ink-blue)",
+  nit:     "var(--ink-border)",
+};
+
 interface FindingDetailProps {
-  finding: Finding;
-  projectName: string;
-  onClose: () => void;
-  onAction: (findingId: string, newStatus: FindingStatus) => void;
-  onQueueRepair?: (findingId: string, projectName: string) => Promise<void>;
+  finding:           Finding;
+  projectName:       string;
+  onClose:           () => void;
+  onAction:          (findingId: string, newStatus: FindingStatus) => void;
+  onQueueRepair?:    (findingId: string, projectName: string) => Promise<void>;
   queuedFindingIds?: Set<string>;
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize:      "9px",
+        fontFamily:    "var(--font-mono)",
+        fontWeight:    500,
+        color:         "var(--ink-text-4)",
+        letterSpacing: "0.1em",
+        textTransform: "uppercase",
+        marginBottom:  "0.5rem",
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function FindingDetail({
@@ -23,195 +48,191 @@ export function FindingDetail({
   const [queueing, setQueueing] = useState(false);
   const [queueMsg, setQueueMsg] = useState<string | null>(null);
   const isQueued = queuedFindingIds?.has(finding.finding_id) ?? false;
-  const fix =
-    typeof finding.suggested_fix === "object" ? finding.suggested_fix : {};
+  const fix      = typeof finding.suggested_fix === "object" ? finding.suggested_fix : {};
+  const stripe   = SEVERITY_BORDER[finding.severity ?? ""] ?? "var(--ink-border)";
+
   return (
     <div
+      className="animate-fade-in"
       style={{
-        position: "relative",
-        background: "var(--color-background-primary)",
-        border: "0.5px solid var(--color-border-tertiary)",
-        borderRadius: "var(--border-radius-lg)",
-        padding: "1.25rem",
-        marginBottom: "1rem",
+        position:     "relative",
+        background:   "var(--ink-bg-raised)",
+        border:       "0.5px solid var(--ink-border-faint)",
+        borderLeft:   `3px solid ${stripe}`,
+        borderRadius: `0 var(--radius-lg) var(--radius-lg) 0`,
+        padding:      "1.5rem 1.75rem",
+        marginBottom: "1.25rem",
       }}
     >
+      {/* Close */}
       <button
         type="button"
         onClick={onClose}
         style={{
-          position: "absolute",
-          top: 12,
-          right: 12,
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          fontSize: "16px",
-          color: "var(--color-text-tertiary)",
+          position:    "absolute",
+          top:         "0.875rem",
+          right:       "0.875rem",
+          border:      "none",
+          background:  "transparent",
+          padding:     "0 4px",
+          fontSize:    "16px",
+          color:       "var(--ink-text-4)",
+          lineHeight:  1,
         }}
+        aria-label="Close"
       >
         ×
       </button>
+
+      {/* Badges row */}
       <div
         style={{
-          display: "flex",
-          gap: 6,
-          marginBottom: 8,
-          flexWrap: "wrap",
+          display:    "flex",
+          gap:        "0.375rem",
+          marginBottom: "0.75rem",
+          flexWrap:   "wrap",
         }}
       >
         <Badge color={finding.severity}>{finding.severity}</Badge>
         <Badge>{finding.priority}</Badge>
         <Badge>{finding.type}</Badge>
-        <Badge>{finding.status}</Badge>
-        <Badge>{finding.confidence ?? ""}</Badge>
+        <Badge>{finding.status?.replace(/_/g, " ")}</Badge>
+        {finding.confidence && <Badge>{finding.confidence}</Badge>}
       </div>
+
+      {/* Title */}
       <h3
         style={{
-          fontSize: "16px",
-          fontWeight: 500,
-          margin: "8px 0",
-          color: "var(--color-text-primary)",
+          fontSize:     "15px",
+          fontWeight:   500,
+          margin:       "0 0 0.625rem",
+          color:        "var(--ink-text)",
+          lineHeight:   1.4,
+          paddingRight: "1.5rem",
         }}
       >
         {finding.title}
       </h3>
+
+      {/* ID */}
+      <div
+        style={{
+          fontSize:     "10px",
+          fontFamily:   "var(--font-mono)",
+          color:        "var(--ink-text-4)",
+          marginBottom: "1rem",
+        }}
+      >
+        {finding.finding_id}
+      </div>
+
+      {/* Description */}
       <p
         style={{
-          fontSize: "13px",
-          color: "var(--color-text-secondary)",
-          lineHeight: 1.6,
-          margin: "0 0 12px",
+          fontSize:     "13px",
+          color:        "var(--ink-text-2)",
+          lineHeight:   1.65,
+          margin:       "0 0 1.25rem",
         }}
       >
         {finding.description}
       </p>
 
+      {/* Proof hooks */}
       {finding.proof_hooks && finding.proof_hooks.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: "1.25rem" }}>
+          <SectionLabel>Proof hooks</SectionLabel>
           <div
             style={{
-              fontSize: "12px",
-              fontWeight: 500,
-              color: "var(--color-text-secondary)",
-              marginBottom: 4,
+              background:   "var(--ink-bg-sunken)",
+              border:       "0.5px solid var(--ink-border-faint)",
+              borderRadius: "var(--radius-md)",
+              padding:      "0.625rem 0.75rem",
+              display:      "flex",
+              flexDirection: "column",
+              gap:          "0.375rem",
             }}
           >
-            Proof hooks
-          </div>
-          {finding.proof_hooks.map((h, i) => (
-            <div
-              key={i}
-              style={{
-                fontSize: "12px",
-                padding: "4px 8px",
-                background: "var(--color-background-secondary)",
-                borderRadius: "var(--border-radius-md)",
-                marginBottom: 4,
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              <span style={{ color: "var(--color-text-info)" }}>
-                [{h.hook_type ?? h.type ?? "?"}]
-              </span>{" "}
-              <span style={{ color: "var(--color-text-primary)" }}>
-                {h.summary ?? h.value ?? ""}
-              </span>
-              {h.file && (
-                <span style={{ color: "var(--color-text-tertiary)" }}>
-                  {" "}
-                  {h.file}
-                  {h.start_line != null ? `:${h.start_line}` : ""}
+            {finding.proof_hooks.map((h, i) => (
+              <div key={i} style={{ fontSize: "11px", fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
+                <span style={{ color: "var(--ink-blue)" }}>
+                  [{h.hook_type ?? h.type ?? "?"}]
+                </span>{" "}
+                <span style={{ color: "var(--ink-text-2)" }}>
+                  {h.summary ?? h.value ?? ""}
                 </span>
-              )}
-            </div>
-          ))}
+                {h.file && (
+                  <span style={{ color: "var(--ink-text-4)" }}>
+                    {" "}{h.file}{h.start_line != null ? `:${h.start_line}` : ""}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
+      {/* Suggested fix */}
       {fix.approach && (
-        <div style={{ marginBottom: 12 }}>
-          <div
-            style={{
-              fontSize: "12px",
-              fontWeight: 500,
-              color: "var(--color-text-secondary)",
-              marginBottom: 4,
-            }}
-          >
-            Suggested fix
-          </div>
-          <p
-            style={{
-              fontSize: "13px",
-              color: "var(--color-text-primary)",
-              lineHeight: 1.5,
-              margin: 0,
-            }}
-          >
+        <div style={{ marginBottom: "1.25rem" }}>
+          <SectionLabel>Suggested fix</SectionLabel>
+          <p style={{ fontSize: "13px", color: "var(--ink-text-2)", lineHeight: 1.6, margin: 0 }}>
             {fix.approach}
           </p>
           {fix.affected_files && fix.affected_files.length > 0 && (
             <div
               style={{
-                marginTop: 4,
-                fontSize: "12px",
-                color: "var(--color-text-tertiary)",
+                marginTop:  "0.5rem",
+                fontSize:   "11px",
                 fontFamily: "var(--font-mono)",
+                color:      "var(--ink-text-4)",
               }}
             >
               {fix.affected_files.join(", ")}
             </div>
           )}
           {fix.estimated_effort && (
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: "12px",
-                color: "var(--color-text-secondary)",
-              }}
-            >
-              Effort: {fix.estimated_effort}
+            <div style={{ marginTop: "0.25rem", fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-3)" }}>
+              effort: {fix.estimated_effort}
             </div>
           )}
         </div>
       )}
 
+      {/* Timeline */}
       {finding.history && finding.history.length > 0 && (
-        <div>
-          <div
-            style={{
-              fontSize: "12px",
-              fontWeight: 500,
-              color: "var(--color-text-secondary)",
-              marginBottom: 4,
-            }}
-          >
-            Timeline ({finding.history.length} events)
+        <div style={{ marginBottom: "1.25rem" }}>
+          <SectionLabel>Timeline</SectionLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            {finding.history.slice(-5).map((ev, i) => (
+              <div
+                key={i}
+                style={{
+                  fontSize:   "11px",
+                  fontFamily: "var(--font-mono)",
+                  color:      "var(--ink-text-4)",
+                  lineHeight: 1.5,
+                }}
+              >
+                <span style={{ color: "var(--ink-text-3)" }}>{ev.timestamp?.slice(0, 10)}</span>
+                {" "}{ev.actor} · {ev.event}
+                {ev.notes ? ` — ${ev.notes.slice(0, 80)}` : ""}
+              </div>
+            ))}
           </div>
-          {finding.history.slice(-5).map((ev, i) => (
-            <div
-              key={i}
-              style={{
-                fontSize: "11px",
-                color: "var(--color-text-tertiary)",
-                padding: "2px 0",
-              }}
-            >
-              {ev.timestamp?.slice(0, 10)} {ev.actor} - {ev.event}
-              {ev.notes ? `: ${ev.notes.slice(0, 80)}` : ""}
-            </div>
-          ))}
         </div>
       )}
 
+      {/* Actions */}
       <div
         style={{
-          display: "flex",
-          gap: 8,
-          marginTop: 16,
-          flexWrap: "wrap",
-          alignItems: "center",
+          display:      "flex",
+          gap:          "0.5rem",
+          alignItems:   "center",
+          flexWrap:     "wrap",
+          borderTop:    "0.5px solid var(--ink-border-faint)",
+          paddingTop:   "1rem",
+          marginTop:    "0.25rem",
         }}
       >
         {STATUS_GROUPS.active.includes(finding.status) && (
@@ -219,14 +240,12 @@ export function FindingDetail({
             <button
               type="button"
               onClick={() => onAction(finding.finding_id, "in_progress")}
-              style={{ fontSize: "12px", padding: "4px 12px" }}
             >
               Start fix
             </button>
             <button
               type="button"
               onClick={() => onAction(finding.finding_id, "deferred")}
-              style={{ fontSize: "12px", padding: "4px 12px" }}
             >
               Defer
             </button>
@@ -235,10 +254,7 @@ export function FindingDetail({
         {finding.status === "in_progress" && (
           <button
             type="button"
-            onClick={() =>
-              onAction(finding.finding_id, "fixed_pending_verify")
-            }
-            style={{ fontSize: "12px", padding: "4px 12px" }}
+            onClick={() => onAction(finding.finding_id, "fixed_pending_verify")}
           >
             Mark done
           </button>
@@ -247,57 +263,50 @@ export function FindingDetail({
           <button
             type="button"
             onClick={() => onAction(finding.finding_id, "fixed_verified")}
-            style={{ fontSize: "12px", padding: "4px 12px" }}
           >
             Verify fix
           </button>
         )}
 
-        {onQueueRepair && !isQueued && (
-          <button
-            type="button"
-            disabled={queueing}
-            onClick={async () => {
-              setQueueing(true);
-              setQueueMsg(null);
-              try {
-                await onQueueRepair(finding.finding_id, projectName);
-                setQueueMsg("Queued.");
-              } catch {
-                setQueueMsg("Failed to queue.");
-              } finally {
-                setQueueing(false);
-              }
-            }}
-            style={{
-              fontSize: "12px",
-              padding: "4px 12px",
-              marginLeft: "auto",
-              opacity: queueing ? 0.5 : 1,
-              cursor: queueing ? "default" : "pointer",
-            }}
-            title="Send this finding to the repair engine"
-          >
-            {queueing ? "Queueing…" : "⚙ Queue repair"}
-          </button>
-        )}
-        {isQueued && (
-          <span
-            style={{
-              fontSize: "11px",
-              color: "#EF9F27",
-              marginLeft: "auto",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            ⚙ Queued for repair
-          </span>
-        )}
-        {queueMsg && !isQueued && (
-          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-            {queueMsg}
-          </span>
-        )}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          {onQueueRepair && !isQueued && (
+            <button
+              type="button"
+              disabled={queueing}
+              onClick={async () => {
+                setQueueing(true);
+                setQueueMsg(null);
+                try {
+                  await onQueueRepair(finding.finding_id, projectName);
+                  setQueueMsg("Queued.");
+                } catch {
+                  setQueueMsg("Failed.");
+                } finally {
+                  setQueueing(false);
+                }
+              }}
+              style={{
+                borderColor: stripe,
+                color:       stripe,
+                fontFamily:  "var(--font-mono)",
+                fontSize:    "11px",
+              }}
+              title="Send to repair engine"
+            >
+              {queueing ? "queueing…" : "queue repair →"}
+            </button>
+          )}
+          {isQueued && (
+            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-amber)" }}>
+              queued for repair
+            </span>
+          )}
+          {queueMsg && !isQueued && (
+            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+              {queueMsg}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

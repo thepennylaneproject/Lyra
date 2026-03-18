@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   const syncState = await getProjectSyncState(projectName);
   const mappings = { ...syncState.mappings };
   const labelIds = getEnvLabelId() ? [getEnvLabelId()!] : undefined;
-  const projectId = getEnvProjectId() ?? undefined;
+  const projectId = getEnvProjectId(projectName) ?? undefined;
 
   let created = 0;
   let updated = 0;
@@ -73,6 +73,7 @@ export async function POST(request: Request) {
     const fid = f.finding_id;
     const status = f.status;
 
+    // Only skip genuinely terminal states; let 'open' sync to Linear Backlog/Todo
     if (["fixed_verified", "wont_fix", "duplicate"].includes(status)) {
       skipped += 1;
       continue;
