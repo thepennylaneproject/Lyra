@@ -1,4 +1,4 @@
-import type { FindingStatus, Severity } from "./types";
+import type { FindingStatus } from "./types";
 
 export const SEVERITY_ORDER: Record<string, number> = {
   blocker: 0,

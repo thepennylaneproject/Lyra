@@ -19,8 +19,7 @@ export interface ImportResult {
 }
 
 export function parseOpenFindingsPayload(
-  body: string,
-  projectName: string
+  body: string
 ): { findings: Finding[] } {
   const data = JSON.parse(body) as OpenFindingsSchema & { findings?: Finding[] };
   const findings = data.open_findings ?? data.findings ?? [];

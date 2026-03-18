@@ -30,6 +30,7 @@ export async function POST(request: Request) {
       name: body.name.trim(),
       findings: Array.isArray(body.findings) ? body.findings : [],
       lastUpdated: new Date().toISOString(),
+      repositoryUrl: typeof body.repositoryUrl === "string" ? body.repositoryUrl.trim() || undefined : undefined,
       stack: body.stack,
     };
     const created = await repo.create(project);

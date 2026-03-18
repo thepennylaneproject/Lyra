@@ -1,12 +1,14 @@
 import type { ProjectsRepository } from "./repository";
-import { memoryRepository } from "./store-memory";
 import { createJsonRepository } from "./store-json";
+import { createGithubIssueRepository, hasGithubIssueRepository } from "./store-github";
 
 let instance: ProjectsRepository | null = null;
 
 export function getRepository(): ProjectsRepository {
   if (instance) return instance;
-  instance = createJsonRepository();
+  instance = hasGithubIssueRepository()
+    ? createGithubIssueRepository()
+    : createJsonRepository();
   return instance;
 }
 

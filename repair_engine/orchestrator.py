@@ -15,7 +15,6 @@ from .ingestion import IngestionFilters, filter_findings, load_findings
 from .localization import localize_fault
 from .memory.qdrant_store import QdrantMemoryStore
 from .models import EvalSummary, Finding, PatchCandidate, RepairRun
-from .providers.router import build_router
 from .queue.redis_queue import RedisQueue
 from .scoring import score_candidate
 from .tree_search import PatchTree, score_node, should_prune
@@ -25,14 +24,7 @@ class RepairOrchestrator:
     def __init__(self, repo_root: str, config: EngineConfig) -> None:
         self.repo_root = repo_root
         self.config = config
-        self.router = build_router(
-            config.integrations.vllm_base_url,
-            config.integrations.vllm_model,
-            config.integrations.fallback_model,
-            api_key=config.integrations.llm_api_key or None,
-            fallback_base_url=config.integrations.fallback_base_url or None,
-            fallback_api_key=config.integrations.fallback_api_key or None,
-        )
+        self.router = config.providers.build_gateway()
         self.evaluator = DockerEvaluator(config.evaluation, config.apply)
         self.queue = RedisQueue(config.integrations.redis_url)
         self.memory = QdrantMemoryStore(
@@ -272,4 +264,3 @@ class RepairOrchestrator:
         for finding in selected:
             outputs.append(self.run_for_finding(finding))
         return outputs
-

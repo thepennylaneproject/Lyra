@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readOpenFindings, readAuditRunFiles } from "@/lib/audit-reader";
 import { getRepository } from "@/lib/repository-instance";
+import { recordDurableEvent } from "@/lib/durable-state";
 import type { Project, Finding } from "@/lib/types";
 
 /**
@@ -64,12 +65,14 @@ export async function POST(request: Request) {
 
     const groups = groupByProject(findings, fallbackProject);
     const repo = getRepository();
+    const existingProjects = await repo.list();
+    const existingByName = new Map(existingProjects.map((project) => [project.name, project]));
 
     let projectsUpdated = 0;
     let findingsImported = 0;
 
     for (const [projectName, projectFindings] of Object.entries(groups)) {
-      const existing = await repo.getByName(projectName);
+      const existing = existingByName.get(projectName);
       const now = new Date().toISOString();
 
       if (existing) {
@@ -84,6 +87,11 @@ export async function POST(request: Request) {
             findings: [...existing.findings, ...newFindings],
             lastUpdated: now,
           });
+          existingByName.set(projectName, {
+            ...existing,
+            findings: [...existing.findings, ...newFindings],
+            lastUpdated: now,
+          });
           findingsImported += newFindings.length;
           projectsUpdated++;
         }
@@ -94,11 +102,22 @@ export async function POST(request: Request) {
           lastUpdated: now,
         };
         await repo.create(project);
+        existingByName.set(projectName, project);
         findingsImported += projectFindings.length;
         projectsUpdated++;
       }
     }
 
+    await recordDurableEvent({
+      event_type: "audit_sync",
+      project_name: fallbackProject,
+      source: "audit_sync_route",
+      summary: "Synced audit findings into project storage",
+      payload: {
+        projects_updated: projectsUpdated,
+        findings_imported: findingsImported,
+      },
+    });
     return NextResponse.json({
       projects_updated: projectsUpdated,
       findings_imported: findingsImported,

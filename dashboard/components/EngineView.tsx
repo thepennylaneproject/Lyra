@@ -2,16 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { RepairRunSummary } from "@/lib/audit-reader";
-
-interface RoutingConfig {
-  routes?: Record<string, { primary: string; fallback: string }>;
-  rules?: {
-    max_cost_per_task?: number;
-    confidence_threshold?: number;
-    auto_escalate?: boolean;
-    max_retries?: number;
-  };
-}
+import type { RoutingConfig } from "@/lib/routing-config";
 
 interface RepairJob {
   finding_id: string;
@@ -92,8 +83,24 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+function inferTier(alias: string) {
+  const lower = alias.toLowerCase();
+  if (MODEL_TIER[lower]) return MODEL_TIER[lower];
+  if (lower.includes("nano") || lower.includes("8b") || lower.includes("zephyr")) return "nano";
+  if (lower.includes("cheap") || lower.includes("7b") || lower.includes("mistral") || lower.includes("flash-lite")) return "cheap";
+  if (lower.includes("mid") || lower.includes("mixtral")) return "mid";
+  if (lower.includes("mini")) return "mini";
+  if (lower.includes("flash")) return "flash";
+  if (lower.includes("sonnet")) return "sonnet";
+  if (lower.includes("haiku")) return "haiku";
+  if (lower.includes("pro")) return "pro";
+  if (lower.includes("opus")) return "opus";
+  if (lower.includes("gpt-4o")) return "high";
+  return "mid";
+}
+
 function ModelChip({ alias }: { alias: string }) {
-  const tier  = MODEL_TIER[alias] ?? "mid";
+  const tier  = inferTier(alias);
   const color = TIER_COLOR[tier] ?? "var(--ink-text-3)";
   return (
     <span
@@ -150,8 +157,16 @@ export function EngineView() {
     );
   }
 
-  const routes     = data?.routing?.routes ?? {};
-  const rules      = data?.routing?.rules ?? {};
+  const routes: RoutingConfig["routes"] = data?.routing?.routes ?? {};
+  const rules: RoutingConfig["rules"] = data?.routing?.rules ?? {
+    max_cost_per_task: 0,
+    confidence_threshold: 0,
+    auto_escalate: false,
+    max_retries: 0,
+  };
+  const catalog: RoutingConfig["catalog"] | null = data?.routing?.catalog ?? null;
+  const strategy   = data?.routing?.strategy ?? "balanced";
+  const sources    = data?.routing?.sources ?? { env: false, file: false };
   const queue      = data?.queue ?? [];
   const recentRuns = data?.recentRuns ?? [];
   const allJobs    = [...queue, ...recentRuns] as (RepairJob & RepairRunSummary)[];
@@ -237,6 +252,48 @@ export function EngineView() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Strategy + catalog */}
+      <div style={{ marginBottom: "2.5rem" }}>
+        <SectionLabel>Routing strategy</SectionLabel>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+          <div>
+            <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
+              strategy
+            </div>
+            <div style={{ fontSize: "18px", fontWeight: 300, color: "var(--ink-text)" }}>
+              {strategy}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
+              source
+            </div>
+            <div style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "var(--ink-text-2)" }}>
+              {sources.file ? "env + routing_config.json" : "env defaults"}
+            </div>
+          </div>
+        </div>
+        {catalog && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem" }}>
+            {Object.entries(catalog).map(([provider, models]) => (
+              <div key={provider} style={{ border: "0.5px solid var(--ink-border-faint)", borderRadius: "var(--radius-md)", padding: "0.75rem" }}>
+                <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "0.5rem" }}>
+                  {provider}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                  {Object.entries(models as Record<string, string>).map(([key, value]) => (
+                    <div key={key} style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                      <span style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>{key}</span>
+                      <ModelChip alias={value} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Cost rules */}

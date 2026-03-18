@@ -61,6 +61,7 @@ export interface Project {
   name: string;
   findings: Finding[];
   lastUpdated?: string;
+  repositoryUrl?: string;
   /** Optional: stack/hosting from project.json.template */
   stack?: {
     language?: string;

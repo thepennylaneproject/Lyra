@@ -90,6 +90,16 @@ export function ProjectView({
         <h2 style={{ fontSize: "17px", fontWeight: 500, margin: 0, color: "var(--ink-text)" }}>
           {project.name}
         </h2>
+        {project.repositoryUrl && (
+          <a
+            href={project.repositoryUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}
+          >
+            repo
+          </a>
+        )}
         {canShip && (
           <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-green)" }}>
             ✓ ship

@@ -5,7 +5,6 @@ import json
 
 from .localization import FaultSlice
 from .models import Finding, PatchCandidate, PatchOperation
-from .providers.router import ModelRouter
 
 
 ROOT_SCHEMA_HINT = """{
@@ -71,6 +70,31 @@ def _to_candidate(payload: dict[str, Any], finding_id: str, source: str, parent:
     )
 
 
+def _complete_texts(
+    router: Any,
+    prompts: list[str],
+    task_type: str,
+    temperature: float,
+    max_tokens: int,
+    concurrency: int,
+) -> list[str]:
+    if hasattr(router, "texts"):
+        return router.texts(
+            prompts,
+            task_type=task_type,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            expect_json=True,
+            concurrency=concurrency,
+        )
+    return router.complete_many(
+        prompts,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        concurrency=concurrency,
+    )
+
+
 def _build_root_prompt(finding: Finding, slice_: FaultSlice, variant_idx: int) -> str:
     return (
         "You are generating one candidate bug fix patch.\n"
@@ -109,11 +133,18 @@ def _build_refine_prompt(finding: Finding, candidate: PatchCandidate, eval_feedb
 def generate_root_candidates(
     finding: Finding,
     slice_: FaultSlice,
-    router: ModelRouter,
+    router: Any,
     count: int,
 ) -> list[PatchCandidate]:
     prompts = [_build_root_prompt(finding, slice_, idx) for idx in range(count)]
-    texts = router.complete_many(prompts, temperature=0.7, max_tokens=2000, concurrency=min(8, count))
+    texts = _complete_texts(
+        router,
+        prompts,
+        task_type="patch_generation",
+        temperature=0.7,
+        max_tokens=2000,
+        concurrency=min(8, count),
+    )
     candidates: list[PatchCandidate] = []
     seen = set()
     for text in texts:
@@ -134,7 +165,7 @@ def generate_root_candidates(
 def refine_candidates(
     finding: Finding,
     parent_nodes: list[tuple[PatchCandidate, str]],
-    router: ModelRouter,
+    router: Any,
     refinements_per_parent: int = 2,
 ) -> list[PatchCandidate]:
     prompts: list[str] = []
@@ -144,7 +175,14 @@ def refine_candidates(
             prompts.append(_build_refine_prompt(finding, candidate, feedback))
             owners.append(candidate.parent_node_id or candidate.candidate_id)
 
-    texts = router.complete_many(prompts, temperature=0.45, max_tokens=1800, concurrency=min(8, len(prompts) or 1))
+    texts = _complete_texts(
+        router,
+        prompts,
+        task_type="patch_generation",
+        temperature=0.45,
+        max_tokens=1800,
+        concurrency=min(8, len(prompts) or 1),
+    )
     refined: list[PatchCandidate] = []
     seen = set()
     for idx, text in enumerate(texts):
@@ -160,4 +198,3 @@ def refine_candidates(
         seen.add(fp)
         refined.append(candidate)
     return refined
-

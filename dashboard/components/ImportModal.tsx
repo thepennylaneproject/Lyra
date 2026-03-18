@@ -4,16 +4,28 @@ import { useState, useRef } from "react";
 import type { Project } from "@/lib/types";
 
 interface ImportModalProps {
-  onImport: (project: Project) => void;
+  onImport: (project: Project) => Promise<void>;
   onClose:  () => void;
 }
 
 export function ImportModal({ onImport, onClose }: ImportModalProps) {
   const [name,     setName]     = useState("");
+  const [repoUrl,  setRepoUrl]  = useState("");
   const [jsonText, setJsonText] = useState("");
   const [error,    setError]    = useState("");
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function deriveNameFromRepoUrl(value: string): string {
+    try {
+      const url = new URL(value);
+      const parts = url.pathname.split("/").filter(Boolean);
+      return (parts[parts.length - 1] || "").replace(/\.git$/, "");
+    } catch {
+      const parts = value.split("/").filter(Boolean);
+      return (parts[parts.length - 1] || value.trim()).replace(/\.git$/, "");
+    }
+  }
 
   function loadFile(file: File) {
     const n = file.name.replace("open_findings", "").replace(".json", "").replace(/^[-_]/, "");
@@ -35,15 +47,30 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
     if (file && file.name.endsWith(".json")) loadFile(file);
   }
 
-  function handleSubmit() {
-    if (!name.trim()) { setError("Project name required"); return; }
+  async function handleSubmit() {
+    const trimmedName = name.trim();
+    const trimmedRepo = repoUrl.trim();
+    const projectName = trimmedName || (trimmedRepo ? deriveNameFromRepoUrl(trimmedRepo) : "");
+    if (!projectName) { setError("Project name or repository URL required"); return; }
     try {
-      const data     = JSON.parse(jsonText);
+      if (!jsonText.trim()) {
+        await onImport({
+          name: projectName,
+          findings: [],
+          repositoryUrl: trimmedRepo || undefined,
+        });
+        return;
+      }
+      const data = JSON.parse(jsonText);
       const findings = data.open_findings ?? data.findings ?? [];
       if (!Array.isArray(findings)) { setError("No findings array found"); return; }
-      onImport({ name: name.trim(), findings });
+      await onImport({
+        name: projectName,
+        findings,
+        repositoryUrl: trimmedRepo || undefined,
+      });
     } catch (e: unknown) {
-      setError("Invalid JSON: " + (e as Error).message);
+      setError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -68,7 +95,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
         }}
       >
         <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--ink-text)" }}>
-          Import project
+          Onboard project
         </span>
         <button
           type="button"
@@ -104,6 +131,29 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
         />
       </div>
 
+      <div style={{ marginBottom: "1rem" }}>
+        <label
+          style={{
+            display:      "block",
+            fontSize:     "9px",
+            fontFamily:   "var(--font-mono)",
+            fontWeight:   500,
+            color:        "var(--ink-text-4)",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            marginBottom: "0.375rem",
+          }}
+        >
+          Repository URL
+        </label>
+        <input
+          type="text"
+          value={repoUrl}
+          onChange={(e) => setRepoUrl(e.target.value)}
+          placeholder="https://github.com/owner/repo"
+        />
+      </div>
+
       {/* Drop zone */}
       <div style={{ marginBottom: "1rem" }}>
         <label
@@ -118,7 +168,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
             marginBottom: "0.375rem",
           }}
         >
-          open_findings.json
+          open_findings.json (optional)
         </label>
         <div
           onClick={() => fileRef.current?.click()}
@@ -136,7 +186,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
           }}
         >
           <span style={{ fontSize: "11px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
-            {jsonText ? "file loaded — click to replace" : "drop file or click to browse"}
+            {jsonText ? "file loaded — click to replace" : "drop file or click to browse, or leave blank"}
           </span>
         </div>
         <input
@@ -150,7 +200,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
 
       {/* Paste fallback */}
       <div style={{ marginBottom: "1rem" }}>
-        <label
+          <label
           style={{
             display:      "block",
             fontSize:     "9px",
@@ -162,7 +212,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
             marginBottom: "0.375rem",
           }}
         >
-          Or paste JSON
+          Or paste JSON, or leave blank for an empty project
         </label>
         <textarea
           value={jsonText}
@@ -180,7 +230,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
       )}
 
       <button type="button" onClick={handleSubmit} style={{ padding: "5px 16px" }}>
-        Import
+        Onboard
       </button>
     </div>
   );

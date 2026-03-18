@@ -55,6 +55,11 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
         >
           {project.name}
         </span>
+        {project.repositoryUrl && (
+          <span style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+            repo
+          </span>
+        )}
         {canShip && (
           <span
             style={{

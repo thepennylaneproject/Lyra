@@ -25,13 +25,14 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const { findings } = parseOpenFindingsPayload(raw, projectName);
+    const { findings } = parseOpenFindingsPayload(raw);
     const repo = getRepository();
     const existing = await repo.getByName(projectName);
     const project: Project = {
       name: projectName,
       findings,
       lastUpdated: new Date().toISOString(),
+      repositoryUrl: typeof body.repositoryUrl === "string" ? body.repositoryUrl.trim() || undefined : undefined,
       stack: existing?.stack,
     };
     if (existing) {

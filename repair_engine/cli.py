@@ -55,7 +55,8 @@ def cmd_status(engine: RepairOrchestrator, config: EngineConfig) -> int:
     print(f"Findings file: {config.artifacts.findings_file}")
     print(f"Runs root: {config.artifacts.runs_root}")
     print(f"Queue size: {queue_size}")
-    print(f"vLLM: {config.integrations.vllm_base_url} ({config.integrations.vllm_model})")
+    print(f"Routing config: {config.providers.routing_config_path}")
+    print(f"Routing strategy: {config.providers.build_gateway().config.strategy}")
     print(f"Docker eval: {config.evaluation.use_docker} image={config.evaluation.docker_image}")
     print(f"Auto apply: {config.apply.auto_apply} dry_run={config.apply.dry_run}")
     return 0
@@ -100,4 +101,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

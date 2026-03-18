@@ -4,6 +4,31 @@ on:
   schedule:
     - cron: '0 9 * * 1'
   workflow_dispatch:
+    inputs:
+      project_name:
+        description: 'Optional project name to target'
+        required: false
+        type: string
+      repository_url:
+        description: 'Optional repository URL to target'
+        required: false
+        type: string
+      audit_mode:
+        description: 'Which orchestration step to start'
+        required: false
+        default: 'weekly_audit'
+        type: choice
+        options:
+          - weekly_audit
+          - onboard_project
+          - re_audit_project
+          - synthesize_project
+  repository_dispatch:
+    types:
+      - onboard_project
+      - re_audit_project
+      - synthesize_project
+      - audit_project
 
 permissions:
   issues: write
@@ -17,11 +42,26 @@ jobs:
         with:
           script: |
             const today = new Date().toISOString().split('T')[0];
-            const title = `[Scheduled Audit] Weekly compliance check - ${today}`;
+            const eventName = context.eventName;
+            const dispatchType = context.payload.action || context.payload.event_type || 'weekly_audit';
+            const projectName = context.payload.inputs?.project_name || context.payload.client_payload?.project_name || '';
+            const repositoryUrl = context.payload.inputs?.repository_url || context.payload.client_payload?.repository_url || '';
+            const auditMode = context.payload.inputs?.audit_mode || dispatchType;
+            const titlePrefix = eventName === 'schedule' ? '[Scheduled Audit]' : '[Lyra Control Plane]';
+            const title = projectName
+              ? `${titlePrefix} ${auditMode} - ${projectName} - ${today}`
+              : `${titlePrefix} ${auditMode} - ${today}`;
 
-            const body = `## Weekly Compliance Audit — ${today}
+            const body = `## Lyra Orchestration — ${today}
 
 @copilot Please run a full compliance audit of The Pennylane Project using the \`audit-agent\` profile at \`.github/agents/audit-agent.md\`.
+
+### Trigger
+
+- Event: \`${eventName}\`
+- Mode: \`${auditMode}\`
+- Project: \`${projectName || 'all projects'}\`
+- Repository: \`${repositoryUrl || 'not set'}\`
 
 ### Instructions
 
@@ -49,13 +89,15 @@ jobs:
    - The exact expectation text being violated (quoted verbatim)
    - A recommended fix
 
-5. If an expectations document is missing for any discovered app, file \`[AUDIT] Missing expectations document for <app-name>\` labeled \`warning\`.
+5. If this run was triggered for a single project, keep the audit scoped to that project and note the scope in the issue body.
 
-6. When all apps have been audited, post a final summary comment on **this issue** with:
-   - Total violations found, broken down by severity
-   - Links to all issues filed
-   - Per-app compliance status
-   - Any apps that could not be fully assessed
+6. If an expectations document is missing for any discovered app, file \`[AUDIT] Missing expectations document for <app-name>\` labeled \`warning\`.
+
+7. When all apps have been audited, post a final summary comment on **this issue** with:
+    - Total violations found, broken down by severity
+    - Links to all issues filed
+    - Per-app compliance status
+    - Any apps that could not be fully assessed
 
 ### Output Location
 
@@ -74,6 +116,6 @@ Save a machine-readable summary to \`audits/runs/${today}-audit-summary.json\` f
               repo: context.repo.repo,
               title: title,
               body: body,
-              labels: ['audit', 'automated'],
+              labels: ['audit', eventName === 'schedule' ? 'automated' : 'control-plane'],
               assignees: ['copilot'],
             });

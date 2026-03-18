@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { Project, FindingStatus } from "@/lib/types";
-import { Badge } from "@/components/Badge";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectCard } from "@/components/ProjectCard";
@@ -11,6 +10,7 @@ import { ImportModal } from "@/components/ImportModal";
 import { NextActionCard } from "@/components/NextActionCard";
 import { PatternPanel } from "@/components/PatternPanel";
 import { EngineView } from "@/components/EngineView";
+import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { Shell, type NavView } from "@/components/Shell";
 import { STATUS_GROUPS, PRIORITY_ORDER, SEVERITY_ORDER, sortFindings } from "@/lib/constants";
 
@@ -81,14 +81,19 @@ export default function Home() {
     []
   );
 
-  const handleImport = useCallback((project: Project) => {
-    setProjects((prev) => {
-      const idx = prev.findIndex((p) => p.name === project.name);
-      if (idx >= 0) { const next = [...prev]; next[idx] = project; return next; }
-      return [...prev, project];
+  const handleImport = useCallback(async (project: Project) => {
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(project),
     });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.error ?? "Failed to create project");
+    }
+    await fetchProjects();
     setShowImport(false);
-  }, []);
+  }, [fetchProjects]);
 
   const handleRemove = useCallback(async (name: string) => {
     if (!confirm(`Remove ${name}?`)) return;
@@ -278,18 +283,21 @@ export default function Home() {
         />
       )}
 
+      {/* Orchestration summary */}
+      <OrchestrationPanel />
+
       {/* Empty state */}
       {projects.length === 0 && !showImport && (
         <EmptyState
           icon="◆"
-          title="No projects yet. Import an open_findings.json to get started."
+          title="No projects yet. Onboard from a repo or import an open_findings.json to get started."
           action={
             <button
               type="button"
               onClick={() => setShowImport(true)}
               style={{ fontSize: "12px", fontFamily: "var(--font-mono)", padding: "5px 14px" }}
             >
-              import project
+              onboard project
             </button>
           }
         />

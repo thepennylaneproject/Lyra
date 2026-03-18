@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+import os
 
 
 @dataclass
@@ -68,6 +69,7 @@ DEFAULT_ROUTES: dict[str, RouteEntry] = {
 
 @dataclass
 class RoutingConfig:
+    strategy: str = field(default_factory=lambda: os.getenv("LYRA_ROUTING_STRATEGY", "balanced"))
     routes: dict[str, RouteEntry] = field(default_factory=lambda: dict(DEFAULT_ROUTES))
     rules: RoutingRules = field(default_factory=RoutingRules)
 
@@ -98,7 +100,11 @@ class RoutingConfig:
             auto_escalate=rules_data.get("auto_escalate", True),
             max_retries=rules_data.get("max_retries", 2),
         )
-        return cls(routes=routes, rules=rules)
+        return cls(
+            strategy=str(data.get("strategy", os.getenv("LYRA_ROUTING_STRATEGY", "balanced"))),
+            routes=routes,
+            rules=rules,
+        )
 
     @classmethod
     def load(cls, path: str | None = None) -> "RoutingConfig":
@@ -112,6 +118,7 @@ class RoutingConfig:
         Path(path).write_text(
             json.dumps(
                 {
+                    "strategy": self.strategy,
                     "routes": {
                         task: {
                             "primary": r.primary,
