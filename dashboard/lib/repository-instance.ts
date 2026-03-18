@@ -1,13 +1,16 @@
 import type { ProjectsRepository } from "./repository";
 import { createJsonRepository } from "./store-json";
-import { createGithubIssueRepository, hasGithubIssueRepository } from "./store-github";
+import {
+  createSupabaseRepository,
+  hasSupabaseProjectsStore,
+} from "./store-supabase";
 
 let instance: ProjectsRepository | null = null;
 
 export function getRepository(): ProjectsRepository {
   if (instance) return instance;
-  instance = hasGithubIssueRepository()
-    ? createGithubIssueRepository()
+  instance = hasSupabaseProjectsStore()
+    ? createSupabaseRepository()
     : createJsonRepository();
   return instance;
 }

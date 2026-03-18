@@ -22,7 +22,7 @@ export interface OrchestrationAction {
   kind: OrchestrationActionKind;
   label: string;
   reason: string;
-  trigger: "workflow_dispatch" | "repository_dispatch" | "manual";
+  trigger: "queued" | "scheduled" | "manual";
 }
 
 export interface ProjectOrchestrationState {
@@ -117,7 +117,7 @@ export function deriveProjectOrchestration(
         "onboard_project",
         "Onboard project",
         "No findings have been imported yet.",
-        "repository_dispatch"
+        "queued"
       ),
     };
   }
@@ -135,7 +135,7 @@ export function deriveProjectOrchestration(
         "run_visual_audit",
         "Run visual audit",
         "This project has findings, but no visual-suite coverage is detected.",
-        "repository_dispatch"
+        "queued"
       ),
     };
   }
@@ -173,7 +173,7 @@ export function deriveProjectOrchestration(
         ageDays != null
           ? `Last update was ${ageDays} day${ageDays === 1 ? "" : "s"} ago.`
           : "Open findings still need another audit pass.",
-        "repository_dispatch"
+        "queued"
       ),
     };
   }
@@ -190,7 +190,7 @@ export function deriveProjectOrchestration(
       "run_synthesizer",
       "Run synthesizer",
       "The project is current; synthesize the latest audit state before the next cycle.",
-      "workflow_dispatch"
+      "scheduled"
     ),
   };
 }

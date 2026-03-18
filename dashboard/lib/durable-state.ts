@@ -1,13 +1,10 @@
 import type { Project } from "./types";
-
-export interface DurableStateConfig {
-  configured: boolean;
-  url: string;
-  schema: string;
-  eventsTable: string;
-  snapshotsTable: string;
-  missing: string[];
-}
+import {
+  createPostgresPool,
+  generateUuid,
+  quoteIdent,
+  readDatabaseConfig,
+} from "./postgres";
 
 export interface DurableEvent {
   event_type: string;
@@ -30,98 +27,124 @@ export interface DurableProjectSnapshot {
   updated_at: string;
 }
 
+export interface DurableStateConfig {
+  configured: boolean;
+  missing: string[];
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  ssl: boolean;
+  connectionLabel: string;
+  schema: string;
+  eventsTable: string;
+  snapshotsTable: string;
+}
+
 export interface DurableStateSummary {
   configured: boolean;
   missing: string[];
   recent_events: DurableEventRecord[];
   recent_snapshots: DurableProjectSnapshot[];
+  error?: string;
 }
 
-function readConfig(): DurableStateConfig {
-  const url = process.env.LYRA_SUPABASE_URL?.trim() ?? "";
-  const schema = process.env.LYRA_SUPABASE_SCHEMA?.trim() || "public";
-  const eventsTable = process.env.LYRA_SUPABASE_EVENTS_TABLE?.trim() || "lyra_orchestration_events";
-  const snapshotsTable = process.env.LYRA_SUPABASE_SNAPSHOTS_TABLE?.trim() || "lyra_project_snapshots";
-  const missing: string[] = [];
-
-  if (!url) missing.push("LYRA_SUPABASE_URL");
-  if (!process.env.LYRA_SUPABASE_SERVICE_ROLE_KEY?.trim()) {
-    missing.push("LYRA_SUPABASE_SERVICE_ROLE_KEY");
+const pool = (() => {
+  try {
+    return createPostgresPool();
+  } catch {
+    return null;
   }
+})();
 
-  return {
-    configured: missing.length === 0,
-    url,
-    schema,
-    eventsTable,
-    snapshotsTable,
-    missing,
-  };
+let schemaBootstrap: Promise<void> | null = null;
+
+function getConfig(): DurableStateConfig {
+  const config = readDatabaseConfig();
+  return config;
 }
 
-function baseHeaders(): HeadersInit {
-  const key = process.env.LYRA_SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!key) {
-    throw new Error("LYRA_SUPABASE_SERVICE_ROLE_KEY is required for durable state access");
+async function ensureSchema(): Promise<void> {
+  const config = readDatabaseConfig();
+  if (!config.configured || !pool) return;
+  if (!schemaBootstrap) {
+    schemaBootstrap = (async () => {
+      const schema = quoteIdent(config.schema);
+      const eventsTable = quoteIdent(config.eventsTable);
+      const snapshotsTable = quoteIdent(config.snapshotsTable);
+      await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS ${schema}.${eventsTable} (
+          id uuid PRIMARY KEY,
+          event_type text NOT NULL,
+          project_name text,
+          source text NOT NULL,
+          summary text NOT NULL,
+          payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )`
+      );
+      await pool.query(
+        `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${config.eventsTable}_created_at_idx`)} ON ${schema}.${eventsTable} (created_at DESC)`
+      );
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS ${schema}.${snapshotsTable} (
+          project_name text PRIMARY KEY,
+          source text NOT NULL,
+          summary text NOT NULL,
+          project_json jsonb NOT NULL,
+          updated_at timestamptz NOT NULL DEFAULT now()
+        )`
+      );
+      await pool.query(
+        `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${config.snapshotsTable}_updated_at_idx`)} ON ${schema}.${snapshotsTable} (updated_at DESC)`
+      );
+    })();
+    schemaBootstrap = schemaBootstrap.catch((error) => {
+      schemaBootstrap = null;
+      throw error;
+    });
   }
-
-  return {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-    "Content-Profile": readConfig().schema,
-    Prefer: "return=representation",
-  };
-}
-
-async function supabaseRequest(path: string, init?: RequestInit): Promise<Response> {
-  const config = readConfig();
-  const res = await fetch(`${config.url}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(baseHeaders() as Record<string, string>),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
-  return res;
+  await schemaBootstrap;
 }
 
 export function hasDurableState(): boolean {
-  return Boolean(
-    process.env.LYRA_SUPABASE_URL?.trim() &&
-      process.env.LYRA_SUPABASE_SERVICE_ROLE_KEY?.trim()
-  );
+  return getConfig().configured;
 }
 
 export function getDurableStateConfig(): DurableStateConfig {
-  return readConfig();
+  return getConfig();
+}
+
+function toJson(value: unknown): string {
+  return JSON.stringify(value ?? {});
+}
+
+async function requirePool(): Promise<NonNullable<typeof pool>> {
+  if (!pool) {
+    throw new Error("DATABASE_URL is required for durable state access");
+  }
+  await ensureSchema();
+  return pool;
 }
 
 export async function recordDurableEvent(event: DurableEvent): Promise<void> {
   if (!hasDurableState()) return;
-  const config = readConfig();
-  const res = await fetch(`${config.url}/rest/v1/${config.eventsTable}`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      ...baseHeaders(),
-      Prefer: "return=minimal",
-    },
-    body: JSON.stringify({
-      event_type: event.event_type,
-      project_name: event.project_name ?? null,
-      source: event.source,
-      summary: event.summary,
-      payload: event.payload ?? {},
-    }),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Supabase durable event insert failed (${res.status})`);
-  }
+  const config = getConfig();
+  const client = await requirePool();
+  await client.query(
+    `INSERT INTO ${quoteIdent(config.schema)}.${quoteIdent(config.eventsTable)}
+       (id, event_type, project_name, source, summary, payload)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [
+      generateUuid(),
+      event.event_type,
+      event.project_name ?? null,
+      event.source,
+      event.summary,
+      toJson(event.payload),
+    ]
+  );
 }
 
 export async function recordProjectSnapshot(
@@ -130,34 +153,57 @@ export async function recordProjectSnapshot(
   summary: string
 ): Promise<void> {
   if (!hasDurableState()) return;
-  const config = readConfig();
-  const res = await fetch(
-    `${config.url}/rest/v1/${config.snapshotsTable}?on_conflict=project_name`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        ...baseHeaders(),
-        Prefer: "resolution=merge-duplicates,return=minimal",
-      },
-      body: JSON.stringify({
-        project_name: project.name,
-        source,
-        summary,
-        project_json: project,
-        updated_at: new Date().toISOString(),
-      }),
-      cache: "no-store",
-    }
+  const config = getConfig();
+  const client = await requirePool();
+  await client.query(
+    `INSERT INTO ${quoteIdent(config.schema)}.${quoteIdent(config.snapshotsTable)}
+       (project_name, source, summary, project_json, updated_at)
+     VALUES ($1, $2, $3, $4::jsonb, $5)
+     ON CONFLICT (project_name)
+     DO UPDATE SET
+       source = EXCLUDED.source,
+       summary = EXCLUDED.summary,
+       project_json = EXCLUDED.project_json,
+       updated_at = EXCLUDED.updated_at`,
+    [
+      project.name,
+      source,
+      summary,
+      toJson(project),
+      new Date().toISOString(),
+    ]
   );
+}
 
-  if (!res.ok) {
-    throw new Error(`Supabase project snapshot upsert failed (${res.status})`);
+/** Logs and continues if Postgres is down — GitHub/onboarding must not fail on durable logging. */
+export async function recordDurableEventBestEffort(event: DurableEvent): Promise<void> {
+  try {
+    await recordDurableEvent(event);
+  } catch (e) {
+    console.warn(
+      "[durable-state] recordDurableEvent skipped:",
+      e instanceof Error ? e.message : e
+    );
+  }
+}
+
+export async function recordProjectSnapshotBestEffort(
+  project: Project,
+  source: string,
+  summary: string
+): Promise<void> {
+  try {
+    await recordProjectSnapshot(project, source, summary);
+  } catch (e) {
+    console.warn(
+      "[durable-state] recordProjectSnapshot skipped:",
+      e instanceof Error ? e.message : e
+    );
   }
 }
 
 export async function fetchDurableState(limit = 10): Promise<DurableStateSummary> {
-  const config = readConfig();
+  const config = getConfig();
   if (!config.configured) {
     return {
       configured: false,
@@ -167,29 +213,51 @@ export async function fetchDurableState(limit = 10): Promise<DurableStateSummary
     };
   }
 
-  const [eventsRes, snapshotsRes] = await Promise.all([
-    supabaseRequest(
-      `${config.eventsTable}?select=*&order=created_at.desc&limit=${encodeURIComponent(String(limit))}`
-    ),
-    supabaseRequest(
-      `${config.snapshotsTable}?select=*&order=updated_at.desc&limit=${encodeURIComponent(String(limit))}`
-    ),
-  ]);
+  try {
+    const client = await requirePool();
+    const events = await client.query(
+      `SELECT id, event_type, project_name, source, summary, payload, created_at
+       FROM ${quoteIdent(config.schema)}.${quoteIdent(config.eventsTable)}
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    const snapshots = await client.query(
+      `SELECT project_name, source, summary, project_json, updated_at
+       FROM ${quoteIdent(config.schema)}.${quoteIdent(config.snapshotsTable)}
+       ORDER BY updated_at DESC
+       LIMIT $1`,
+      [limit]
+    );
 
-  if (!eventsRes.ok) {
-    throw new Error(`Supabase durable events query failed (${eventsRes.status})`);
+    return {
+      configured: true,
+      missing: [],
+      recent_events: events.map((event) => ({
+        id: String(event.id ?? ""),
+        event_type: String(event.event_type ?? ""),
+        project_name: event.project_name == null ? null : String(event.project_name),
+        source: String(event.source ?? ""),
+        summary: String(event.summary ?? ""),
+        payload: (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, unknown>,
+        created_at: event.created_at == null ? undefined : String(event.created_at),
+      })),
+      recent_snapshots: snapshots.map((snapshot) => ({
+        project_name: String(snapshot.project_name ?? ""),
+        source: String(snapshot.source ?? ""),
+        summary: String(snapshot.summary ?? ""),
+        project_json: snapshot.project_json as Project,
+        updated_at: String(snapshot.updated_at ?? ""),
+      })),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      configured: true,
+      missing: [],
+      recent_events: [],
+      recent_snapshots: [],
+      error: message,
+    };
   }
-  if (!snapshotsRes.ok) {
-    throw new Error(`Supabase durable snapshots query failed (${snapshotsRes.status})`);
-  }
-
-  const events = (await eventsRes.json()) as DurableEventRecord[];
-  const snapshots = (await snapshotsRes.json()) as DurableProjectSnapshot[];
-
-  return {
-    configured: true,
-    missing: [],
-    recent_events: Array.isArray(events) ? events : [],
-    recent_snapshots: Array.isArray(snapshots) ? snapshots : [],
-  };
 }

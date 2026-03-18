@@ -37,6 +37,15 @@ build_web_output.txt
 *.zip
 *.tar.gz
 
+# Agent / CLI scratch artifacts
+.agent/
+.agents/
+.claude/
+.kilocode/
+.vibe/
+.archive/
+skills-lock.json
+
 # Python
 __pycache__/
 *.py[cod]

@@ -1,0 +1,178 @@
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import type pg from "pg";
+import { resolveApps } from "./apps.js";
+import { gatherCodeContext, readExpectations } from "./context.js";
+import { auditWithLlm } from "./llm.js";
+import {
+  claimJob,
+  completeJob,
+  loadProject,
+  saveProject,
+  listAllProjects,
+} from "./db.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function repoRoot(): string {
+  const env = process.env.LYRA_REPO_ROOT?.trim();
+  if (env && existsSync(env)) return env;
+  return join(__dirname, "..", "..");
+}
+
+function loadPrompts(): { core: string; auditAgent: string } {
+  const root = repoRoot();
+  const corePath = join(root, "core_system_prompt");
+  const auditPath = join(root, "audits", "prompts", "audit-agent.md");
+  const core = existsSync(corePath)
+    ? readFileSync(corePath, "utf-8")
+    : "You are Lyra. Output structured JSON findings.";
+  const auditAgent = existsSync(auditPath)
+    ? readFileSync(auditPath, "utf-8")
+    : "";
+  return { core, auditAgent };
+}
+
+function mergeFindings2(
+  existing: Array<Record<string, unknown>>,
+  incoming: Array<Record<string, unknown>>
+): { merged: Array<Record<string, unknown>>; added: number } {
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const f of existing) {
+    const id = String(f.finding_id ?? "");
+    if (id) byId.set(id, { ...f });
+  }
+  let added = 0;
+  for (const f of incoming) {
+    const id = String(f.finding_id ?? "");
+    if (!id) continue;
+    if (!byId.has(id)) {
+      byId.set(id, { ...f, status: f.status ?? "open" });
+      added++;
+    } else {
+      const old = byId.get(id)!;
+      byId.set(id, { ...old, ...f, finding_id: id });
+    }
+  }
+  return { merged: [...byId.values()], added };
+}
+
+export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> {
+  const job = await claimJob(pool, dbJobId);
+  if (!job) {
+    console.log(`[lyra-worker] skip job ${dbJobId} (not queued or done)`);
+    return;
+  }
+
+  const { core, auditAgent } = loadPrompts();
+  const root = repoRoot();
+  const payload = job.payload || {};
+  const visualOnly = Boolean(payload.visual_only);
+
+  try {
+    if (job.job_type === "synthesize_project") {
+      await runSynthesize(pool, job, core, auditAgent);
+      return;
+    }
+
+    const apps = resolveApps(job.job_type, job.project_name);
+    let totalAdded = 0;
+    const summaries: string[] = [];
+
+    for (const app of apps) {
+      const expectations = readExpectations(root, app.expectations);
+      const code = gatherCodeContext(root, app.scanDir);
+      const findings = await auditWithLlm(
+        core,
+        auditAgent,
+        expectations,
+        code,
+        app.projectName,
+        visualOnly
+      );
+      const incoming = findings.map((f) => ({ ...f })) as Array<
+        Record<string, unknown>
+      >;
+      const prev = await loadProject(pool, app.projectName);
+      const existing = (prev?.findings ?? []) as Array<Record<string, unknown>>;
+      const { merged, added } = mergeFindings2(existing, incoming);
+      totalAdded += added;
+      await saveProject(pool, {
+        name: app.projectName,
+        findings: merged,
+        repositoryUrl: prev?.repositoryUrl ?? null,
+        lastUpdated: new Date().toISOString(),
+      });
+      summaries.push(`${app.projectName}: +${added} findings`);
+    }
+
+    await completeJob(pool, dbJobId, null, {
+      job_type: job.job_type,
+      project_name: job.project_name,
+      summary: summaries.join("; ") || "audit complete",
+      findings_added: totalAdded,
+      payload: { apps: apps.map((a) => a.projectName) },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[lyra-worker] job ${dbJobId} failed`, e);
+    await completeJob(pool, dbJobId, msg, {
+      job_type: job.job_type,
+      project_name: job.project_name,
+      summary: `Failed: ${msg.slice(0, 200)}`,
+      findings_added: 0,
+    });
+  }
+}
+
+async function runSynthesize(
+  pool: pg.Pool,
+  job: { id: string; job_type: string; project_name: string | null },
+  core: string,
+  auditAgent: string
+): Promise<void> {
+  const projects = await listAllProjects(pool);
+  const lines = projects.flatMap((p) =>
+    (p.findings as Array<{ title?: string; severity?: string }>).map(
+      (f) => `- [${p.name}] ${f.severity ?? "?"}: ${f.title ?? "?"}`
+    )
+  );
+  const blob = lines.slice(0, 200).join("\n") || "No findings yet.";
+  const key = process.env.OPENAI_API_KEY?.trim();
+  let summary = `Portfolio: ${projects.length} projects, ${lines.length} finding lines.`;
+  if (key) {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.LYRA_AUDIT_MODEL?.trim() || "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `${core}\nSummarize cross-portfolio audit themes in 2 short paragraphs.`,
+          },
+          { role: "user", content: blob },
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      summary = data.choices?.[0]?.message?.content ?? summary;
+    }
+  }
+  await completeJob(pool, job.id, null, {
+    job_type: job.job_type,
+    project_name: job.project_name,
+    summary: summary.slice(0, 2000),
+    findings_added: 0,
+    payload: { synthesized: true },
+  });
+}

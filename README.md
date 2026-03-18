@@ -4,7 +4,7 @@
 
 ## What This Is
 
-This repository is the central intelligence and quality-assurance hub for The Penny Lane Project — a portfolio of 11 actively developed applications built by Sarah Sahl. It houses deep codebase analysis reports, structured expectations documents, and the LYRA multi-agent audit system that continuously validates each application against its architectural constraints.
+This repository is the central intelligence and quality-assurance hub for The Penny Lane Project — a portfolio of 11 actively developed applications built by Sarah Sahl. It houses codebase intelligence reports, structured expectations documents, and the LYRA multi-agent audit system that continuously validates each application against its architectural constraints.
 
 ## Current Status
 
@@ -40,6 +40,12 @@ audits/                   # LYRA audit system — multi-agent quality assurance
   findings/               # Individual finding case files
   runs/                   # Immutable run outputs
 ```
+
+## Deploy stack (dashboard + audits)
+
+- **Dashboard:** Next.js in `dashboard/` — deploy to **Netlify** (see root `netlify.toml`).
+- **Data:** **Supabase Postgres** — apply `supabase/migrations/20250318120000_lyra_core.sql` for projects and orchestration jobs.
+- **Worker:** `worker/` — BullMQ (or DB poll) + OpenAI; processes queued audits. See `worker/README.md` and `audits/COPILOT-AGENTS.md`.
 
 ## Audit System (LYRA)
 
@@ -81,31 +87,14 @@ npm run build
 
 From the dashboard UI, use **Import project** to load `open_findings.json`, then use **sync now** and the project-level repair controls to keep manual work inside the app.
 
-## GitHub Control Plane
+## Orchestration (Supabase + Netlify + worker)
 
-Lyra is moving toward GitHub as the event source for audit orchestration. The scheduled audit workflow in `.github/workflows/scheduled-audit.yml` now accepts manual dispatch inputs and repository dispatch events for onboarding, re-audits, and synthesis triggers.
+- **Postgres:** `DATABASE_URL` — projects in `lyra_projects`, jobs in `lyra_audit_jobs` (see `supabase/migrations/`).
+- **Enqueue:** `ORCHESTRATION_ENQUEUE_SECRET` — dashboard and Netlify scheduled function call `POST /api/orchestration/jobs`.
+- **Worker:** `worker/` with `OPENAI_API_KEY`, same `DATABASE_URL`, optional `REDIS_URL` for BullMQ.
+- **Weekly schedule:** Netlify function `dashboard/netlify/functions/enqueue-weekly-audit.ts` (Monday 09:00 UTC).
 
-That means GitHub can initiate the audit cycle, while the dashboard watches the resulting state and recommends the next step.
-
-If you want the dashboard to talk to GitHub directly, set:
-
-```bash
-export LYRA_GITHUB_OWNER="your-org-or-user"
-export LYRA_GITHUB_REPO="your-repo"
-export LYRA_GITHUB_TOKEN="github_pat_or_fine_grained_token"
-export LYRA_GITHUB_WORKFLOW="scheduled-audit.yml"
-```
-
-When configured, the dashboard shows the latest audit issues, workflow runs, and artifacts, and it can dispatch onboarding/re-audit/synthesis events back to GitHub.
-
-The canonical project findings can also live in GitHub issue bodies when the dashboard GitHub store is enabled, so `open_findings` stops depending on your local machine.
-
-If you also configure Supabase, Lyra records orchestration events and project snapshots there for durable history and future learning.
-
-New GitHub-backed projects automatically dispatch the initial `onboard_project` workflow so you do not need to manually kick off the first audit.
-The dashboard also accepts repository URLs when onboarding a project, which makes repo-first setup the default when you do not already have `open_findings`.
-
-Routing is env-driven as well: `LYRA_ROUTING_CONFIG`, `LYRA_ROUTING_STRATEGY`, and the `LYRA_*_MODEL` overrides control the effective model catalog and escalation behavior shown in the dashboard engine view and repair engine.
+Routing remains env-driven: `LYRA_ROUTING_CONFIG`, `LYRA_ROUTING_STRATEGY`, and `LYRA_*_MODEL` for the dashboard engine view and repair engine.
 
 ## License
 

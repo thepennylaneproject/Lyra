@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readOpenFindings, readAuditRunFiles } from "@/lib/audit-reader";
 import { getRepository } from "@/lib/repository-instance";
-import { recordDurableEvent } from "@/lib/durable-state";
+import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import type { Project, Finding } from "@/lib/types";
 
 /**
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
       }
     }
 
-    await recordDurableEvent({
+    await recordDurableEventBestEffort({
       event_type: "audit_sync",
       project_name: fallbackProject,
       source: "audit_sync_route",
