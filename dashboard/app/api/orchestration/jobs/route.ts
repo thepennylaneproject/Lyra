@@ -17,13 +17,23 @@ const JOB_TYPES: LyraJobType[] = [
   "audit_project",
 ];
 
+function enqueueSecret(): string {
+  return (
+    process.env.ORCHESTRATION_ENQUEUE_SECRET?.trim() ||
+    process.env.DASHBOARD_API_SECRET?.trim() ||
+    ""
+  );
+}
+
 function authorize(request: Request): boolean {
-  const secret = process.env.ORCHESTRATION_ENQUEUE_SECRET?.trim();
+  const secret = enqueueSecret();
   if (!secret) {
     return process.env.NODE_ENV === "development";
   }
   const auth = request.headers.get("authorization");
-  const header = request.headers.get("x-lyra-enqueue-secret");
+  const header =
+    request.headers.get("x-lyra-enqueue-secret") ??
+    request.headers.get("x-lyra-api-secret");
   return auth === `Bearer ${secret}` || header === secret;
 }
 
@@ -50,8 +60,7 @@ export async function GET() {
         process.env.REDIS_URL?.trim() || process.env.LYRA_REDIS_URL?.trim()
       ),
       enqueue_auth_optional:
-        process.env.NODE_ENV === "development" &&
-        !process.env.ORCHESTRATION_ENQUEUE_SECRET?.trim(),
+        process.env.NODE_ENV === "development" && !enqueueSecret(),
       jobs,
       runs,
     });

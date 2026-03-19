@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { apiFetch } from "@/lib/api-fetch";
 import type { EngineStatus } from "@/lib/audit-reader";
 
 const AGENTS = [
@@ -46,7 +47,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/engine/status");
+      const res = await apiFetch("/api/engine/status");
       if (res.ok) setEngineStatus(await res.json());
     } catch {}
   }, []);
@@ -57,7 +58,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const res  = await fetch("/api/sync/audit", { method: "POST" });
+      const res  = await apiFetch("/api/sync/audit", { method: "POST" });
       const data = await res.json();
       setSyncMsg(data.message ?? (res.ok ? "Synced." : "Failed."));
       if (res.ok) await fetchStatus();

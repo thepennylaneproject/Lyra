@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { apiFetch } from "@/lib/api-fetch";
 
 interface SyncStatus {
   configured: boolean;
@@ -20,7 +21,7 @@ export function LinearSync({ projectName }: LinearSyncProps) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/sync/linear/status?project=${encodeURIComponent(projectName)}`
       );
       if (res.ok) {
@@ -39,7 +40,7 @@ export function LinearSync({ projectName }: LinearSyncProps) {
   const push = useCallback(async () => {
     setAction("push");
     try {
-      const res = await fetch("/api/sync/linear/push", {
+      const res = await apiFetch("/api/sync/linear/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName }),
@@ -55,7 +56,7 @@ export function LinearSync({ projectName }: LinearSyncProps) {
   const pull = useCallback(async () => {
     setAction("pull");
     try {
-      const res = await fetch("/api/sync/linear/pull", {
+      const res = await apiFetch("/api/sync/linear/pull", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName }),

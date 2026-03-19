@@ -43,9 +43,12 @@ audits/                   # LYRA audit system — multi-agent quality assurance
 
 ## Deploy stack (dashboard + audits)
 
-- **Dashboard:** Next.js in `dashboard/` — deploy to **Netlify** (see root `netlify.toml`).
-- **Data:** **Supabase Postgres** — apply `supabase/migrations/20250318120000_lyra_core.sql` for projects and orchestration jobs.
+- **Dashboard:** Next.js in `dashboard/` — **canonical host: Netlify** (see root `netlify.toml`). `dashboard/vercel.json` is optional/alternate; prefer one host to avoid divergent config.
+- **API auth (production):** Set **`DASHBOARD_API_SECRET`** or reuse **`ORCHESTRATION_ENQUEUE_SECRET`**. When set, all `/api/*` routes except **`GET /api/health`** require either a browser login (unlock screen) or `Authorization: Bearer <secret>` / `x-lyra-api-secret`. Netlify scheduled `enqueue-weekly-audit` already sends Bearer for orchestration POST.
+- **Health:** `GET /api/health` — public JSON `{ ok: true }` for uptime checks.
+- **Data:** **Supabase Postgres** — run migrations in `supabase/migrations/` (core tables + RLS). RLS locks `lyra_*` for anon/authenticated PostgREST; the app server using `DATABASE_URL` (owner/service role) keeps full access.
 - **Worker:** `worker/` — BullMQ (or DB poll) + OpenAI; processes queued audits. See `worker/README.md` and `audits/COPILOT-AGENTS.md`.
+- **CI:** GitHub Actions (`.github/workflows/ci.yml`) — dashboard lint, `tsc --noEmit`, build; worker build.
 
 ## Audit System (LYRA)
 
@@ -82,6 +85,7 @@ Useful checks:
 
 ```bash
 npm run lint
+npm run typecheck
 npm run build
 ```
 
@@ -90,7 +94,7 @@ From the dashboard UI, use **Import project** to load `open_findings.json`, then
 ## Orchestration (Supabase + Netlify + worker)
 
 - **Postgres:** `DATABASE_URL` — projects in `lyra_projects`, jobs in `lyra_audit_jobs` (see `supabase/migrations/`).
-- **Enqueue:** `ORCHESTRATION_ENQUEUE_SECRET` — dashboard and Netlify scheduled function call `POST /api/orchestration/jobs`.
+- **Enqueue / API gate:** `ORCHESTRATION_ENQUEUE_SECRET` or `DASHBOARD_API_SECRET` — Netlify cron and dashboard POST use Bearer; browser session uses the unlock screen after first load.
 - **Worker:** `worker/` with `OPENAI_API_KEY`, same `DATABASE_URL`, optional `REDIS_URL` for BullMQ.
 - **Weekly schedule:** Netlify function `dashboard/netlify/functions/enqueue-weekly-audit.ts` (Monday 09:00 UTC).
 

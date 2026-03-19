@@ -1,0 +1,2097 @@
+{
+  "schema_version": "1.1.0",
+  "kind": "synthesizer_output",
+  "run_id": "synthesized-20260318-153100",
+  "run_metadata": {
+    "timestamp": "2026-03-19T00:44:27Z",
+    "branch": "unknown",
+    "commit": "unknown",
+    "environment": "local",
+    "tool_platform": "cursor",
+    "model": "synthesizer",
+    "notes": "Inputs copied from Desktop lyra/lyra:lyra/ \u2192 audits/lyra-agent-outputs/"
+  },
+  "suite": "synthesized",
+  "agent": {
+    "name": "synthesizer",
+    "role": "Merge, deduplicate, rank, and plan across all agent outputs."
+  },
+  "coverage": {
+    "files_examined": [
+      "audits/lyra-agent-outputs/*.json"
+    ],
+    "files_skipped": [],
+    "coverage_complete": false,
+    "incomplete_reason": "logic: Full per-file scan of all dashboard app/api/lib/components not completed; worker src fully reviewed.; performance: Did not exhaust every API route or static asset; focused on hot paths (projects API, worker job loop, LLM calls, orchestration fetches).; security: Worker process, hosting-specific hardening, and all client components for secret handling not exhaustively reviewed; CORS assumed Next defaults."
+  },
+  "findings": [
+    {
+      "finding_id": "f-data-missing-rls-core",
+      "type": "bug",
+      "category": "missing-rls",
+      "severity": "major",
+      "priority": "P0",
+      "confidence": "evidence",
+      "title": "Supabase tables lyra_* created with no RLS or policies",
+      "description": "Migration 20250318120000_lyra_core.sql defines public.lyra_projects, lyra_audit_jobs, and lyra_audit_runs but never enables ROW LEVEL SECURITY or creates policies. On Supabase, any client using the anon key with PostgREST (or mis-scoped service usage) could read/write all rows. Current dashboard/worker use a direct Postgres pool with DATABASE_URL, which bypasses RLS, so enforcement is entirely application-side.",
+      "proof_hooks": [
+        {
+          "hook_type": "query",
+          "summary": "Migration ends after CREATE TABLE/INDEX/COMMENT; no ALTER TABLE \u2026 ENABLE ROW LEVEL SECURITY or CREATE POLICY.",
+          "query_text": "See supabase/migrations/20250318120000_lyra_core.sql (full file)"
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Server uses raw SQL pool, not JWT-scoped Supabase client.",
+          "file": "dashboard/lib/store-supabase.ts",
+          "symbol": "createSupabaseRepository",
+          "start_line": 43,
+          "end_line": 50
+        }
+      ],
+      "impact": "Cross-tenant or public exposure if tables are ever queried with a role subject to RLS defaults, or if anon/service keys leak; no database-level isolation for multi-tenant scenarios.",
+      "suggested_fix": {
+        "approach": "Enable RLS on all three tables; add policies aligned to your auth model (e.g. service_role-only for worker/dashboard, or auth.uid() if user-scoped). If intentionally server-only, document and restrict DB roles so anon cannot SELECT/INSERT.",
+        "affected_files": [
+          "supabase/migrations/20250318120000_lyra_core.sql",
+          "new migration for RLS policies"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "Policy tests with Supabase SQL or integration test using anon vs service role"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2025-03-18T14:45:00Z",
+          "actor": "schema-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-data-fk-project-name-jobs",
+      "type": "debt",
+      "category": "constraint-violation",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "lyra_audit_jobs.project_name not FK-referenced to lyra_projects",
+      "description": "Column project_name is free text. Jobs and runs can reference deleted or never-existing projects; worker loadProject then returns null while job rows still claim a project_name.",
+      "proof_hooks": [
+        {
+          "hook_type": "data_shape",
+          "summary": "lyra_audit_jobs defines project_name text without REFERENCES public.lyra_projects(name).",
+          "expected_schema": "project_name REFERENCES lyra_projects(name) ON DELETE SET NULL or RESTRICT",
+          "observed_schema": "project_name text nullable, no FK"
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Jobs inserted with arbitrary project_name string.",
+          "file": "dashboard/lib/orchestration-jobs.ts",
+          "symbol": "insertAuditJob",
+          "start_line": 96,
+          "end_line": 118
+        }
+      ],
+      "impact": "Orphan job references, confusing orchestration UI, and worker behavior when project missing.",
+      "suggested_fix": {
+        "approach": "Add FK from lyra_audit_jobs.project_name to lyra_projects(name) with ON DELETE SET NULL; optionally same for lyra_audit_runs.project_name; backfill invalid names before migration.",
+        "affected_files": [
+          "supabase/migrations/"
+        ],
+        "estimated_effort": "medium"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2025-03-18T14:45:00Z",
+          "actor": "schema-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-data-runrow-payload-drift",
+      "type": "debt",
+      "category": "type-drift",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "LyraAuditRunRow omits payload present on lyra_audit_runs",
+      "description": "Table lyra_audit_runs includes payload jsonb NOT NULL. TypeScript LyraAuditRunRow and rowRun() do not expose payload, so consumers of listRecentAuditRuns lose typed access to run payload despite SELECT *.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Row mapper drops payload column.",
+          "file": "dashboard/lib/orchestration-jobs.ts",
+          "symbol": "rowRun",
+          "start_line": 76,
+          "end_line": 89
+        },
+        {
+          "hook_type": "data_shape",
+          "summary": "Migration defines payload on lyra_audit_runs.",
+          "file": "supabase/migrations/20250318120000_lyra_core.sql",
+          "start_line": 33,
+          "end_line": 42
+        }
+      ],
+      "impact": "API/UI may need run payload later; hidden field encourages ad-hoc queries or casts.",
+      "suggested_fix": {
+        "approach": "Add payload: Record<string, unknown> to LyraAuditRunRow and map in rowRun.",
+        "affected_files": [
+          "dashboard/lib/orchestration-jobs.ts"
+        ],
+        "estimated_effort": "trivial"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2025-03-18T14:45:00Z",
+          "actor": "schema-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-data-job-type-unconstrained",
+      "type": "debt",
+      "category": "validation-gap",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "job_type unrestricted in DB vs LyraJobType union in code",
+      "description": "Postgres allows any text for job_type; application restricts to a union. Invalid values can be inserted via SQL or bugs, breaking worker switches.",
+      "proof_hooks": [
+        {
+          "hook_type": "data_shape",
+          "summary": "lyra_audit_jobs.job_type is text NOT NULL without CHECK constraint.",
+          "file": "supabase/migrations/20250318120000_lyra_core.sql",
+          "start_line": 13,
+          "end_line": 25
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "LyraJobType union in TS.",
+          "file": "dashboard/lib/orchestration-jobs.ts",
+          "symbol": "LyraJobType",
+          "start_line": 8,
+          "end_line": 13
+        }
+      ],
+      "impact": "Low probability but causes runtime mis-handling of unknown job_type.",
+      "suggested_fix": {
+        "approach": "Add CHECK (job_type IN (...)) or Postgres ENUM matching LyraJobType; keep worker/dashboard in sync.",
+        "estimated_effort": "small"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2025-03-18T14:45:00Z",
+          "actor": "schema-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-1a9e4c7b",
+      "type": "enhancement",
+      "category": "ci-gap",
+      "severity": "major",
+      "priority": "P0",
+      "confidence": "evidence",
+      "title": "No GitHub Actions (or other) CI pipeline",
+      "description": "Repository has no .github/workflows. README documents manual npm run lint/build locally only. There is no automated gate for lint, typecheck, or build on push/PR. Dashboard package.json defines lint and build but not typecheck; worker has build only.",
+      "proof_hooks": [
+        {
+          "hook_type": "command",
+          "summary": "No workflow YAML under .github/workflows",
+          "command": "find .github/workflows -name '*.yml' -o -name '*.yaml'",
+          "expected": "At least one CI workflow",
+          "actual": "Directory missing or empty"
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Dashboard scripts omit typecheck",
+          "file": "dashboard/package.json",
+          "symbol": "scripts",
+          "start_line": 5,
+          "end_line": 10
+        }
+      ],
+      "impact": "Broken builds or type errors can reach Netlify/production without review; regressions discovered only after deploy or manual runs.",
+      "suggested_fix": {
+        "approach": "Add .github/workflows/ci.yml: checkout, setup Node, npm ci in dashboard/, run npm run lint, npx tsc --noEmit, npm run build; optionally worker build. Require on main/PR.",
+        "affected_files": [
+          ".github/workflows/ci.yml",
+          "dashboard/package.json"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "Confirm workflow fails on intentional TS error"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:30Z",
+          "actor": "build-deploy-auditor",
+          "event": "created",
+          "notes": "History lookup: open_findings.json had no prior ci-gap entries."
+        }
+      ]
+    },
+    {
+      "finding_id": "f-2b8d3e6a",
+      "type": "enhancement",
+      "category": "missing-error-boundary",
+      "severity": "major",
+      "priority": "P0",
+      "confidence": "evidence",
+      "title": "Next.js App Router has no route or global error boundary",
+      "description": "dashboard/app has no error.tsx or global-error.tsx. Uncaught React errors in the App Router surface as default Next.js failure UX with no app-controlled fallback or recovery path.",
+      "proof_hooks": [
+        {
+          "hook_type": "command",
+          "summary": "No error.tsx under dashboard/app",
+          "command": "find dashboard/app -name 'error.tsx' -o -name 'global-error.tsx'",
+          "expected": "At least app/error.tsx",
+          "actual": "No matches"
+        }
+      ],
+      "impact": "Users see generic error states; no consistent branded recovery or error reporting hook from the UI tree.",
+      "suggested_fix": {
+        "approach": "Add dashboard/app/error.tsx and optionally dashboard/app/global-error.tsx with fallback UI and link home; wire to monitoring if added.",
+        "affected_files": [
+          "dashboard/app/error.tsx",
+          "dashboard/app/global-error.tsx"
+        ],
+        "estimated_effort": "small"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:30Z",
+          "actor": "build-deploy-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-3c7f2a91",
+      "type": "enhancement",
+      "category": "deploy-risk",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "No dedicated health check endpoint for load balancers or uptime",
+      "description": "No /api/health or similar route found. Netlify and operators cannot cheaply verify app liveness separate from full page render.",
+      "proof_hooks": [
+        {
+          "hook_type": "command",
+          "summary": "No health route references under dashboard",
+          "command": "rg 'health|/api/health' dashboard --glob '*.ts' --glob '*.tsx'",
+          "expected": "Health route or middleware",
+          "actual": "No matches"
+        }
+      ],
+      "impact": "Uptime monitors and deploy verification rely on full pages; DB/API failures may be harder to distinguish from static success.",
+      "suggested_fix": {
+        "approach": "Add GET /api/health returning 200 with optional lightweight DB ping behind flag.",
+        "affected_files": [
+          "dashboard/app/api/health/route.ts"
+        ],
+        "estimated_effort": "small"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:30Z",
+          "actor": "build-deploy-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4d6e1b84",
+      "type": "bug",
+      "category": "logging-gap",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "Empty catch blocks swallow errors in lyra-dashboard.jsx",
+      "description": "Two catch (e) {} handlers discard exceptions with no log, hiding failures during dashboard JSX flows.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "catch (e) {} with no body",
+          "file": "lyra-dashboard.jsx",
+          "symbol": "catch",
+          "start_line": 325,
+          "end_line": 342
+        }
+      ],
+      "impact": "Silent failures in that UI path; difficult to debug production or local issues.",
+      "suggested_fix": {
+        "approach": "Log with console.error or structured logger; rethrow or set user-visible error state.",
+        "affected_files": [
+          "lyra-dashboard.jsx"
+        ],
+        "estimated_effort": "trivial"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:30Z",
+          "actor": "build-deploy-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-5e5d0c73",
+      "type": "debt",
+      "category": "logging-gap",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "inference",
+      "title": "No external error/performance monitoring on dashboard or worker",
+      "description": "Logging is ad hoc console.error in API routes and worker. No Sentry, OpenTelemetry, or similar appears in dependencies or config, so production errors lack aggregation, alerts, or traces.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Representative API error logging only to console",
+          "file": "dashboard/app/api/projects/route.ts",
+          "symbol": "GET",
+          "start_line": 8,
+          "end_line": 15
+        },
+        {
+          "hook_type": "config_key",
+          "summary": "dashboard/package.json has no observability SDK",
+          "file": "dashboard/package.json",
+          "config_key": "dependencies"
+        }
+      ],
+      "impact": "Production incidents require log diving; no correlated user sessions or alerting.",
+      "suggested_fix": {
+        "approach": "Add Sentry (or similar) for Next.js API + client; optional worker process wrapper.",
+        "affected_files": [
+          "dashboard/package.json",
+          "dashboard/next.config.ts"
+        ],
+        "estimated_effort": "medium"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:30Z",
+          "actor": "build-deploy-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-6f4c9b62",
+      "type": "question",
+      "category": "deploy-risk",
+      "severity": "minor",
+      "priority": "P3",
+      "confidence": "evidence",
+      "title": "Both netlify.toml and dashboard/vercel.json present \u2014 which is canonical?",
+      "description": "README and netlify.toml describe Netlify deployment from dashboard/. dashboard/vercel.json also configures Vercel-style build. Clarify primary host to avoid duplicate or divergent deploy config.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Netlify build from dashboard base",
+          "file": "netlify.toml",
+          "start_line": 1,
+          "end_line": 11
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Vercel-oriented config coexists",
+          "file": "dashboard/vercel.json",
+          "start_line": 1,
+          "end_line": 7
+        }
+      ],
+      "impact": "Risk of maintaining two deploy paths or wrong assumptions in docs/CI.",
+      "suggested_fix": {
+        "approach": "Document single source of truth; remove or archive unused deploy config.",
+        "affected_files": [
+          "README.md",
+          "dashboard/vercel.json",
+          "netlify.toml"
+        ],
+        "estimated_effort": "trivial"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:30Z",
+          "actor": "build-deploy-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "logic-stuck-job-prompt-load",
+      "type": "bug",
+      "category": "error-handling",
+      "severity": "major",
+      "priority": "P1",
+      "status": "open",
+      "title": "Worker can leave audit job stuck in running if loadPrompts fails after claim",
+      "description": "After claimJob sets status to running, loadPrompts(), repoRoot(), and payload reads run outside the try/catch. readFileSync in loadPrompts can throw (permissions, IO). No completeJob(failed) runs, so the row may remain running indefinitely.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/process-job.ts",
+          "start_line": 61,
+          "end_line": 73,
+          "summary": "try begins at 73; loadPrompts at 68 is outside try",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        }
+      ],
+      "repro_steps": [
+        "Claim a queued job (normal flow).",
+        "Temporarily chmod 000 core_system_prompt or audits/prompts/audit-agent.md or inject a failing read.",
+        "Observe lyra_audit_jobs.status stays running with no finished_at/error."
+      ],
+      "tests_needed": [
+        "Unit test: mock loadPrompts to throw after claimJob succeeds; assert completeJob called with failed status or job reset."
+      ],
+      "impact": "After claimJob sets status to running, loadPrompts(), repoRoot(), and payload reads run outside the try/catch. readFileSync in loadPrompts can throw (permissions, IO). No completeJob(failed) runs, so the row may remain running indefinitely.",
+      "suggested_fix": {
+        "approach": "Unit test: mock loadPrompts to throw after claimJob succeeds; assert completeJob called with failed status or job reset.",
+        "estimated_effort": "medium"
+      },
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:00:00Z",
+          "actor": "runtime-bug-hunter",
+          "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "note_added",
+          "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        }
+      ]
+    },
+    {
+      "finding_id": "logic-worker-runone-swallow",
+      "type": "bug",
+      "category": "error-handling",
+      "severity": "major",
+      "priority": "P1",
+      "title": "runOne swallows errors; stuck jobs if completeJob fails in processJob catch",
+      "description": "index.ts runOne catches all processJob errors and only logs. If processJob catch block fails while calling completeJob (e.g. DB down), the exception propagates to runOne and is swallowed\u2014job may stay running. Same for any unexpected throw outside processJob inner catch.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/index.ts",
+          "start_line": 22,
+          "end_line": 27,
+          "summary": "catch logs only, no rethrow or terminal state update",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        },
+        {
+          "file": "worker/src/process-job.ts",
+          "start_line": 117,
+          "end_line": 126,
+          "summary": "completeJob in catch can throw",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        }
+      ],
+      "repro_steps": [
+        "With job in running state mid-process, kill DB or mock pool.query to reject on UPDATE.",
+        "Trigger failure path that reaches completeJob in catch.",
+        "Confirm worker logs error but job row not updated to failed."
+      ],
+      "tests_needed": [
+        "Integration test: completeJob failure after audit failure still records failure or dead-letter."
+      ],
+      "status": "open",
+      "impact": "index.ts runOne catches all processJob errors and only logs. If processJob catch block fails while calling completeJob (e.g. DB down), the exception propagates to runOne and is swallowed\u2014job may stay running. Same for any unexpected throw outside processJob inner catch.",
+      "suggested_fix": {
+        "approach": "Integration test: completeJob failure after audit failure still records failure or dead-letter.",
+        "estimated_effort": "medium"
+      },
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:00:00Z",
+          "actor": "runtime-bug-hunter",
+          "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "note_added",
+          "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        }
+      ]
+    },
+    {
+      "finding_id": "logic-db-json-parse-crash",
+      "type": "bug",
+      "category": "null-ref",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "loadProject can throw on malformed project_json string",
+      "description": "When project_json is a string, JSON.parse(j) is unwrapped. Corrupt DB or manual edits cause worker/API using loadProject to crash.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/db.ts",
+          "start_line": 96,
+          "end_line": 104,
+          "summary": "JSON.parse without try/catch",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        }
+      ],
+      "repro_steps": [
+        "INSERT invalid JSON string into lyra_projects.project_json for a row.",
+        "Invoke code path that loadProject (worker save/merge or any consumer)."
+      ],
+      "tests_needed": [
+        "Test loadProject returns null or safe empty project on parse error."
+      ],
+      "status": "open",
+      "impact": "When project_json is a string, JSON.parse(j) is unwrapped. Corrupt DB or manual edits cause worker/API using loadProject to crash.",
+      "suggested_fix": {
+        "approach": "Test loadProject returns null or safe empty project on parse error.",
+        "estimated_effort": "small"
+      },
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:00:00Z",
+          "actor": "runtime-bug-hunter",
+          "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "note_added",
+          "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        }
+      ]
+    },
+    {
+      "finding_id": "logic-list-projects-undefined-name",
+      "type": "bug",
+      "category": "edge-cases",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "listAllProjects may emit undefined project names",
+      "description": "j.name is used without fallback; malformed JSON yields undefined in synthesize portfolio lines.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/db.ts",
+          "start_line": 136,
+          "end_line": 145,
+          "summary": "name: j.name without default",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        },
+        {
+          "file": "worker/src/process-job.ts",
+          "start_line": 135,
+          "end_line": 139,
+          "summary": "p.name in template",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        }
+      ],
+      "repro_steps": [
+        "Store project_json without name field.",
+        "Run synthesize_project; inspect LLM blob for 'undefined' entries."
+      ],
+      "tests_needed": [
+        "listAllProjects coerces name to string or skips invalid rows."
+      ],
+      "status": "open",
+      "impact": "j.name is used without fallback; malformed JSON yields undefined in synthesize portfolio lines.",
+      "suggested_fix": {
+        "approach": "listAllProjects coerces name to string or skips invalid rows.",
+        "estimated_effort": "small"
+      },
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:00:00Z",
+          "actor": "runtime-bug-hunter",
+          "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "note_added",
+          "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        }
+      ]
+    },
+    {
+      "finding_id": "logic-resolveapps-dead-branch",
+      "type": "debt",
+      "category": "dead-code",
+      "severity": "nit",
+      "priority": "P3",
+      "title": "Redundant branch in resolveApps",
+      "description": "jobType === 'synthesize_project' returns PORTFOLIO_APPS; final return is identical. synthesize path never calls resolveApps from processJob. Dead/unreachable in practice or redundant.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/apps.ts",
+          "start_line": 40,
+          "end_line": 47,
+          "summary": "duplicate outcomes",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        }
+      ],
+      "repro_steps": [],
+      "tests_needed": [],
+      "status": "open",
+      "impact": "jobType === 'synthesize_project' returns PORTFOLIO_APPS; final return is identical. synthesize path never calls resolveApps from processJob. Dead/unreachable in practice or redundant.",
+      "suggested_fix": {
+        "approach": "Address per description; add regression tests.",
+        "estimated_effort": "small"
+      },
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:00:00Z",
+          "actor": "runtime-bug-hunter",
+          "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "note_added",
+          "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        }
+      ]
+    },
+    {
+      "finding_id": "logic-orchestration-unmount-race",
+      "type": "bug",
+      "category": "race-condition",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "OrchestrationPanel may setState after unmount",
+      "description": "useEffect runs load() without abort; load() always calls setLoading/setData/setJobs at end. Rapid unmount triggers React warnings or stale updates. finally block only returns when cancelled and does not guard load internals.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "dashboard/components/OrchestrationPanel.tsx",
+          "start_line": 91,
+          "end_line": 134,
+          "summary": "Promise.all in load; no cancelled check before setState",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        }
+      ],
+      "repro_steps": [
+        "Mount dashboard, navigate away before orchestration fetches complete.",
+        "Check console for React strict-mode setState on unmounted component warnings."
+      ],
+      "tests_needed": [
+        "Component test with unmount during pending fetch; assert no setState after unmount."
+      ],
+      "status": "open",
+      "impact": "useEffect runs load() without abort; load() always calls setLoading/setData/setJobs at end. Rapid unmount triggers React warnings or stale updates. finally block only returns when cancelled and does not guard load internals.",
+      "suggested_fix": {
+        "approach": "Component test with unmount during pending fetch; assert no setState after unmount.",
+        "estimated_effort": "small"
+      },
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:00:00Z",
+          "actor": "runtime-bug-hunter",
+          "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "note_added",
+          "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        }
+      ]
+    },
+    {
+      "finding_id": "logic-projectview-stale-selected",
+      "type": "bug",
+      "category": "async-bug",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "ProjectView handleAction uses stale findings for setSelected",
+      "description": "After refetchProject(), setSelected uses findings.find from pre-await closure. Detail panel can show wrong merged fields if list changed server-side.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "dashboard/components/ProjectView.tsx",
+          "start_line": 65,
+          "end_line": 72,
+          "summary": "findings from closure vs updated.findings",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        }
+      ],
+      "repro_steps": [
+        "Open finding detail, change status while another client edits same finding.",
+        "After action completes, verify panel shows server truth vs stale copy."
+      ],
+      "tests_needed": [
+        "handleAction uses updated?.findings?.find after refetch for setSelected."
+      ],
+      "status": "open",
+      "impact": "After refetchProject(), setSelected uses findings.find from pre-await closure. Detail panel can show wrong merged fields if list changed server-side.",
+      "suggested_fix": {
+        "approach": "handleAction uses updated?.findings?.find after refetch for setSelected.",
+        "estimated_effort": "small"
+      },
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:00:00Z",
+          "actor": "runtime-bug-hunter",
+          "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "note_added",
+          "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        }
+      ]
+    },
+    {
+      "finding_id": "logic-orchestration-silent-failure",
+      "type": "bug",
+      "category": "error-handling",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "Orchestration panel hides entirely when GET /api/orchestration fails",
+      "description": "If orchestrationRes.ok is false, setData is never updated; loading ends with data still null; UI returns null\u2014no error surface.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "dashboard/components/OrchestrationPanel.tsx",
+          "start_line": 98,
+          "end_line": 194,
+          "summary": "only setData on ok; !data return null",
+          "hook_type": "code_ref",
+          "symbol": "see_file"
+        }
+      ],
+      "repro_steps": [
+        "Break repo.list() or orchestration route (500).",
+        "Load dashboard; orchestration section absent without message."
+      ],
+      "tests_needed": [
+        "E2E or component: failed orchestration fetch shows error state."
+      ],
+      "status": "open",
+      "impact": "If orchestrationRes.ok is false, setData is never updated; loading ends with data still null; UI returns null\u2014no error surface.",
+      "suggested_fix": {
+        "approach": "E2E or component: failed orchestration fetch shows error state.",
+        "estimated_effort": "small"
+      },
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:00:00Z",
+          "actor": "runtime-bug-hunter",
+          "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "note_added",
+          "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        }
+      ]
+    },
+    {
+      "finding_id": "f-8a3f2e1c",
+      "type": "debt",
+      "category": "api-cost",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "One OpenAI chat completion per app in a single audit job multiplies token cost",
+      "description": "processJob iterates resolveApps() and calls auditWithLlm once per app with full expectations + gatherCodeContext per iteration. A job that audits N apps issues N separate chat.completions requests with max_tokens 4096 each, scaling cost linearly with app count.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Sequential per-app LLM calls inside processJob loop",
+          "file": "worker/src/process-job.ts",
+          "symbol": "processJob",
+          "start_line": 79,
+          "end_line": 107
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Each audit uses max_tokens 4096 and large user payload",
+          "file": "worker/src/llm.ts",
+          "symbol": "auditWithLlm",
+          "start_line": 54,
+          "end_line": 69
+        }
+      ],
+      "impact": "Portfolio-wide or multi-app jobs can produce 3\u201310\u00d7 API spend versus batched or single-pass strategies; also increases wall-clock time.",
+      "suggested_fix": {
+        "approach": "Batch apps into fewer calls (single prompt with section per app), cap apps per job, or use cheaper model for first pass with escalation.",
+        "affected_files": [
+          "worker/src/process-job.ts",
+          "worker/src/llm.ts"
+        ],
+        "estimated_effort": "medium",
+        "risk_notes": "Merged prompts may hit context limits; need chunking strategy.",
+        "tests_needed": [
+          "Integration test with 2+ apps asserting call count or mock fetch assertions"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-9b4e1d2a",
+      "type": "debt",
+      "category": "api-cost",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "GET /api/projects returns every finding for every project with no pagination",
+      "description": "The portfolio page loads the full project list via repo.list(), serializing entire findings arrays for all projects on initial paint. Large portfolios mean large JSON over the wire and heavy client parse/render work.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "API returns full project array from list()",
+          "file": "dashboard/app/api/projects/route.ts",
+          "symbol": "GET",
+          "start_line": 5,
+          "end_line": 10
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Client fetches all projects on mount with no pagination",
+          "file": "dashboard/app/page.tsx",
+          "symbol": "fetchProjects",
+          "start_line": 25,
+          "end_line": 54
+        }
+      ],
+      "impact": "Slow TTI and memory use on dashboards with many projects or thousands of findings; repeated full refetches after mutations.",
+      "suggested_fix": {
+        "approach": "Add summary endpoint (counts, blockers only) for grid; lazy-load full findings per project on drill-in.",
+        "affected_files": [
+          "dashboard/app/api/projects/route.ts",
+          "dashboard/lib/store-supabase.ts",
+          "dashboard/app/page.tsx"
+        ],
+        "estimated_effort": "medium",
+        "risk_notes": "Requires repository interface changes for listSummaries vs listFull.",
+        "tests_needed": [
+          "API contract test for summary shape"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-7c2d5a3e",
+      "type": "debt",
+      "category": "cache-miss",
+      "severity": "major",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "synthesize_project loads full project_json for all rows",
+      "description": "listAllProjects runs SELECT project_json FROM lyra_projects with no LIMIT, parsing every project's full findings into memory. Only titles/severities are needed for the synthesis blob (and even that is capped to 200 lines after fetch).",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Unbounded SELECT of all project JSON",
+          "file": "worker/src/db.ts",
+          "symbol": "listAllProjects",
+          "start_line": 133,
+          "end_line": 146
+        },
+        {
+          "hook_type": "data_shape",
+          "summary": "Worker then slices to 200 lines after loading all findings",
+          "expected_schema": "SQL or RPC returning only finding_id, title, severity per project",
+          "observed_schema": "Full project_json blobs for N projects loaded into Node",
+          "file": "worker/src/process-job.ts",
+          "start_line": 135,
+          "end_line": 141
+        }
+      ],
+      "impact": "DB memory/IO and Node heap spike as portfolio grows; wasted network from DB to worker.",
+      "suggested_fix": {
+        "approach": "Store denormalized finding summaries table or use JSONB path query / SQL to extract only needed fields with LIMIT per project.",
+        "affected_files": [
+          "worker/src/db.ts",
+          "worker/src/process-job.ts"
+        ],
+        "estimated_effort": "medium",
+        "risk_notes": "May need migration for summary columns.",
+        "tests_needed": [
+          "Job with 2 projects verifies query uses projection or limit"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-6e1f4b44",
+      "type": "debt",
+      "category": "api-cost",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "Worker polls lyra_audit_jobs on an interval when Redis is unset",
+      "description": "Without REDIS_URL, setInterval(poll, pollMs default 8000) issues SELECT ... WHERE status = queued repeatedly, creating steady DB QPS per worker instance.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Polling loop every LYRA_JOB_POLL_MS (default 8s)",
+          "file": "worker/src/index.ts",
+          "symbol": "main",
+          "start_line": 51,
+          "end_line": 70
+        }
+      ],
+      "impact": "Low per-query cost but continuous load; multiple workers multiply queries.",
+      "suggested_fix": {
+        "approach": "Document Redis for production; optionally use LISTEN/NOTIFY or longer idle backoff when queue empty.",
+        "affected_files": [
+          "worker/src/index.ts"
+        ],
+        "estimated_effort": "small",
+        "risk_notes": "LISTEN/NOTIFY adds operational complexity.",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-5d0e3c55",
+      "type": "debt",
+      "category": "bundle-size",
+      "severity": "minor",
+      "priority": "P3",
+      "confidence": "inference",
+      "title": "bullmq and ioredis in Next server dependencies may inflate serverless bundle",
+      "description": "dashboard depends on bullmq; orchestration jobs route imports Queue from bullmq. Serverless/edge deployments trace this into the API bundle, increasing cold start and deploy size relative to a thin HTTP enqueue to external Redis.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "bullmq Queue used in API route",
+          "file": "dashboard/app/api/orchestration/jobs/route.ts",
+          "symbol": "POST",
+          "start_line": 1,
+          "end_line": 5
+        },
+        {
+          "hook_type": "config_key",
+          "summary": "dashboard/package.json lists bullmq dependency",
+          "config_key": "dependencies.bullmq",
+          "config_value": "^5.71.0",
+          "file": "dashboard/package.json"
+        }
+      ],
+      "impact": "Larger Next server traces and slower cold starts on platforms that bundle API routes.",
+      "suggested_fix": {
+        "approach": "Measure next build trace; if large, move enqueue to worker-only or use minimal redis client.",
+        "affected_files": [
+          "dashboard/app/api/orchestration/jobs/route.ts",
+          "dashboard/package.json"
+        ],
+        "estimated_effort": "small",
+        "risk_notes": "Refactor enqueue path.",
+        "tests_needed": [
+          "Compare .next/server trace size before/after"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4c9d2e66",
+      "type": "debt",
+      "category": "render-waste",
+      "severity": "minor",
+      "priority": "P3",
+      "confidence": "inference",
+      "title": "OrchestrationPanel issues three parallel fetches on every mount without cache or stale-while-revalidate",
+      "description": "load() hits /api/orchestration, /api/orchestration/jobs, /api/durable-state together on each panel mount. No SWR/React Query dedupe across navigations; user switching views may refetch identical data.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Promise.all of three internal APIs on load",
+          "file": "dashboard/components/OrchestrationPanel.tsx",
+          "symbol": "load",
+          "start_line": 91,
+          "end_line": 119
+        }
+      ],
+      "impact": "Extra server load and latency when revisiting portfolio; minor compared to full-project payload issue.",
+      "suggested_fix": {
+        "approach": "Add SWR with dedupingInterval or lift orchestration state to a parent provider.",
+        "affected_files": [
+          "dashboard/components/OrchestrationPanel.tsx"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-3b8c1f77",
+      "type": "question",
+      "category": "missing-index",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "speculation",
+      "title": "Confirm index on lyra_audit_jobs (status, created_at) for worker poll query",
+      "description": "Poll uses WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1. Without a supporting index this may degrade to sequential scan as job history grows. Schema not verified in-repo.",
+      "proof_hooks": [
+        {
+          "hook_type": "query",
+          "summary": "Worker dequeue poll pattern",
+          "query_text": "SELECT id FROM lyra_audit_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"
+        },
+        {
+          "hook_type": "command",
+          "summary": "Run EXPLAIN ANALYZE on production-like data volume",
+          "command": "EXPLAIN (ANALYZE, BUFFERS) SELECT id FROM lyra_audit_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1;",
+          "expected": "Index Scan using partial or composite index on (status, created_at)",
+          "actual": "Unknown until run against populated DB"
+        }
+      ],
+      "impact": "Possible latency spikes and CPU on large lyra_audit_jobs tables.",
+      "suggested_fix": {
+        "approach": "If Seq Scan, add CREATE INDEX CONCURRENTLY ... ON lyra_audit_jobs (created_at) WHERE status = 'queued';",
+        "affected_files": [],
+        "estimated_effort": "trivial",
+        "tests_needed": [
+          "EXPLAIN on staging"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-auth-bypass-dashboard-apis-001",
+      "type": "enhancement",
+      "category": "auth-bypass",
+      "severity": "blocker",
+      "priority": "P0",
+      "confidence": "evidence",
+      "title": "Dashboard APIs allow unauthenticated read/write of projects and findings",
+      "description": "Project and mutation routes call getRepository() with no session, API key, or middleware. Attack: anyone who can reach the deployed origin issues GET /api/projects to list every project and findings, PUT/DELETE to destroy or overwrite data, POST /api/import or POST /api/sync/audit to inject or merge findings, and POST/DELETE /api/engine/queue to manipulate the repair queue. No per-user isolation. Realistic when the dashboard is hosted on Netlify/Vercel without network restrictions.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "GET/POST /api/projects have no auth before repo.list/create",
+          "file": "dashboard/app/api/projects/route.ts",
+          "symbol": "GET, POST",
+          "start_line": 5,
+          "end_line": 46
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "PUT/DELETE project by name with no authorization",
+          "file": "dashboard/app/api/projects/[name]/route.ts",
+          "symbol": "PUT, DELETE",
+          "start_line": 25,
+          "end_line": 67
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "POST /api/import creates/updates projects from arbitrary JSON",
+          "file": "dashboard/app/api/import/route.ts",
+          "symbol": "POST",
+          "start_line": 6,
+          "end_line": 52
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "POST /api/sync/audit merges filesystem findings into DB without auth",
+          "file": "dashboard/app/api/sync/audit/route.ts",
+          "symbol": "POST",
+          "start_line": 39,
+          "end_line": 128
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Engine queue readable/writable without auth",
+          "file": "dashboard/app/api/engine/queue/route.ts",
+          "symbol": "GET, POST, DELETE",
+          "start_line": 11,
+          "end_line": 85
+        },
+        {
+          "hook_type": "repro_steps",
+          "summary": "Unauthenticated read of all projects",
+          "steps": [
+            "Deploy or run dashboard with DATABASE_URL set.",
+            "curl -s https://<host>/api/projects",
+            "Observe 200 JSON with projects and findings without Authorization."
+          ],
+          "route": "/api/projects"
+        }
+      ],
+      "repro_steps": [
+        "Run dashboard with DB containing projects.",
+        "curl -s <origin>/api/projects",
+        "Confirm full project and finding payload without credentials."
+      ],
+      "impact": "Full confidentiality and integrity loss for audit data; possible destruction of audit history.",
+      "suggested_fix": {
+        "approach": "Require Authorization: Bearer <ORCHESTRATION_ENQUEUE_SECRET> or DASHBOARD_API_SECRET on all /api/* except explicit health; or Netlify/Vercel auth + Next middleware. For multi-user, Supabase Auth + RLS on project rows.",
+        "affected_files": [
+          "dashboard/app/api/projects/route.ts",
+          "dashboard/app/api/projects/[name]/route.ts",
+          "dashboard/app/api/import/route.ts",
+          "dashboard/app/api/sync/**/*.ts",
+          "dashboard/app/api/engine/**/*.ts",
+          "dashboard/middleware.ts"
+        ],
+        "estimated_effort": "medium",
+        "risk_notes": "Breaking for unauthenticated CI; document header for cron/automation.",
+        "tests_needed": [
+          "Unauthenticated GET /api/projects \u2192 401",
+          "Valid Bearer \u2192 200"
+        ]
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": "open_findings.json was empty."
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-data-leakage-orchestration-get-001",
+      "type": "enhancement",
+      "category": "data-leakage",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "GET /api/orchestration/jobs exposes job and run history without authentication",
+      "description": "POST is protected when ORCHESTRATION_ENQUEUE_SECRET is set, but GET returns recent jobs and runs to any caller. Attack: reconnaissance on audit schedules and project names.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "GET has no authorize()",
+          "file": "dashboard/app/api/orchestration/jobs/route.ts",
+          "symbol": "GET",
+          "start_line": 30,
+          "end_line": 57
+        }
+      ],
+      "impact": "Operational metadata leak; aids targeted abuse.",
+      "suggested_fix": {
+        "approach": "Apply same Bearer/header check as POST for GET.",
+        "affected_files": [
+          "dashboard/app/api/orchestration/jobs/route.ts"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "GET without secret \u2192 401 when secret configured"
+        ]
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [
+        "f-auth-bypass-dashboard-apis-001"
+      ],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-auth-bypass-linear-push-001",
+      "type": "enhancement",
+      "category": "auth-bypass",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "POST /api/sync/linear/push callable without auth; burns LINEAR_API_KEY",
+      "description": "Any client can POST with projectName to create/update Linear issues using the server LINEAR_API_KEY. Attack: spam Linear, exhaust rate limits, expose finding titles in a shared workspace.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "POST validates Linear config and body only, not caller",
+          "file": "dashboard/app/api/sync/linear/push/route.ts",
+          "symbol": "POST",
+          "start_line": 20,
+          "end_line": 46
+        }
+      ],
+      "impact": "Abuse of third-party API; unsolicited issues.",
+      "suggested_fix": {
+        "approach": "Require same API secret as other mutations before calling Linear APIs.",
+        "affected_files": [
+          "dashboard/app/api/sync/linear/push/route.ts"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "POST without auth \u2192 401"
+        ]
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [
+        "f-auth-bypass-dashboard-apis-001"
+      ],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-data-leakage-durable-state-001",
+      "type": "enhancement",
+      "category": "data-leakage",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "GET /api/durable-state returns orchestration config and events without auth",
+      "description": "Exposes durable state configuration and recent events to any caller.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "No auth on GET",
+          "file": "dashboard/app/api/durable-state/route.ts",
+          "symbol": "GET",
+          "start_line": 4,
+          "end_line": 18
+        }
+      ],
+      "impact": "Information disclosure for orchestration behavior.",
+      "suggested_fix": {
+        "approach": "Gate with shared secret or session.",
+        "affected_files": [
+          "dashboard/app/api/durable-state/route.ts"
+        ],
+        "estimated_effort": "trivial"
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [
+        "f-auth-bypass-dashboard-apis-001"
+      ],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-dependency-vuln-next-001",
+      "type": "debt",
+      "category": "dependency-vuln",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "npm audit: Next.js moderate advisory (image cache disk growth)",
+      "description": "GHSA-3x4c-7xq6-9pq8: unbounded next/image cache. Risk mainly disk exhaustion on persistent Node hosts using next/image heavily.",
+      "proof_hooks": [
+        {
+          "hook_type": "command",
+          "summary": "npm audit reports 1 moderate next issue",
+          "command": "cd dashboard && npm audit",
+          "expected": "0 vulnerabilities",
+          "actual": "1 moderate (next)"
+        },
+        {
+          "hook_type": "config_key",
+          "summary": "next dependency range",
+          "file": "dashboard/package.json",
+          "config_key": "dependencies.next"
+        }
+      ],
+      "impact": "Potential DoS via disk fill on long-running image-heavy deployments.",
+      "suggested_fix": {
+        "approach": "Upgrade Next to patched release per advisory when feasible.",
+        "affected_files": [
+          "dashboard/package.json"
+        ],
+        "estimated_effort": "small",
+        "risk_notes": "Major version bump may need app changes."
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-error-disclosure-api-001",
+      "type": "debt",
+      "category": "data-leakage",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "inference",
+      "title": "API routes return raw Error.message to clients on 500",
+      "description": "Handlers often return e.message in JSON. May leak DB or path hints if errors are triggered.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "500 includes exception message",
+          "file": "dashboard/app/api/projects/route.ts",
+          "symbol": "GET",
+          "start_line": 11,
+          "end_line": 14
+        }
+      ],
+      "impact": "Minor information disclosure.",
+      "suggested_fix": {
+        "approach": "Generic client message in production; log server-side.",
+        "affected_files": [
+          "dashboard/app/api/**/*.ts"
+        ],
+        "estimated_effort": "small"
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-2ca6362f",
+      "type": "bug",
+      "category": "missing-state",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "Failed /api/projects shows empty portfolio with no error",
+      "description": "fetchProjects only sets projects when res.ok; on network or 5xx failure the user sees the same empty state as a truly empty account ('No projects yet'), with only a console.error. No retry or error message.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Non-OK response leaves projects unchanged; finally clears loading",
+          "file": "dashboard/app/page.tsx",
+          "symbol": "fetchProjects",
+          "start_line": 25,
+          "end_line": 36
+        },
+        {
+          "hook_type": "ui_path",
+          "summary": "Load app with API down \u2192 misleading empty onboarding"
+        }
+      ],
+      "repro_steps": [
+        "Block or fail GET /api/projects (e.g. stop API or return 500).",
+        "Open /. Portfolio shows empty state as if there are no projects."
+      ],
+      "impact": "Users may believe data is lost or that onboarding is required; support burden and wrong actions.",
+      "suggested_fix": {
+        "approach": "Track fetch error state; show inline error with retry; distinguish empty vs error.",
+        "affected_files": [
+          "dashboard/app/page.tsx"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "E2E or integration: mock 500 on /api/projects, assert error UI"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4ade74f4",
+      "type": "enhancement",
+      "category": "missing-error-boundary",
+      "severity": "major",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "No React error boundary around main app shell",
+      "description": "Root layout renders children with no error boundary. Any uncaught render error in portfolio/engine/project view white-screens the full app with Next.js default error UI and no Lyra-branded recovery.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Layout wraps only body + children, no ErrorBoundary",
+          "file": "dashboard/app/layout.tsx",
+          "symbol": "RootLayout",
+          "start_line": 27,
+          "end_line": 39
+        }
+      ],
+      "impact": "Single component bug can remove all navigation and context; poor recovery UX.",
+      "suggested_fix": {
+        "approach": "Add app/error.tsx and/or segment error boundary with reset and link back to portfolio.",
+        "affected_files": [
+          "dashboard/app/layout.tsx",
+          "dashboard/app/error.tsx"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "Trigger throw in dev, confirm branded fallback"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-835f3b96",
+      "type": "bug",
+      "category": "broken-flow",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "inference",
+      "title": "Engine view shows 'no routing config' when APIs fail",
+      "description": "On fetch failure, routing defaults to {} and UI shows 'no routing config found' even when config may exist. Indistinguishable from a real empty config.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "catch swallows error; empty routes branch",
+          "file": "dashboard/components/EngineView.tsx",
+          "symbol": "fetchAll",
+          "start_line": 127,
+          "end_line": 252
+        }
+      ],
+      "impact": "Misleading diagnosis for operators debugging connectivity vs config.",
+      "suggested_fix": {
+        "approach": "Separate error state; show 'Could not load routing' with retry.",
+        "affected_files": [
+          "dashboard/components/EngineView.tsx"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "Mock failed routing fetch, assert error copy"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-622a58b0",
+      "type": "bug",
+      "category": "missing-state",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "Orchestration job dispatch errors are silent in the UI",
+      "description": "dispatchAction and enqueueWeekly throw on failure but callers do not catch; errors surface only in console. User sees loading ellipsis stop with no explanation.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "throw new Error after !res.ok; onClick handlers have no try/catch UI",
+          "file": "dashboard/components/OrchestrationPanel.tsx",
+          "symbol": "dispatchAction",
+          "start_line": 146,
+          "end_line": 165
+        }
+      ],
+      "impact": "Operators cannot tell auth failure from network failure.",
+      "suggested_fix": {
+        "approach": "Catch errors; set toast or inline error state next to Run/enqueue buttons.",
+        "affected_files": [
+          "dashboard/components/OrchestrationPanel.tsx"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "Mock 401 POST /api/orchestration/jobs, assert error message visible"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4bad4bea",
+      "type": "debt",
+      "category": "copy-mismatch",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "evidence",
+      "title": "Inconsistent 'import' vs 'onboard' for the same flow",
+      "description": "Header button says 'import project'; modal title 'Onboard project'; CTA 'Onboard'; empty state says 'onboard project'. Same primary action uses three phrasings.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "import project button",
+          "file": "dashboard/app/page.tsx",
+          "start_line": 243,
+          "end_line": 249
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Onboard project / Onboard",
+          "file": "dashboard/components/ImportModal.tsx",
+          "symbol": "ImportModal",
+          "start_line": 97,
+          "end_line": 234
+        }
+      ],
+      "impact": "Minor cognitive load; hurts polish and search/help consistency.",
+      "suggested_fix": {
+        "approach": "Pick one term (e.g. 'Onboard') and use across button, modal title, and empty state.",
+        "affected_files": [
+          "dashboard/app/page.tsx",
+          "dashboard/components/ImportModal.tsx"
+        ],
+        "estimated_effort": "trivial",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-f873a442",
+      "type": "debt",
+      "category": "copy-mismatch",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "evidence",
+      "title": "Linear sync uses native alert for errors",
+      "description": "Push/pull failures call alert(), unlike other surfaces that use inline text. Jarring and inconsistent with app tone.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "alert on push failure",
+          "file": "dashboard/components/LinearSync.tsx",
+          "symbol": "push",
+          "start_line": 47,
+          "end_line": 49
+        }
+      ],
+      "impact": "Breaks flow on mobile/small windows; feels unpolished.",
+      "suggested_fix": {
+        "approach": "Replace with inline error banner matching ImportModal/FindingDetail patterns.",
+        "affected_files": [
+          "dashboard/components/LinearSync.tsx"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-809bce6b",
+      "type": "debt",
+      "category": "a11y-gap",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "Findings search field has no programmatic label",
+      "description": "Input uses placeholder 'search findings\u2026' only. Labels should be associated via htmlFor/id or aria-label for screen readers.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Bare text input, no aria-label",
+          "file": "dashboard/components/ProjectView.tsx",
+          "start_line": 193,
+          "end_line": 205
+        }
+      ],
+      "impact": "Screen reader users may not understand the field purpose.",
+      "suggested_fix": {
+        "approach": "Add aria-label='Search findings' or visible label with htmlFor.",
+        "affected_files": [
+          "dashboard/components/ProjectView.tsx"
+        ],
+        "estimated_effort": "trivial",
+        "tests_needed": [
+          "axe or manual SR check"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-cba20650",
+      "type": "debt",
+      "category": "a11y-gap",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "inference",
+      "title": "Custom role=button cards handle Enter but not Space",
+      "description": "NextActionCard, FindingRow, ProjectCard use role=button and onKeyDown for Enter only. WCAG expects Space to activate actionable elements.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Enter-only key handler",
+          "file": "dashboard/components/NextActionCard.tsx",
+          "start_line": 46,
+          "end_line": 50
+        }
+      ],
+      "impact": "Keyboard users who use Space may think control is broken.",
+      "suggested_fix": {
+        "approach": "Handle Space (prevent scroll) or use native <button> layout.",
+        "affected_files": [
+          "dashboard/components/NextActionCard.tsx",
+          "dashboard/components/FindingRow.tsx",
+          "dashboard/components/ProjectCard.tsx"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": [
+          "Keyboard: Tab to card, Space activates"
+        ]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4a2c0811",
+      "type": "question",
+      "category": "copy-mismatch",
+      "severity": "minor",
+      "priority": "P3",
+      "confidence": "speculation",
+      "title": "Product voice undefined: Title Case nav vs lowercase CTAs",
+      "description": "Sidebar uses 'Portfolio', 'Engine', 'Agents' in title case; primary actions use lowercase ('import project', 'sync now'). No documented voice guide. Recommend: one sentence-level rule (e.g. 'UI chrome: Title Case; actions: sentence case' or all lowercase for tool aesthetic).",
+      "proof_hooks": [
+        {
+          "hook_type": "ui_path",
+          "summary": "Compare Shell nav labels vs page primary buttons"
+        }
+      ],
+      "impact": "Inconsistent future copy without a single source of truth.",
+      "suggested_fix": {
+        "approach": "Add docs/VOICE.md or CONTRIBUTING UX section; align Shell + page.tsx buttons in one pass.",
+        "affected_files": [
+          "dashboard/components/Shell.tsx",
+          "dashboard/app/page.tsx"
+        ],
+        "estimated_effort": "medium",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-debt-logic-json-schema",
+      "type": "debt",
+      "category": "audit-pipeline",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "logic agent JSON omitted run_metadata; proof_hooks non-schema",
+      "description": "logic-20260318-120000.json lacked run_metadata and used history_events / proof_hooks without hook_type. Findings merged after synthesizer normalization; re-export for audit trail.",
+      "proof_hooks": [
+        {
+          "hook_type": "artifact_ref",
+          "summary": "Source file missing required run_metadata",
+          "artifact_path": "audits/lyra-agent-outputs/logic-20260318-120000.json"
+        }
+      ],
+      "impact": "Weaker provenance on logic audit run metadata.",
+      "suggested_fix": {
+        "approach": "Re-run runtime-bug-hunter emitting full v1.1.0 agent_output.",
+        "estimated_effort": "trivial"
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-19T00:44:27Z",
+          "actor": "synthesizer",
+          "event": "created"
+        }
+      ]
+    }
+  ],
+  "rollups": {
+    "by_severity": {
+      "blocker": 1,
+      "major": 14,
+      "minor": 20,
+      "nit": 6
+    },
+    "by_category": {
+      "missing-rls": 1,
+      "constraint-violation": 1,
+      "type-drift": 1,
+      "validation-gap": 1,
+      "ci-gap": 1,
+      "missing-error-boundary": 2,
+      "deploy-risk": 2,
+      "logging-gap": 2,
+      "error-handling": 3,
+      "null-ref": 1,
+      "edge-cases": 1,
+      "dead-code": 1,
+      "race-condition": 1,
+      "async-bug": 1,
+      "api-cost": 3,
+      "cache-miss": 1,
+      "bundle-size": 1,
+      "render-waste": 1,
+      "missing-index": 1,
+      "auth-bypass": 2,
+      "data-leakage": 3,
+      "dependency-vuln": 1,
+      "missing-state": 2,
+      "broken-flow": 1,
+      "copy-mismatch": 3,
+      "a11y-gap": 2,
+      "audit-pipeline": 1
+    },
+    "by_type": {
+      "bug": 12,
+      "enhancement": 8,
+      "debt": 18,
+      "question": 3
+    },
+    "by_status": {
+      "open": 41
+    }
+  },
+  "next_actions": [
+    {
+      "action": "Add RLS (or documented server-only DB roles) for lyra_projects, lyra_audit_jobs, lyra_audit_runs",
+      "finding_id": "f-data-missing-rls-core",
+      "rationale": "Largest blast radius if Supabase keys or PostgREST surface is misused."
+    },
+    {
+      "action": "Add FK from job/run project_name to lyra_projects(name) after data cleanup",
+      "finding_id": "f-data-fk-project-name-jobs",
+      "rationale": "Prevents orphaned orchestration references."
+    },
+    {
+      "action": "Extend LyraAuditRunRow + rowRun to include payload",
+      "finding_id": "f-data-runrow-payload-drift",
+      "rationale": "Quick win; aligns types with schema."
+    },
+    {
+      "action": "Align job_type DB constraint with LyraJobType",
+      "finding_id": "f-data-job-type-unconstrained",
+      "rationale": "Defense in depth for orchestration pipeline."
+    },
+    {
+      "action": "Add minimal GitHub Actions workflow: lint + tsc --noEmit + build for dashboard",
+      "finding_id": "f-1a9e4c7b",
+      "rationale": "Highest leverage to catch breakage before deploy."
+    },
+    {
+      "action": "Add app/error.tsx (and global-error if needed) for Next.js dashboard",
+      "finding_id": "f-2b8d3e6a",
+      "rationale": "Major UX and recovery gap for any runtime error."
+    },
+    {
+      "action": "Implement GET /api/health for Netlify/uptime checks",
+      "finding_id": "f-3c7f2a91",
+      "rationale": "Cheap deploy verification and monitoring."
+    },
+    {
+      "action": "Resolve Netlify vs Vercel canonical deploy and document",
+      "finding_id": "f-6f4c9b62",
+      "rationale": "Unblocks consistent CI/CD and secrets targeting."
+    }
+  ],
+  "diff_summary": {
+    "compared_against": "none",
+    "new_findings": [
+      "f-data-missing-rls-core",
+      "f-data-fk-project-name-jobs",
+      "f-data-runrow-payload-drift",
+      "f-data-job-type-unconstrained",
+      "f-1a9e4c7b",
+      "f-2b8d3e6a",
+      "f-3c7f2a91",
+      "f-4d6e1b84",
+      "f-5e5d0c73",
+      "f-6f4c9b62",
+      "logic-stuck-job-prompt-load",
+      "logic-worker-runone-swallow",
+      "logic-db-json-parse-crash",
+      "logic-list-projects-undefined-name",
+      "logic-resolveapps-dead-branch",
+      "logic-orchestration-unmount-race",
+      "logic-projectview-stale-selected",
+      "logic-orchestration-silent-failure",
+      "f-8a3f2e1c",
+      "f-9b4e1d2a",
+      "f-7c2d5a3e",
+      "f-6e1f4b44",
+      "f-5d0e3c55",
+      "f-4c9d2e66",
+      "f-3b8c1f77",
+      "f-auth-bypass-dashboard-apis-001",
+      "f-data-leakage-orchestration-get-001",
+      "f-auth-bypass-linear-push-001",
+      "f-data-leakage-durable-state-001",
+      "f-dependency-vuln-next-001",
+      "f-error-disclosure-api-001",
+      "f-2ca6362f",
+      "f-4ade74f4",
+      "f-835f3b96",
+      "f-622a58b0",
+      "f-4bad4bea",
+      "f-f873a442",
+      "f-809bce6b",
+      "f-cba20650",
+      "f-4a2c0811",
+      "f-debt-logic-json-schema"
+    ],
+    "resolved_findings": [],
+    "changed_severity": [],
+    "changed_status": [],
+    "converted_type": [],
+    "merged_findings": []
+  },
+  "ranked_plan": {
+    "top_fixes": [
+      {
+        "finding_id": "f-auth-bypass-dashboard-apis-001",
+        "why_now": "P0 blocker \u2014 Dashboard APIs allow unauthenticated read/write of projects and findings",
+        "risk": "Full confidentiality and integrity loss for audit data; possible destruction of audit history.",
+        "estimated_effort": "medium"
+      },
+      {
+        "finding_id": "f-data-missing-rls-core",
+        "why_now": "P0 major \u2014 Supabase tables lyra_* created with no RLS or policies",
+        "risk": "Cross-tenant or public exposure if tables are ever queried with a role subject to RLS defaults, or if anon/service keys leak; no database-level isolation for multi-tenant scenarios.",
+        "estimated_effort": "small"
+      },
+      {
+        "finding_id": "f-1a9e4c7b",
+        "why_now": "P0 major \u2014 No GitHub Actions (or other) CI pipeline",
+        "risk": "Broken builds or type errors can reach Netlify/production without review; regressions discovered only after deploy or manual runs.",
+        "estimated_effort": "small"
+      },
+      {
+        "finding_id": "f-2b8d3e6a",
+        "why_now": "P0 major \u2014 Next.js App Router has no route or global error boundary",
+        "risk": "Users see generic error states; no consistent branded recovery or error reporting hook from the UI tree.",
+        "estimated_effort": "small"
+      },
+      {
+        "finding_id": "f-3c7f2a91",
+        "why_now": "P1 major \u2014 No dedicated health check endpoint for load balancers or uptime",
+        "risk": "Uptime monitors and deploy verification rely on full pages; DB/API failures may be harder to distinguish from static success.",
+        "estimated_effort": "small"
+      },
+      {
+        "finding_id": "f-data-leakage-orchestration-get-001",
+        "why_now": "P1 major \u2014 GET /api/orchestration/jobs exposes job and run history without authentication",
+        "risk": "Operational metadata leak; aids targeted abuse.",
+        "estimated_effort": "small"
+      },
+      {
+        "finding_id": "f-auth-bypass-linear-push-001",
+        "why_now": "P1 major \u2014 POST /api/sync/linear/push callable without auth; burns LINEAR_API_KEY",
+        "risk": "Abuse of third-party API; unsolicited issues.",
+        "estimated_effort": "small"
+      },
+      {
+        "finding_id": "f-2ca6362f",
+        "why_now": "P1 major \u2014 Failed /api/projects shows empty portfolio with no error",
+        "risk": "Users may believe data is lost or that onboarding is required; support burden and wrong actions.",
+        "estimated_effort": "small"
+      },
+      {
+        "finding_id": "f-data-fk-project-name-jobs",
+        "why_now": "P1 major \u2014 lyra_audit_jobs.project_name not FK-referenced to lyra_projects",
+        "risk": "Orphan job references, confusing orchestration UI, and worker behavior when project missing.",
+        "estimated_effort": "medium"
+      },
+      {
+        "finding_id": "f-8a3f2e1c",
+        "why_now": "P1 major \u2014 One OpenAI chat completion per app in a single audit job multiplies token cost",
+        "risk": "Portfolio-wide or multi-app jobs can produce 3\u201310\u00d7 API spend versus batched or single-pass strategies; also increases wall-clock time.",
+        "estimated_effort": "medium"
+      }
+    ],
+    "commit_plan": [
+      {
+        "title": "fix(audit): address P0 data, deploy, and worker reliability",
+        "finding_ids": [
+          "f-data-missing-rls-core",
+          "f-1a9e4c7b",
+          "f-2b8d3e6a",
+          "f-auth-bypass-dashboard-apis-001",
+          "logic-stuck-job-prompt-load"
+        ],
+        "steps": [
+          "Add RLS migration or document server-only DB + restrict roles",
+          "Add GitHub Actions: lint, tsc --noEmit, build",
+          "Add dashboard/app/error.tsx",
+          "Protect /api/* with shared secret or auth middleware",
+          "Wrap process-job post-claim path in try/finally to completeJob on failure"
+        ],
+        "affected_files": [
+          "supabase/migrations/",
+          ".github/workflows/",
+          "dashboard/app/error.tsx",
+          "dashboard/app/api/",
+          "worker/src/process-job.ts"
+        ],
+        "tests_or_checks": [
+          "npm run lint && npx tsc --noEmit in dashboard",
+          "Policy/integration test for RLS if enabled",
+          "Worker unit test: loadPrompts throws after claim"
+        ]
+      }
+    ],
+    "regression_checklist": [
+      "Dashboard: npm run lint && npx tsc --noEmit && npm run build",
+      "Worker: npm run build && smoke processJob happy path",
+      "API: curl orchestration routes with/without secret returns expected 401/200",
+      "DB: if RLS added, verify anon cannot read lyra_*",
+      "UI: trigger intentional React error; branded error boundary appears"
+    ],
+    "reaudit_plan": [
+      {
+        "agent": "runtime-bug-hunter",
+        "scope": "Remaining dashboard app/api/components",
+        "reason": "coverage_complete false \u2014 full dashboard pass"
+      },
+      {
+        "agent": "performance-auditor",
+        "scope": "Suite follow-up",
+        "reason": "Did not exhaust every API route or static asset; focused on hot paths (projects API, worker job loop, LLM calls, orchestration fetches)."
+      },
+      {
+        "agent": "security-auditor",
+        "scope": "Suite follow-up",
+        "reason": "Worker process, hosting-specific hardening, and all client components for secret handling not exhaustively reviewed; CORS assumed Next defaults."
+      }
+    ]
+  }
+}

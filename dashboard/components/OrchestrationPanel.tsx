@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { apiFetch } from "@/lib/api-fetch";
 import type { PortfolioOrchestrationState, OrchestrationActionKind } from "@/lib/orchestration";
 import type { DurableStateSummary } from "@/lib/durable-state";
 import type { LyraAuditJobRow, LyraAuditRunRow } from "@/lib/orchestration-jobs";
@@ -90,9 +91,9 @@ export function OrchestrationPanel() {
 
   const load = useCallback(async () => {
     const [orchestrationRes, jobsRes, durableRes] = await Promise.all([
-      fetch("/api/orchestration"),
-      fetch("/api/orchestration/jobs"),
-      fetch("/api/durable-state"),
+      apiFetch("/api/orchestration"),
+      apiFetch("/api/orchestration/jobs"),
+      apiFetch("/api/durable-state"),
     ]);
 
     if (orchestrationRes.ok) {
@@ -148,7 +149,7 @@ export function OrchestrationPanel() {
       setDispatching(projectName ? `${action}:${projectName}` : action);
       try {
         const body = actionToJob(action, projectName);
-        const res = await fetch("/api/orchestration/jobs", {
+        const res = await apiFetch("/api/orchestration/jobs", {
           method: "POST",
           headers: authHeaders(),
           body: JSON.stringify(body),
@@ -168,7 +169,7 @@ export function OrchestrationPanel() {
   const enqueueWeekly = useCallback(async () => {
     setDispatching("weekly_audit");
     try {
-      const res = await fetch("/api/orchestration/jobs", {
+      const res = await apiFetch("/api/orchestration/jobs", {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({ job_type: "weekly_audit" }),

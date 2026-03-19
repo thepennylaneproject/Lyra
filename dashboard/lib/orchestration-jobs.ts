@@ -35,6 +35,7 @@ export interface LyraAuditRunRow {
   status: string;
   summary: string | null;
   findings_added: number;
+  payload: Record<string, unknown>;
   created_at: string;
 }
 
@@ -82,6 +83,10 @@ function rowRun(r: Record<string, unknown>): LyraAuditRunRow {
     status: String(r.status),
     summary: r.summary != null ? String(r.summary) : null,
     findings_added: Number(r.findings_added ?? 0),
+    payload:
+      typeof r.payload === "object" && r.payload !== null
+        ? (r.payload as Record<string, unknown>)
+        : {},
     created_at:
       r.created_at instanceof Date
         ? r.created_at.toISOString()

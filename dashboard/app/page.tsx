@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { Project, FindingStatus } from "@/lib/types";
+import { apiFetch } from "@/lib/api-fetch";
+import { DashboardLogin } from "@/components/DashboardLogin";
 import { MetricCard } from "@/components/MetricCard";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectCard } from "@/components/ProjectCard";
@@ -20,17 +22,33 @@ export default function Home() {
   const [activeView,      setActiveView]        = useState<NavView>("portfolio");
   const [showImport,       setShowImport]        = useState(false);
   const [loading,          setLoading]           = useState(true);
+  const [needsAuth,        setNeedsAuth]         = useState(false);
+  const [projectsError,    setProjectsError]     = useState<string | null>(null);
   const [queuedFindingIds, setQueuedFindingIds] = useState<Set<string>>(new Set());
 
   const fetchProjects = useCallback(async () => {
+    setProjectsError(null);
     try {
-      const res = await fetch("/api/projects");
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(Array.isArray(data) ? data : []);
+      const res = await apiFetch("/api/projects");
+      if (res.status === 401) {
+        setNeedsAuth(true);
+        setProjects([]);
+        return;
       }
+      setNeedsAuth(false);
+      if (!res.ok) {
+        setProjectsError(`Could not load projects (${res.status}). Try again.`);
+        setProjects([]);
+        return;
+      }
+      const data = await res.json();
+      setProjects(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("Failed to fetch projects", e);
+      setProjectsError(
+        e instanceof Error ? e.message : "Network error loading projects."
+      );
+      setProjects([]);
     } finally {
       setLoading(false);
     }
@@ -38,7 +56,7 @@ export default function Home() {
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await fetch("/api/engine/queue");
+      const res = await apiFetch("/api/engine/queue");
       if (res.ok) {
         const data = await res.json();
         setQueuedFindingIds(
@@ -56,7 +74,7 @@ export default function Home() {
   const refetchProject = useCallback(async (): Promise<Project | null> => {
     if (!activeProject) return null;
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(activeProject)}`);
+      const res = await apiFetch(`/api/projects/${encodeURIComponent(activeProject)}`);
       if (!res.ok) return null;
       const p = await res.json();
       setProjects((prev) => prev.map((x) => (x.name === activeProject ? p : x)));
@@ -68,7 +86,7 @@ export default function Home() {
 
   const onUpdateFinding = useCallback(
     async (projectName: string, findingId: string, status: FindingStatus) => {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/projects/${encodeURIComponent(projectName)}/findings/${encodeURIComponent(findingId)}`,
         {
           method:  "PATCH",
@@ -82,7 +100,7 @@ export default function Home() {
   );
 
   const handleImport = useCallback(async (project: Project) => {
-    const res = await fetch("/api/projects", {
+    const res = await apiFetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(project),
@@ -98,7 +116,7 @@ export default function Home() {
   const handleRemove = useCallback(async (name: string) => {
     if (!confirm(`Remove ${name}?`)) return;
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(name)}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/projects/${encodeURIComponent(name)}`, { method: "DELETE" });
       if (res.ok) {
         setProjects((prev) => prev.filter((p) => p.name !== name));
         if (activeProject === name) setActiveProject(null);
@@ -109,7 +127,7 @@ export default function Home() {
   }, [activeProject]);
 
   const handleQueueRepair = useCallback(async (findingId: string, projectName: string) => {
-    const res = await fetch("/api/engine/queue", {
+    const res = await apiFetch("/api/engine/queue", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ finding_id: findingId, project_name: projectName }),
@@ -131,6 +149,18 @@ export default function Home() {
     setActiveView(view);
     setActiveProject(null); // Return to view root when navigating
   }, []);
+
+  if (needsAuth) {
+    return (
+      <DashboardLogin
+        onSuccess={() => {
+          setLoading(true);
+          void fetchProjects();
+          void fetchQueue();
+        }}
+      />
+    );
+  }
 
   // ── Project view (overrides nav) ──
   const currentProject = activeProject ? projects.find((p) => p.name === activeProject) : null;
@@ -209,6 +239,26 @@ export default function Home() {
         <span style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
           loading…
         </span>
+      </Shell>
+    );
+  }
+
+  if (projectsError && projects.length === 0) {
+    return (
+      <Shell activeView={activeView} onNavigate={handleNavigate}>
+        <div style={{ maxWidth: "420px" }}>
+          <p style={{ fontSize: "13px", color: "var(--ink-red)", marginBottom: "1rem" }}>{projectsError}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              void fetchProjects();
+            }}
+            style={{ fontSize: "12px", fontFamily: "var(--font-mono)", padding: "6px 14px" }}
+          >
+            Retry
+          </button>
+        </div>
       </Shell>
     );
   }

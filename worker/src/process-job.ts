@@ -65,10 +65,30 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
     return;
   }
 
-  const { core, auditAgent } = loadPrompts();
-  const root = repoRoot();
+  let core: string;
+  let auditAgent: string;
+  let root: string;
   const payload = job.payload || {};
   const visualOnly = Boolean(payload.visual_only);
+
+  try {
+    ({ core, auditAgent } = loadPrompts());
+    root = repoRoot();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[lyra-worker] job ${dbJobId} prep failed`, e);
+    try {
+      await completeJob(pool, dbJobId, msg, {
+        job_type: job.job_type,
+        project_name: job.project_name,
+        summary: `Failed (setup): ${msg.slice(0, 200)}`,
+        findings_added: 0,
+      });
+    } catch (ce) {
+      console.error(`[lyra-worker] completeJob after prep failure`, ce);
+    }
+    return;
+  }
 
   try {
     if (job.job_type === "synthesize_project") {
@@ -117,12 +137,17 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[lyra-worker] job ${dbJobId} failed`, e);
-    await completeJob(pool, dbJobId, msg, {
-      job_type: job.job_type,
-      project_name: job.project_name,
-      summary: `Failed: ${msg.slice(0, 200)}`,
-      findings_added: 0,
-    });
+    try {
+      await completeJob(pool, dbJobId, msg, {
+        job_type: job.job_type,
+        project_name: job.project_name,
+        summary: `Failed: ${msg.slice(0, 200)}`,
+        findings_added: 0,
+      });
+    } catch (ce) {
+      console.error(`[lyra-worker] completeJob failed after job error`, ce);
+      throw ce;
+    }
   }
 }
 

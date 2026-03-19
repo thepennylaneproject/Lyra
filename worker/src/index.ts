@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { createRequire } from "node:module";
 import { Worker } from "bullmq";
-import { createPool } from "./db.js";
+import { completeJob, createPool } from "./db.js";
 import { processJob } from "./process-job.js";
 
 const require = createRequire(import.meta.url);
@@ -24,6 +24,27 @@ async function main() {
       await processJob(pool, dbJobId);
     } catch (e) {
       console.error("[lyra-worker] processJob error", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        const r = await pool.query(
+          `SELECT job_type, project_name, status FROM lyra_audit_jobs WHERE id = $1`,
+          [dbJobId]
+        );
+        const row = r.rows[0] as
+          | { job_type: string; project_name: string | null; status: string }
+          | undefined;
+        if (row?.status === "running") {
+          await completeJob(pool, dbJobId, msg, {
+            job_type: row.job_type,
+            project_name: row.project_name,
+            summary: `Failed (worker): ${msg.slice(0, 200)}`,
+            findings_added: 0,
+            payload: { worker_fallback: true },
+          });
+        }
+      } catch (ce) {
+        console.error("[lyra-worker] could not mark job failed", ce);
+      }
     }
   };
 

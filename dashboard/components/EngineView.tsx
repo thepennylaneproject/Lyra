@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { apiFetch } from "@/lib/api-fetch";
 import type { RepairRunSummary } from "@/lib/audit-reader";
 import type { RoutingConfig } from "@/lib/routing-config";
 
@@ -127,9 +128,9 @@ export function EngineView() {
   const fetchAll = useCallback(async () => {
     try {
       const [routingRes, statusRes, queueRes] = await Promise.all([
-        fetch("/api/engine/routing"),
-        fetch("/api/engine/status"),
-        fetch("/api/engine/queue"),
+        apiFetch("/api/engine/routing"),
+        apiFetch("/api/engine/status"),
+        apiFetch("/api/engine/queue"),
       ]);
       const routing     = routingRes.ok  ? await routingRes.json()  : {};
       const status      = statusRes.ok   ? await statusRes.json()   : {};
