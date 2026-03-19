@@ -1,0 +1,418 @@
+{
+  "schema_version": "1.1.0",
+  "kind": "agent_output",
+  "run_id": "ux-20260318-121500",
+  "run_metadata": {
+    "timestamp": "2026-03-18T12:15:00.000Z",
+    "branch": "unknown",
+    "commit": "unknown",
+    "environment": "local",
+    "tool_platform": "cursor",
+    "model": "assistant",
+    "notes": "open_findings.json empty; no preflight build.txt. UI scope: dashboard/ Next.js app (single route /)."
+  },
+  "suite": "ux",
+  "agent": {
+    "name": "ux-flow-auditor",
+    "role": "Maps user routes, copy, navigation, loading/error/empty states, and basic a11y.",
+    "inputs_used": [
+      "audits/open_findings.json",
+      "dashboard/app/page.tsx",
+      "dashboard/app/layout.tsx",
+      "dashboard/components/Shell.tsx",
+      "dashboard/components/ProjectView.tsx",
+      "dashboard/components/ImportModal.tsx",
+      "dashboard/components/EngineView.tsx",
+      "dashboard/components/FindingDetail.tsx",
+      "dashboard/components/NextActionCard.tsx",
+      "dashboard/components/FindingRow.tsx",
+      "dashboard/components/OrchestrationPanel.tsx",
+      "dashboard/components/LinearSync.tsx",
+      "dashboard/components/EmptyState.tsx",
+      "dashboard/components/ProjectCard.tsx",
+      "dashboard/components/PatternPanel.tsx"
+    ],
+    "stop_conditions_hit": []
+  },
+  "coverage": {
+    "files_examined": [
+      "dashboard/app/**/*.tsx",
+      "dashboard/components/**/*.tsx"
+    ],
+    "files_skipped": [
+      "dashboard/app/api/** — server-only, out of UX agent scope",
+      "dashboard/netlify/functions/** — backend"
+    ],
+    "coverage_complete": true,
+    "incomplete_reason": ""
+  },
+  "findings": [
+    {
+      "finding_id": "f-2ca6362f",
+      "type": "bug",
+      "category": "missing-state",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "Failed /api/projects shows empty portfolio with no error",
+      "description": "fetchProjects only sets projects when res.ok; on network or 5xx failure the user sees the same empty state as a truly empty account ('No projects yet'), with only a console.error. No retry or error message.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Non-OK response leaves projects unchanged; finally clears loading",
+          "file": "dashboard/app/page.tsx",
+          "symbol": "fetchProjects",
+          "start_line": 25,
+          "end_line": 36
+        },
+        {
+          "hook_type": "ui_path",
+          "summary": "Load app with API down → misleading empty onboarding"
+        }
+      ],
+      "repro_steps": [
+        "Block or fail GET /api/projects (e.g. stop API or return 500).",
+        "Open /. Portfolio shows empty state as if there are no projects."
+      ],
+      "impact": "Users may believe data is lost or that onboarding is required; support burden and wrong actions.",
+      "suggested_fix": {
+        "approach": "Track fetch error state; show inline error with retry; distinguish empty vs error.",
+        "affected_files": ["dashboard/app/page.tsx"],
+        "estimated_effort": "small",
+        "tests_needed": ["E2E or integration: mock 500 on /api/projects, assert error UI"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4ade74f4",
+      "type": "enhancement",
+      "category": "missing-error-boundary",
+      "severity": "major",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "No React error boundary around main app shell",
+      "description": "Root layout renders children with no error boundary. Any uncaught render error in portfolio/engine/project view white-screens the full app with Next.js default error UI and no Lyra-branded recovery.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Layout wraps only body + children, no ErrorBoundary",
+          "file": "dashboard/app/layout.tsx",
+          "symbol": "RootLayout",
+          "start_line": 27,
+          "end_line": 39
+        }
+      ],
+      "impact": "Single component bug can remove all navigation and context; poor recovery UX.",
+      "suggested_fix": {
+        "approach": "Add app/error.tsx and/or segment error boundary with reset and link back to portfolio.",
+        "affected_files": ["dashboard/app/layout.tsx", "dashboard/app/error.tsx"],
+        "estimated_effort": "small",
+        "tests_needed": ["Trigger throw in dev, confirm branded fallback"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-835f3b96",
+      "type": "bug",
+      "category": "broken-flow",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "inference",
+      "title": "Engine view shows 'no routing config' when APIs fail",
+      "description": "On fetch failure, routing defaults to {} and UI shows 'no routing config found' even when config may exist. Indistinguishable from a real empty config.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "catch swallows error; empty routes branch",
+          "file": "dashboard/components/EngineView.tsx",
+          "symbol": "fetchAll",
+          "start_line": 127,
+          "end_line": 252
+        }
+      ],
+      "impact": "Misleading diagnosis for operators debugging connectivity vs config.",
+      "suggested_fix": {
+        "approach": "Separate error state; show 'Could not load routing' with retry.",
+        "affected_files": ["dashboard/components/EngineView.tsx"],
+        "estimated_effort": "small",
+        "tests_needed": ["Mock failed routing fetch, assert error copy"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-622a58b0",
+      "type": "bug",
+      "category": "missing-state",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "Orchestration job dispatch errors are silent in the UI",
+      "description": "dispatchAction and enqueueWeekly throw on failure but callers do not catch; errors surface only in console. User sees loading ellipsis stop with no explanation.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "throw new Error after !res.ok; onClick handlers have no try/catch UI",
+          "file": "dashboard/components/OrchestrationPanel.tsx",
+          "symbol": "dispatchAction",
+          "start_line": 146,
+          "end_line": 165
+        }
+      ],
+      "impact": "Operators cannot tell auth failure from network failure.",
+      "suggested_fix": {
+        "approach": "Catch errors; set toast or inline error state next to Run/enqueue buttons.",
+        "affected_files": ["dashboard/components/OrchestrationPanel.tsx"],
+        "estimated_effort": "small",
+        "tests_needed": ["Mock 401 POST /api/orchestration/jobs, assert error message visible"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4bad4bea",
+      "type": "debt",
+      "category": "copy-mismatch",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "evidence",
+      "title": "Inconsistent 'import' vs 'onboard' for the same flow",
+      "description": "Header button says 'import project'; modal title 'Onboard project'; CTA 'Onboard'; empty state says 'onboard project'. Same primary action uses three phrasings.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "import project button",
+          "file": "dashboard/app/page.tsx",
+          "start_line": 243,
+          "end_line": 249
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Onboard project / Onboard",
+          "file": "dashboard/components/ImportModal.tsx",
+          "symbol": "ImportModal",
+          "start_line": 97,
+          "end_line": 234
+        }
+      ],
+      "impact": "Minor cognitive load; hurts polish and search/help consistency.",
+      "suggested_fix": {
+        "approach": "Pick one term (e.g. 'Onboard') and use across button, modal title, and empty state.",
+        "affected_files": ["dashboard/app/page.tsx", "dashboard/components/ImportModal.tsx"],
+        "estimated_effort": "trivial",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-f873a442",
+      "type": "debt",
+      "category": "copy-mismatch",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "evidence",
+      "title": "Linear sync uses native alert for errors",
+      "description": "Push/pull failures call alert(), unlike other surfaces that use inline text. Jarring and inconsistent with app tone.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "alert on push failure",
+          "file": "dashboard/components/LinearSync.tsx",
+          "symbol": "push",
+          "start_line": 47,
+          "end_line": 49
+        }
+      ],
+      "impact": "Breaks flow on mobile/small windows; feels unpolished.",
+      "suggested_fix": {
+        "approach": "Replace with inline error banner matching ImportModal/FindingDetail patterns.",
+        "affected_files": ["dashboard/components/LinearSync.tsx"],
+        "estimated_effort": "small",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-809bce6b",
+      "type": "debt",
+      "category": "a11y-gap",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "Findings search field has no programmatic label",
+      "description": "Input uses placeholder 'search findings…' only. Labels should be associated via htmlFor/id or aria-label for screen readers.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Bare text input, no aria-label",
+          "file": "dashboard/components/ProjectView.tsx",
+          "start_line": 193,
+          "end_line": 205
+        }
+      ],
+      "impact": "Screen reader users may not understand the field purpose.",
+      "suggested_fix": {
+        "approach": "Add aria-label='Search findings' or visible label with htmlFor.",
+        "affected_files": ["dashboard/components/ProjectView.tsx"],
+        "estimated_effort": "trivial",
+        "tests_needed": ["axe or manual SR check"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-cba20650",
+      "type": "debt",
+      "category": "a11y-gap",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "inference",
+      "title": "Custom role=button cards handle Enter but not Space",
+      "description": "NextActionCard, FindingRow, ProjectCard use role=button and onKeyDown for Enter only. WCAG expects Space to activate actionable elements.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Enter-only key handler",
+          "file": "dashboard/components/NextActionCard.tsx",
+          "start_line": 46,
+          "end_line": 50
+        }
+      ],
+      "impact": "Keyboard users who use Space may think control is broken.",
+      "suggested_fix": {
+        "approach": "Handle Space (prevent scroll) or use native <button> layout.",
+        "affected_files": [
+          "dashboard/components/NextActionCard.tsx",
+          "dashboard/components/FindingRow.tsx",
+          "dashboard/components/ProjectCard.tsx"
+        ],
+        "estimated_effort": "small",
+        "tests_needed": ["Keyboard: Tab to card, Space activates"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4a2c0811",
+      "type": "question",
+      "category": "copy-mismatch",
+      "severity": "minor",
+      "priority": "P3",
+      "confidence": "speculation",
+      "title": "Product voice undefined: Title Case nav vs lowercase CTAs",
+      "description": "Sidebar uses 'Portfolio', 'Engine', 'Agents' in title case; primary actions use lowercase ('import project', 'sync now'). No documented voice guide. Recommend: one sentence-level rule (e.g. 'UI chrome: Title Case; actions: sentence case' or all lowercase for tool aesthetic).",
+      "proof_hooks": [
+        {
+          "hook_type": "ui_path",
+          "summary": "Compare Shell nav labels vs page primary buttons"
+        }
+      ],
+      "impact": "Inconsistent future copy without a single source of truth.",
+      "suggested_fix": {
+        "approach": "Add docs/VOICE.md or CONTRIBUTING UX section; align Shell + page.tsx buttons in one pass.",
+        "affected_files": ["dashboard/components/Shell.tsx", "dashboard/app/page.tsx"],
+        "estimated_effort": "medium",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T12:15:00.000Z",
+          "actor": "ux-flow-auditor",
+          "event": "created"
+        }
+      ]
+    }
+  ],
+  "rollups": {
+    "by_severity": { "blocker": 0, "major": 2, "minor": 4, "nit": 3 },
+    "by_category": {
+      "missing-state": 2,
+      "missing-error-boundary": 1,
+      "broken-flow": 1,
+      "copy-mismatch": 3,
+      "a11y-gap": 2
+    },
+    "by_type": { "bug": 3, "enhancement": 1, "debt": 4, "question": 1 },
+    "by_status": { "open": 9 }
+  },
+  "next_actions": [
+    {
+      "action": "Add error/retry state when GET /api/projects fails",
+      "finding_id": "f-2ca6362f",
+      "rationale": "Prevents false empty state and is highest user-facing failure mode."
+    },
+    {
+      "action": "Add app error boundary + error.tsx",
+      "finding_id": "f-4ade74f4",
+      "rationale": "Major enhancement per suite; isolates crashes from full app loss."
+    },
+    {
+      "action": "Surface orchestration POST failures inline",
+      "finding_id": "f-622a58b0",
+      "rationale": "Operators otherwise cannot debug auth vs server errors."
+    },
+    {
+      "action": "Document product voice; align import/onboard copy",
+      "finding_id": "f-4a2c0811",
+      "rationale": "Unlocks consistent copy fixes including f-4bad4bea."
+    },
+    {
+      "action": "Engine view: distinguish load error from empty routing",
+      "finding_id": "f-835f3b96",
+      "rationale": "Reduces operator confusion during incidents."
+    }
+  ]
+}

@@ -1,0 +1,381 @@
+{
+  "schema_version": "1.1.0",
+  "kind": "agent_output",
+  "run_id": "perf-20260318-143000",
+  "run_metadata": {
+    "timestamp": "2026-03-18T14:30:00.000Z",
+    "branch": "main",
+    "commit": "20ed70c",
+    "environment": "local",
+    "tool_platform": "cursor",
+    "model": "agent-performance-audit",
+    "preflight_artifacts": {},
+    "notes": "No audits/artifacts build_output or bundle_stats; findings are code-review and inference unless noted."
+  },
+  "suite": "performance",
+  "agent": {
+    "name": "performance-cost-auditor",
+    "role": "Finds performance bottlenecks, unnecessary costs, inefficient queries, bundle/render waste, and metered API usage patterns.",
+    "inputs_used": [
+      "audits/open_findings.json",
+      "audits/schema/audit-output.schema.json",
+      "dashboard/package.json",
+      "worker/package.json",
+      "dashboard/lib/orchestration-jobs.ts",
+      "worker/src/process-job.ts",
+      "worker/src/llm.ts",
+      "worker/src/db.ts",
+      "worker/src/context.ts",
+      "worker/src/index.ts",
+      "dashboard/app/api/projects/route.ts",
+      "dashboard/app/page.tsx",
+      "dashboard/components/OrchestrationPanel.tsx",
+      "dashboard/components/EngineView.tsx",
+      "dashboard/next.config.ts",
+      "dashboard/app/api/orchestration/jobs/route.ts"
+    ],
+    "stop_conditions_hit": [
+      "No preflight bundle_stats or Lighthouse output available; bundle and Core Web Vitals findings are inference-only."
+    ]
+  },
+  "coverage": {
+    "files_examined": [
+      "dashboard/**/*.ts",
+      "dashboard/**/*.tsx",
+      "worker/src/**/*.ts"
+    ],
+    "files_skipped": [
+      "the_penny_lane_project/** - sample reports not runtime",
+      "batch_fix.py - offline tooling"
+    ],
+    "coverage_complete": false,
+    "incomplete_reason": "Did not exhaust every API route or static asset; focused on hot paths (projects API, worker job loop, LLM calls, orchestration fetches)."
+  },
+  "findings": [
+    {
+      "finding_id": "f-8a3f2e1c",
+      "type": "debt",
+      "category": "api-cost",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "One OpenAI chat completion per app in a single audit job multiplies token cost",
+      "description": "processJob iterates resolveApps() and calls auditWithLlm once per app with full expectations + gatherCodeContext per iteration. A job that audits N apps issues N separate chat.completions requests with max_tokens 4096 each, scaling cost linearly with app count.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Sequential per-app LLM calls inside processJob loop",
+          "file": "worker/src/process-job.ts",
+          "symbol": "processJob",
+          "start_line": 79,
+          "end_line": 107
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Each audit uses max_tokens 4096 and large user payload",
+          "file": "worker/src/llm.ts",
+          "symbol": "auditWithLlm",
+          "start_line": 54,
+          "end_line": 69
+        }
+      ],
+      "impact": "Portfolio-wide or multi-app jobs can produce 3–10× API spend versus batched or single-pass strategies; also increases wall-clock time.",
+      "suggested_fix": {
+        "approach": "Batch apps into fewer calls (single prompt with section per app), cap apps per job, or use cheaper model for first pass with escalation.",
+        "affected_files": ["worker/src/process-job.ts", "worker/src/llm.ts"],
+        "estimated_effort": "medium",
+        "risk_notes": "Merged prompts may hit context limits; need chunking strategy.",
+        "tests_needed": ["Integration test with 2+ apps asserting call count or mock fetch assertions"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-9b4e1d2a",
+      "type": "debt",
+      "category": "api-cost",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "GET /api/projects returns every finding for every project with no pagination",
+      "description": "The portfolio page loads the full project list via repo.list(), serializing entire findings arrays for all projects on initial paint. Large portfolios mean large JSON over the wire and heavy client parse/render work.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "API returns full project array from list()",
+          "file": "dashboard/app/api/projects/route.ts",
+          "symbol": "GET",
+          "start_line": 5,
+          "end_line": 10
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Client fetches all projects on mount with no pagination",
+          "file": "dashboard/app/page.tsx",
+          "symbol": "fetchProjects",
+          "start_line": 25,
+          "end_line": 54
+        }
+      ],
+      "impact": "Slow TTI and memory use on dashboards with many projects or thousands of findings; repeated full refetches after mutations.",
+      "suggested_fix": {
+        "approach": "Add summary endpoint (counts, blockers only) for grid; lazy-load full findings per project on drill-in.",
+        "affected_files": ["dashboard/app/api/projects/route.ts", "dashboard/lib/store-supabase.ts", "dashboard/app/page.tsx"],
+        "estimated_effort": "medium",
+        "risk_notes": "Requires repository interface changes for listSummaries vs listFull.",
+        "tests_needed": ["API contract test for summary shape"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-7c2d5a3e",
+      "type": "debt",
+      "category": "cache-miss",
+      "severity": "major",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "synthesize_project loads full project_json for all rows",
+      "description": "listAllProjects runs SELECT project_json FROM lyra_projects with no LIMIT, parsing every project's full findings into memory. Only titles/severities are needed for the synthesis blob (and even that is capped to 200 lines after fetch).",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Unbounded SELECT of all project JSON",
+          "file": "worker/src/db.ts",
+          "symbol": "listAllProjects",
+          "start_line": 133,
+          "end_line": 146
+        },
+        {
+          "hook_type": "data_shape",
+          "summary": "Worker then slices to 200 lines after loading all findings",
+          "expected_schema": "SQL or RPC returning only finding_id, title, severity per project",
+          "observed_schema": "Full project_json blobs for N projects loaded into Node",
+          "file": "worker/src/process-job.ts",
+          "start_line": 135,
+          "end_line": 141
+        }
+      ],
+      "impact": "DB memory/IO and Node heap spike as portfolio grows; wasted network from DB to worker.",
+      "suggested_fix": {
+        "approach": "Store denormalized finding summaries table or use JSONB path query / SQL to extract only needed fields with LIMIT per project.",
+        "affected_files": ["worker/src/db.ts", "worker/src/process-job.ts"],
+        "estimated_effort": "medium",
+        "risk_notes": "May need migration for summary columns.",
+        "tests_needed": ["Job with 2 projects verifies query uses projection or limit"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-6e1f4b44",
+      "type": "debt",
+      "category": "api-cost",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "Worker polls lyra_audit_jobs on an interval when Redis is unset",
+      "description": "Without REDIS_URL, setInterval(poll, pollMs default 8000) issues SELECT ... WHERE status = queued repeatedly, creating steady DB QPS per worker instance.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Polling loop every LYRA_JOB_POLL_MS (default 8s)",
+          "file": "worker/src/index.ts",
+          "symbol": "main",
+          "start_line": 51,
+          "end_line": 70
+        }
+      ],
+      "impact": "Low per-query cost but continuous load; multiple workers multiply queries.",
+      "suggested_fix": {
+        "approach": "Document Redis for production; optionally use LISTEN/NOTIFY or longer idle backoff when queue empty.",
+        "affected_files": ["worker/src/index.ts"],
+        "estimated_effort": "small",
+        "risk_notes": "LISTEN/NOTIFY adds operational complexity.",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-5d0e3c55",
+      "type": "debt",
+      "category": "bundle-size",
+      "severity": "minor",
+      "priority": "P3",
+      "confidence": "inference",
+      "title": "bullmq and ioredis in Next server dependencies may inflate serverless bundle",
+      "description": "dashboard depends on bullmq; orchestration jobs route imports Queue from bullmq. Serverless/edge deployments trace this into the API bundle, increasing cold start and deploy size relative to a thin HTTP enqueue to external Redis.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "bullmq Queue used in API route",
+          "file": "dashboard/app/api/orchestration/jobs/route.ts",
+          "symbol": "POST",
+          "start_line": 1,
+          "end_line": 5
+        },
+        {
+          "hook_type": "config_key",
+          "summary": "dashboard/package.json lists bullmq dependency",
+          "config_key": "dependencies.bullmq",
+          "config_value": "^5.71.0",
+          "file": "dashboard/package.json"
+        }
+      ],
+      "impact": "Larger Next server traces and slower cold starts on platforms that bundle API routes.",
+      "suggested_fix": {
+        "approach": "Measure next build trace; if large, move enqueue to worker-only or use minimal redis client.",
+        "affected_files": ["dashboard/app/api/orchestration/jobs/route.ts", "dashboard/package.json"],
+        "estimated_effort": "small",
+        "risk_notes": "Refactor enqueue path.",
+        "tests_needed": ["Compare .next/server trace size before/after"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-4c9d2e66",
+      "type": "debt",
+      "category": "render-waste",
+      "severity": "minor",
+      "priority": "P3",
+      "confidence": "inference",
+      "title": "OrchestrationPanel issues three parallel fetches on every mount without cache or stale-while-revalidate",
+      "description": "load() hits /api/orchestration, /api/orchestration/jobs, /api/durable-state together on each panel mount. No SWR/React Query dedupe across navigations; user switching views may refetch identical data.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "Promise.all of three internal APIs on load",
+          "file": "dashboard/components/OrchestrationPanel.tsx",
+          "symbol": "load",
+          "start_line": 91,
+          "end_line": 119
+        }
+      ],
+      "impact": "Extra server load and latency when revisiting portfolio; minor compared to full-project payload issue.",
+      "suggested_fix": {
+        "approach": "Add SWR with dedupingInterval or lift orchestration state to a parent provider.",
+        "affected_files": ["dashboard/components/OrchestrationPanel.tsx"],
+        "estimated_effort": "small",
+        "tests_needed": []
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    },
+    {
+      "finding_id": "f-3b8c1f77",
+      "type": "question",
+      "category": "missing-index",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "speculation",
+      "title": "Confirm index on lyra_audit_jobs (status, created_at) for worker poll query",
+      "description": "Poll uses WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1. Without a supporting index this may degrade to sequential scan as job history grows. Schema not verified in-repo.",
+      "proof_hooks": [
+        {
+          "hook_type": "query",
+          "summary": "Worker dequeue poll pattern",
+          "query_text": "SELECT id FROM lyra_audit_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"
+        },
+        {
+          "hook_type": "command",
+          "summary": "Run EXPLAIN ANALYZE on production-like data volume",
+          "command": "EXPLAIN (ANALYZE, BUFFERS) SELECT id FROM lyra_audit_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1;",
+          "expected": "Index Scan using partial or composite index on (status, created_at)",
+          "actual": "Unknown until run against populated DB"
+        }
+      ],
+      "impact": "Possible latency spikes and CPU on large lyra_audit_jobs tables.",
+      "suggested_fix": {
+        "approach": "If Seq Scan, add CREATE INDEX CONCURRENTLY ... ON lyra_audit_jobs (created_at) WHERE status = 'queued';",
+        "affected_files": [],
+        "estimated_effort": "trivial",
+        "tests_needed": ["EXPLAIN on staging"]
+      },
+      "status": "open",
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:30:00.000Z",
+          "actor": "performance-cost-auditor",
+          "event": "created"
+        }
+      ]
+    }
+  ],
+  "rollups": {
+    "by_severity": { "blocker": 0, "major": 3, "minor": 3, "nit": 1 },
+    "by_category": {
+      "api-cost": 3,
+      "cache-miss": 1,
+      "bundle-size": 1,
+      "render-waste": 1,
+      "missing-index": 1
+    },
+    "by_type": { "bug": 0, "enhancement": 0, "debt": 6, "question": 1 },
+    "by_status": { "open": 7 }
+  },
+  "next_actions": [
+    {
+      "action": "Design summary API or lazy-load for portfolio list to shrink GET /api/projects payload",
+      "finding_id": "f-9b4e1d2a",
+      "rationale": "Largest user-visible latency and bandwidth win for growing data."
+    },
+    {
+      "action": "Reduce OpenAI calls per job (batch apps or tiered models)",
+      "finding_id": "f-8a3f2e1c",
+      "rationale": "Direct metered cost reduction."
+    },
+    {
+      "action": "Replace listAllProjects full scan with projection or summary query for synthesize_project",
+      "finding_id": "f-7c2d5a3e",
+      "rationale": "Lowers DB and worker memory for synthesis jobs."
+    },
+    {
+      "action": "Run EXPLAIN ANALYZE on queued-job poll; add partial index if needed",
+      "finding_id": "f-3b8c1f77",
+      "rationale": "Cheap validation prevents future scan regressions."
+    },
+    {
+      "action": "Capture next build analyzer output and decide if bullmq should leave dashboard bundle",
+      "finding_id": "f-5d0e3c55",
+      "rationale": "Confirms or dismisses serverless bundle concern with evidence."
+    }
+  ]
+}

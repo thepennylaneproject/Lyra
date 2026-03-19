@@ -1,0 +1,295 @@
+{
+  "schema_version": "1.1.0",
+  "kind": "agent_output",
+  "run_id": "logic-20260318-120000",
+  "suite": "logic",
+  "agent": {
+    "name": "runtime-bug-hunter",
+    "role": "RUNTIME AND LOGIC BUG HUNTER",
+    "inputs_used": [
+      "audits/open_findings.json (empty)",
+      "worker/package.json, dashboard/package.json",
+      "worker/tsconfig.json (strict), dashboard/tsconfig.json (strict)",
+      "worker/src/*.ts",
+      "dashboard app/, lib/, components/ (representative deep read + pattern grep)",
+      "Preflight artifacts: not found under audits/artifacts/_run_/"
+    ],
+    "stop_conditions_hit": []
+  },
+  "coverage": {
+    "files_examined": [
+      "worker/src/index.ts",
+      "worker/src/process-job.ts",
+      "worker/src/db.ts",
+      "worker/src/llm.ts",
+      "worker/src/context.ts",
+      "worker/src/apps.ts",
+      "dashboard/lib/orchestration.ts",
+      "dashboard/lib/orchestration-jobs.ts",
+      "dashboard/lib/repository.ts",
+      "dashboard/lib/constants.ts",
+      "dashboard/app/api/orchestration/route.ts",
+      "dashboard/app/api/orchestration/jobs/route.ts",
+      "dashboard/app/api/import/route.ts",
+      "dashboard/components/OrchestrationPanel.tsx",
+      "dashboard/components/ProjectView.tsx"
+    ],
+    "files_skipped": [
+      "dashboard/netlify/functions/*.ts (edge, not primary app)",
+      "dashboard/tailwind.config.ts, next.config.ts (config)",
+      "Remaining dashboard components/api routes not line-audited in this pass"
+    ],
+    "coverage_complete": false,
+    "incomplete_reason": "Full per-file scan of all dashboard app/api/lib/components not completed; worker src fully reviewed."
+  },
+  "findings": [
+    {
+      "finding_id": "logic-stuck-job-prompt-load",
+      "type": "bug",
+      "category": "error-handling",
+      "severity": "major",
+      "priority": "P1",
+      "status": "open",
+      "title": "Worker can leave audit job stuck in running if loadPrompts fails after claim",
+      "description": "After claimJob sets status to running, loadPrompts(), repoRoot(), and payload reads run outside the try/catch. readFileSync in loadPrompts can throw (permissions, IO). No completeJob(failed) runs, so the row may remain running indefinitely.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/process-job.ts",
+          "start_line": 61,
+          "end_line": 73,
+          "summary": "try begins at 73; loadPrompts at 68 is outside try"
+        }
+      ],
+      "repro_steps": [
+        "Claim a queued job (normal flow).",
+        "Temporarily chmod 000 core_system_prompt or audits/prompts/audit-agent.md or inject a failing read.",
+        "Observe lyra_audit_jobs.status stays running with no finished_at/error."
+      ],
+      "tests_needed": [
+        "Unit test: mock loadPrompts to throw after claimJob succeeds; assert completeJob called with failed status or job reset."
+      ],
+      "history_events": []
+    },
+    {
+      "finding_id": "logic-worker-runone-swallow",
+      "type": "bug",
+      "category": "error-handling",
+      "severity": "major",
+      "priority": "P1",
+      "title": "runOne swallows errors; stuck jobs if completeJob fails in processJob catch",
+      "description": "index.ts runOne catches all processJob errors and only logs. If processJob catch block fails while calling completeJob (e.g. DB down), the exception propagates to runOne and is swallowed—job may stay running. Same for any unexpected throw outside processJob inner catch.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/index.ts",
+          "start_line": 22,
+          "end_line": 27,
+          "summary": "catch logs only, no rethrow or terminal state update"
+        },
+        {
+          "file": "worker/src/process-job.ts",
+          "start_line": 117,
+          "end_line": 126,
+          "summary": "completeJob in catch can throw"
+        }
+      ],
+      "repro_steps": [
+        "With job in running state mid-process, kill DB or mock pool.query to reject on UPDATE.",
+        "Trigger failure path that reaches completeJob in catch.",
+        "Confirm worker logs error but job row not updated to failed."
+      ],
+      "tests_needed": [
+        "Integration test: completeJob failure after audit failure still records failure or dead-letter."
+      ],
+      "history_events": []
+    },
+    {
+      "finding_id": "logic-db-json-parse-crash",
+      "type": "bug",
+      "category": "null-ref",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "loadProject can throw on malformed project_json string",
+      "description": "When project_json is a string, JSON.parse(j) is unwrapped. Corrupt DB or manual edits cause worker/API using loadProject to crash.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/db.ts",
+          "start_line": 96,
+          "end_line": 104,
+          "summary": "JSON.parse without try/catch"
+        }
+      ],
+      "repro_steps": [
+        "INSERT invalid JSON string into lyra_projects.project_json for a row.",
+        "Invoke code path that loadProject (worker save/merge or any consumer)."
+      ],
+      "tests_needed": [
+        "Test loadProject returns null or safe empty project on parse error."
+      ],
+      "history_events": []
+    },
+    {
+      "finding_id": "logic-list-projects-undefined-name",
+      "type": "bug",
+      "category": "edge-cases",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "listAllProjects may emit undefined project names",
+      "description": "j.name is used without fallback; malformed JSON yields undefined in synthesize portfolio lines.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/db.ts",
+          "start_line": 136,
+          "end_line": 145,
+          "summary": "name: j.name without default"
+        },
+        {
+          "file": "worker/src/process-job.ts",
+          "start_line": 135,
+          "end_line": 139,
+          "summary": "p.name in template"
+        }
+      ],
+      "repro_steps": [
+        "Store project_json without name field.",
+        "Run synthesize_project; inspect LLM blob for 'undefined' entries."
+      ],
+      "tests_needed": [
+        "listAllProjects coerces name to string or skips invalid rows."
+      ],
+      "history_events": []
+    },
+    {
+      "finding_id": "logic-resolveapps-dead-branch",
+      "type": "debt",
+      "category": "dead-code",
+      "severity": "nit",
+      "priority": "P3",
+      "title": "Redundant branch in resolveApps",
+      "description": "jobType === 'synthesize_project' returns PORTFOLIO_APPS; final return is identical. synthesize path never calls resolveApps from processJob. Dead/unreachable in practice or redundant.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "worker/src/apps.ts",
+          "start_line": 40,
+          "end_line": 47,
+          "summary": "duplicate outcomes"
+        }
+      ],
+      "repro_steps": [],
+      "tests_needed": [],
+      "history_events": []
+    },
+    {
+      "finding_id": "logic-orchestration-unmount-race",
+      "type": "bug",
+      "category": "race-condition",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "OrchestrationPanel may setState after unmount",
+      "description": "useEffect runs load() without abort; load() always calls setLoading/setData/setJobs at end. Rapid unmount triggers React warnings or stale updates. finally block only returns when cancelled and does not guard load internals.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "dashboard/components/OrchestrationPanel.tsx",
+          "start_line": 91,
+          "end_line": 134,
+          "summary": "Promise.all in load; no cancelled check before setState"
+        }
+      ],
+      "repro_steps": [
+        "Mount dashboard, navigate away before orchestration fetches complete.",
+        "Check console for React strict-mode setState on unmounted component warnings."
+      ],
+      "tests_needed": [
+        "Component test with unmount during pending fetch; assert no setState after unmount."
+      ],
+      "history_events": []
+    },
+    {
+      "finding_id": "logic-projectview-stale-selected",
+      "type": "bug",
+      "category": "async-bug",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "ProjectView handleAction uses stale findings for setSelected",
+      "description": "After refetchProject(), setSelected uses findings.find from pre-await closure. Detail panel can show wrong merged fields if list changed server-side.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "dashboard/components/ProjectView.tsx",
+          "start_line": 65,
+          "end_line": 72,
+          "summary": "findings from closure vs updated.findings"
+        }
+      ],
+      "repro_steps": [
+        "Open finding detail, change status while another client edits same finding.",
+        "After action completes, verify panel shows server truth vs stale copy."
+      ],
+      "tests_needed": [
+        "handleAction uses updated?.findings?.find after refetch for setSelected."
+      ],
+      "history_events": []
+    },
+    {
+      "finding_id": "logic-orchestration-silent-failure",
+      "type": "bug",
+      "category": "error-handling",
+      "severity": "minor",
+      "priority": "P2",
+      "title": "Orchestration panel hides entirely when GET /api/orchestration fails",
+      "description": "If orchestrationRes.ok is false, setData is never updated; loading ends with data still null; UI returns null—no error surface.",
+      "confidence": "inference",
+      "proof_hooks": [
+        {
+          "file": "dashboard/components/OrchestrationPanel.tsx",
+          "start_line": 98,
+          "end_line": 194,
+          "summary": "only setData on ok; !data return null"
+        }
+      ],
+      "repro_steps": [
+        "Break repo.list() or orchestration route (500).",
+        "Load dashboard; orchestration section absent without message."
+      ],
+      "tests_needed": [
+        "E2E or component: failed orchestration fetch shows error state."
+      ],
+      "history_events": []
+    }
+  ],
+  "rollups": {
+    "by_severity": { "major": 2, "minor": 5, "nit": 1 },
+    "by_category": {
+      "error-handling": 3,
+      "null-ref": 1,
+      "edge-cases": 1,
+      "dead-code": 1,
+      "race-condition": 1,
+      "async-bug": 1
+    },
+    "by_type": { "bug": 7, "debt": 1 },
+    "by_status": { "open": 8 }
+  },
+  "next_actions": [
+    {
+      "priority": "P1",
+      "action": "Wrap post-claim setup in process-job (or move loadPrompts inside try) and ensure any throw path calls completeJob(..., error) or releases job.",
+      "finding_ids": ["logic-stuck-job-prompt-load", "logic-worker-runone-swallow"]
+    },
+    {
+      "priority": "P2",
+      "action": "Harden db.ts JSON parsing; fix OrchestrationPanel fetch cancellation and error UI; fix ProjectView handleAction to use refetched findings for selection.",
+      "finding_ids": ["logic-db-json-parse-crash", "logic-list-projects-undefined-name", "logic-orchestration-unmount-race", "logic-projectview-stale-selected", "logic-orchestration-silent-failure"]
+    },
+    {
+      "priority": "P3",
+      "action": "Simplify resolveApps (remove dead branch or document why both returns exist).",
+      "finding_ids": ["logic-resolveapps-dead-branch"]
+    }
+  ]
+}

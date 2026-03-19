@@ -1,7 +1,13 @@
 # Deploy from repo root; app lives in dashboard/
+#
+# If @netlify/plugin-nextjs fails with "publish directory cannot be the same
+# as the base directory": in Netlify UI → Site settings → Build & deploy →
+# Build settings → clear "Publish directory" (empty). This file sets publish
+# below so it differs from base (dashboard/).
 [build]
   base = "dashboard"
   command = "npm run build"
+  publish = "dashboard/.next"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

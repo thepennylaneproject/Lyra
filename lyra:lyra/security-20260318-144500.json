@@ -1,0 +1,392 @@
+{
+  "schema_version": "1.1.0",
+  "kind": "agent_output",
+  "run_id": "security-20260318-144500",
+  "run_metadata": {
+    "timestamp": "2026-03-18T14:45:00Z",
+    "branch": "unknown",
+    "commit": "unknown",
+    "environment": "local",
+    "tool_platform": "cursor",
+    "model": "agent",
+    "notes": "Threat model: Lyra is an audit orchestration dashboard over projects, findings, repair queues, and Linear sync; data includes security audit content and repo metadata. Users are implied single-tenant (solo dev) but deployment is often a public URL. Highest-value targets are aggregated findings (competitive/security intel), orchestration state, and abuse of server-held API keys (Linear). Likely vectors: unauthenticated REST calls to Next.js API routes, and queue/sync abuse if the host is reachable.",
+    "preflight_artifacts": {}
+  },
+  "suite": "security",
+  "agent": {
+    "name": "security-privacy-auditor",
+    "role": "Practical security and privacy risk assessment for auth, secrets, validation, and data exposure.",
+    "inputs_used": [
+      "audits/open_findings.json",
+      "audits/LYRA-AUDIT-SUITE.md",
+      ".gitignore",
+      ".env.example",
+      "dashboard/.env.example",
+      "dashboard/package.json",
+      "worker/package.json",
+      "dashboard/app/api/projects/route.ts",
+      "dashboard/app/api/projects/[name]/route.ts",
+      "dashboard/app/api/projects/[name]/findings/route.ts",
+      "dashboard/app/api/import/route.ts",
+      "dashboard/app/api/sync/audit/route.ts",
+      "dashboard/app/api/sync/linear/push/route.ts",
+      "dashboard/app/api/orchestration/jobs/route.ts",
+      "dashboard/app/api/orchestration/route.ts",
+      "dashboard/app/api/engine/queue/route.ts",
+      "dashboard/app/api/engine/status/route.ts",
+      "dashboard/app/api/engine/routing/route.ts",
+      "dashboard/app/api/durable-state/route.ts",
+      "dashboard/lib/repository-instance.ts",
+      "npm audit (dashboard)"
+    ],
+    "stop_conditions_hit": []
+  },
+  "coverage": {
+    "files_examined": [
+      "dashboard/app/api/**/*.ts",
+      "dashboard/package.json",
+      "worker/package.json",
+      ".env.example",
+      ".gitignore"
+    ],
+    "files_skipped": [
+      "worker/src/** — worker not fully traced for auth boundaries; batch_fix.py / root Python CLIs out of dashboard API scope"
+    ],
+    "coverage_complete": false,
+    "incomplete_reason": "Worker process, hosting-specific hardening, and all client components for secret handling not exhaustively reviewed; CORS assumed Next defaults."
+  },
+  "findings": [
+    {
+      "finding_id": "f-auth-bypass-dashboard-apis-001",
+      "type": "enhancement",
+      "category": "auth-bypass",
+      "severity": "blocker",
+      "priority": "P0",
+      "confidence": "evidence",
+      "title": "Dashboard APIs allow unauthenticated read/write of projects and findings",
+      "description": "Project and mutation routes call getRepository() with no session, API key, or middleware. Attack: anyone who can reach the deployed origin issues GET /api/projects to list every project and findings, PUT/DELETE to destroy or overwrite data, POST /api/import or POST /api/sync/audit to inject or merge findings, and POST/DELETE /api/engine/queue to manipulate the repair queue. No per-user isolation. Realistic when the dashboard is hosted on Netlify/Vercel without network restrictions.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "GET/POST /api/projects have no auth before repo.list/create",
+          "file": "dashboard/app/api/projects/route.ts",
+          "symbol": "GET, POST",
+          "start_line": 5,
+          "end_line": 46
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "PUT/DELETE project by name with no authorization",
+          "file": "dashboard/app/api/projects/[name]/route.ts",
+          "symbol": "PUT, DELETE",
+          "start_line": 25,
+          "end_line": 67
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "POST /api/import creates/updates projects from arbitrary JSON",
+          "file": "dashboard/app/api/import/route.ts",
+          "symbol": "POST",
+          "start_line": 6,
+          "end_line": 52
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "POST /api/sync/audit merges filesystem findings into DB without auth",
+          "file": "dashboard/app/api/sync/audit/route.ts",
+          "symbol": "POST",
+          "start_line": 39,
+          "end_line": 128
+        },
+        {
+          "hook_type": "code_ref",
+          "summary": "Engine queue readable/writable without auth",
+          "file": "dashboard/app/api/engine/queue/route.ts",
+          "symbol": "GET, POST, DELETE",
+          "start_line": 11,
+          "end_line": 85
+        },
+        {
+          "hook_type": "repro_steps",
+          "summary": "Unauthenticated read of all projects",
+          "steps": [
+            "Deploy or run dashboard with DATABASE_URL set.",
+            "curl -s https://<host>/api/projects",
+            "Observe 200 JSON with projects and findings without Authorization."
+          ],
+          "route": "/api/projects"
+        }
+      ],
+      "repro_steps": [
+        "Run dashboard with DB containing projects.",
+        "curl -s <origin>/api/projects",
+        "Confirm full project and finding payload without credentials."
+      ],
+      "impact": "Full confidentiality and integrity loss for audit data; possible destruction of audit history.",
+      "suggested_fix": {
+        "approach": "Require Authorization: Bearer <ORCHESTRATION_ENQUEUE_SECRET> or DASHBOARD_API_SECRET on all /api/* except explicit health; or Netlify/Vercel auth + Next middleware. For multi-user, Supabase Auth + RLS on project rows.",
+        "affected_files": [
+          "dashboard/app/api/projects/route.ts",
+          "dashboard/app/api/projects/[name]/route.ts",
+          "dashboard/app/api/import/route.ts",
+          "dashboard/app/api/sync/**/*.ts",
+          "dashboard/app/api/engine/**/*.ts",
+          "dashboard/middleware.ts"
+        ],
+        "estimated_effort": "medium",
+        "risk_notes": "Breaking for unauthenticated CI; document header for cron/automation.",
+        "tests_needed": [
+          "Unauthenticated GET /api/projects → 401",
+          "Valid Bearer → 200"
+        ]
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": "open_findings.json was empty."
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-data-leakage-orchestration-get-001",
+      "type": "enhancement",
+      "category": "data-leakage",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "GET /api/orchestration/jobs exposes job and run history without authentication",
+      "description": "POST is protected when ORCHESTRATION_ENQUEUE_SECRET is set, but GET returns recent jobs and runs to any caller. Attack: reconnaissance on audit schedules and project names.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "GET has no authorize()",
+          "file": "dashboard/app/api/orchestration/jobs/route.ts",
+          "symbol": "GET",
+          "start_line": 30,
+          "end_line": 57
+        }
+      ],
+      "impact": "Operational metadata leak; aids targeted abuse.",
+      "suggested_fix": {
+        "approach": "Apply same Bearer/header check as POST for GET.",
+        "affected_files": ["dashboard/app/api/orchestration/jobs/route.ts"],
+        "estimated_effort": "small",
+        "tests_needed": ["GET without secret → 401 when secret configured"]
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": ["f-auth-bypass-dashboard-apis-001"],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-auth-bypass-linear-push-001",
+      "type": "enhancement",
+      "category": "auth-bypass",
+      "severity": "major",
+      "priority": "P1",
+      "confidence": "evidence",
+      "title": "POST /api/sync/linear/push callable without auth; burns LINEAR_API_KEY",
+      "description": "Any client can POST with projectName to create/update Linear issues using the server LINEAR_API_KEY. Attack: spam Linear, exhaust rate limits, expose finding titles in a shared workspace.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "POST validates Linear config and body only, not caller",
+          "file": "dashboard/app/api/sync/linear/push/route.ts",
+          "symbol": "POST",
+          "start_line": 20,
+          "end_line": 46
+        }
+      ],
+      "impact": "Abuse of third-party API; unsolicited issues.",
+      "suggested_fix": {
+        "approach": "Require same API secret as other mutations before calling Linear APIs.",
+        "affected_files": ["dashboard/app/api/sync/linear/push/route.ts"],
+        "estimated_effort": "small",
+        "tests_needed": ["POST without auth → 401"]
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": ["f-auth-bypass-dashboard-apis-001"],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-data-leakage-durable-state-001",
+      "type": "enhancement",
+      "category": "data-leakage",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "GET /api/durable-state returns orchestration config and events without auth",
+      "description": "Exposes durable state configuration and recent events to any caller.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "No auth on GET",
+          "file": "dashboard/app/api/durable-state/route.ts",
+          "symbol": "GET",
+          "start_line": 4,
+          "end_line": 18
+        }
+      ],
+      "impact": "Information disclosure for orchestration behavior.",
+      "suggested_fix": {
+        "approach": "Gate with shared secret or session.",
+        "affected_files": ["dashboard/app/api/durable-state/route.ts"],
+        "estimated_effort": "trivial"
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": ["f-auth-bypass-dashboard-apis-001"],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-dependency-vuln-next-001",
+      "type": "debt",
+      "category": "dependency-vuln",
+      "severity": "minor",
+      "priority": "P2",
+      "confidence": "evidence",
+      "title": "npm audit: Next.js moderate advisory (image cache disk growth)",
+      "description": "GHSA-3x4c-7xq6-9pq8: unbounded next/image cache. Risk mainly disk exhaustion on persistent Node hosts using next/image heavily.",
+      "proof_hooks": [
+        {
+          "hook_type": "command",
+          "summary": "npm audit reports 1 moderate next issue",
+          "command": "cd dashboard && npm audit",
+          "expected": "0 vulnerabilities",
+          "actual": "1 moderate (next)"
+        },
+        {
+          "hook_type": "config_key",
+          "summary": "next dependency range",
+          "file": "dashboard/package.json",
+          "config_key": "dependencies.next"
+        }
+      ],
+      "impact": "Potential DoS via disk fill on long-running image-heavy deployments.",
+      "suggested_fix": {
+        "approach": "Upgrade Next to patched release per advisory when feasible.",
+        "affected_files": ["dashboard/package.json"],
+        "estimated_effort": "small",
+        "risk_notes": "Major version bump may need app changes."
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    },
+    {
+      "finding_id": "f-error-disclosure-api-001",
+      "type": "debt",
+      "category": "data-leakage",
+      "severity": "nit",
+      "priority": "P3",
+      "confidence": "inference",
+      "title": "API routes return raw Error.message to clients on 500",
+      "description": "Handlers often return e.message in JSON. May leak DB or path hints if errors are triggered.",
+      "proof_hooks": [
+        {
+          "hook_type": "code_ref",
+          "summary": "500 includes exception message",
+          "file": "dashboard/app/api/projects/route.ts",
+          "symbol": "GET",
+          "start_line": 11,
+          "end_line": 14
+        }
+      ],
+      "impact": "Minor information disclosure.",
+      "suggested_fix": {
+        "approach": "Generic client message in production; log server-side.",
+        "affected_files": ["dashboard/app/api/**/*.ts"],
+        "estimated_effort": "small"
+      },
+      "owner": "solo-dev",
+      "status": "open",
+      "related_ids": [],
+      "history": [
+        {
+          "timestamp": "2026-03-18T14:45:00Z",
+          "actor": "security-privacy-auditor",
+          "event": "created",
+          "notes": ""
+        }
+      ],
+      "artifacts": []
+    }
+  ],
+  "rollups": {
+    "by_severity": { "blocker": 1, "major": 2, "minor": 2, "nit": 1 },
+    "by_category": {
+      "auth-bypass": 2,
+      "data-leakage": 3,
+      "dependency-vuln": 1
+    },
+    "by_type": { "bug": 0, "enhancement": 4, "debt": 2, "question": 0 },
+    "by_status": { "open": 6 }
+  },
+  "next_actions": [
+    {
+      "action": "Add global API authentication on /api/* for any internet-facing deploy.",
+      "finding_id": "f-auth-bypass-dashboard-apis-001",
+      "rationale": "Blocker — full exposure of security audit data."
+    },
+    {
+      "action": "Protect GET /api/orchestration/jobs with enqueue secret.",
+      "finding_id": "f-data-leakage-orchestration-get-001",
+      "rationale": "Stops passive reconnaissance."
+    },
+    {
+      "action": "Require auth on POST /api/sync/linear/push.",
+      "finding_id": "f-auth-bypass-linear-push-001",
+      "rationale": "Prevents LINEAR_API_KEY abuse."
+    },
+    {
+      "action": "Plan Next.js upgrade for GHSA-3x4c-7xq6-9pq8.",
+      "finding_id": "f-dependency-vuln-next-001",
+      "rationale": "Dependency hygiene."
+    },
+    {
+      "action": "Sanitize 500 responses in production.",
+      "finding_id": "f-error-disclosure-api-001",
+      "rationale": "Defense in depth."
+    }
+  ]
+}
