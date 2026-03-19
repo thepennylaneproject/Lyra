@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">PLP — Symbol</title>
-  <desc id="desc">White ring with subtle antique-gold segment.</desc>
-  <path fill="#FFFFFF" fill-rule="evenodd" d="M256 0c-141.38 0-256 114.62-256 256s114.62 256 256 256 256-114.62 256-256S397.38 0 256 0zm0 462.4c-113.88 0-206.4-92.52-206.4-206.4S142.12 49.6 256 49.6s206.4 92.52 206.4 206.4S369.88 462.4 256 462.4z"/>
-  <path fill="#C2A57A" d="M256 169.6c-47.52 0-86.4 38.88-86.4 86.4h-49.6c0-75.12 60.88-136 136-136v49.6z"/>
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M2.5 13 L2.5 6 Q2.5 1.5 8 1.5 Q13.5 1.5 13.5 6 L13.5 13" stroke="#0F6E56" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+  <line x1="2.5" y1="13" x2="13.5" y2="13" stroke="#0F6E56" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="5.5" cy="5" r="1" fill="#1D9E75"/>
+  <circle cx="8" cy="4" r="1" fill="#1D9E75"/>
+  <circle cx="10.5" cy="5" r="1" fill="#1D9E75"/>
 </svg>

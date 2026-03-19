@@ -1,24 +1,19 @@
 /**
- * Persist Linear sync mappings per project. Stored in data/linear_sync.json.
+ * Persist Linear sync mappings per project.
+ * When DATABASE_URL is configured, uses Postgres (`lyra_linear_sync`).
+ * Otherwise uses `data/linear_sync.json` (local dev only; not durable on serverless).
  */
 
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
-import type { FindingStatus } from "./types";
+import type { SyncState } from "./types";
+import {
+  getProjectSyncStateFromDb,
+  linearSyncDatabaseEnabled,
+  setProjectSyncStateInDb,
+} from "./linear-sync-pg";
 
-export interface SyncMapping {
-  linear_id: string;
-  identifier?: string;
-  url?: string;
-  lyra_status: FindingStatus;
-  created_at?: string;
-  last_synced?: string;
-}
-
-export interface ProjectSyncState {
-  mappings: Record<string, SyncMapping>;
-  last_sync: string | null;
-}
+export type ProjectSyncState = SyncState;
 
 const FILENAME = "linear_sync.json";
 
@@ -36,12 +31,19 @@ async function ensureDir(filePath: string): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
 }
 
-export async function loadSyncState(): Promise<Record<string, ProjectSyncState>> {
+function defaultProjectState(): SyncState {
+  return { mappings: {}, last_sync: null };
+}
+
+async function loadSyncStateFromFile(): Promise<Record<string, SyncState>> {
   const filePath = getFilePath();
   try {
     const raw = await readFile(filePath, "utf-8");
-    const data = JSON.parse(raw) as Record<string, ProjectSyncState>;
-    return typeof data === "object" && data !== null ? data : {};
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof data !== "object" || data === null) return {};
+    return Object.fromEntries(
+      Object.entries(data).filter(([k]) => k !== "_updatedAt")
+    ) as Record<string, SyncState>;
   } catch (e: unknown) {
     if (e && typeof e === "object" && "code" in e && e.code === "ENOENT") {
       return {};
@@ -50,8 +52,8 @@ export async function loadSyncState(): Promise<Record<string, ProjectSyncState>>
   }
 }
 
-export async function saveSyncState(
-  state: Record<string, ProjectSyncState>
+async function saveSyncStateToFile(
+  state: Record<string, SyncState>
 ): Promise<void> {
   const filePath = getFilePath();
   await ensureDir(filePath);
@@ -68,21 +70,23 @@ export async function saveSyncState(
 
 export async function getProjectSyncState(
   projectName: string
-): Promise<ProjectSyncState> {
-  const all = await loadSyncState();
-  return (
-    all[projectName] ?? {
-      mappings: {},
-      last_sync: null,
-    }
-  );
+): Promise<SyncState> {
+  if (linearSyncDatabaseEnabled()) {
+    return getProjectSyncStateFromDb(projectName);
+  }
+  const all = await loadSyncStateFromFile();
+  return all[projectName] ?? defaultProjectState();
 }
 
 export async function setProjectSyncState(
   projectName: string,
-  projectState: ProjectSyncState
+  projectState: SyncState
 ): Promise<void> {
-  const all = await loadSyncState();
+  if (linearSyncDatabaseEnabled()) {
+    await setProjectSyncStateInDb(projectName, projectState);
+    return;
+  }
+  const all = await loadSyncStateFromFile();
   all[projectName] = projectState;
-  await saveSyncState(all);
+  await saveSyncStateToFile(all);
 }

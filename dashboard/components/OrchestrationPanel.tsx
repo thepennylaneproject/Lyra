@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api-fetch";
+import { LYRA_ENQUEUE_SECRET_STORAGE_KEY } from "@/lib/auth-constants";
 import type { PortfolioOrchestrationState, OrchestrationActionKind } from "@/lib/orchestration";
 import type { DurableStateSummary } from "@/lib/durable-state";
 import type { LyraAuditJobRow, LyraAuditRunRow } from "@/lib/orchestration-jobs";
@@ -22,8 +23,6 @@ const DISPATCHABLE_ACTIONS = new Set<OrchestrationActionKind>([
   "run_synthesizer",
 ]);
 
-const STORAGE_KEY = "lyra_enqueue_secret";
-
 const ORCHESTRATION_CACHE_MS = 15_000;
 let orchestrationCache: {
   data: PortfolioOrchestrationState | null;
@@ -32,6 +31,7 @@ let orchestrationCache: {
   jobsConfigured: boolean;
   redisConfigured: boolean;
   durable: DurableStateSummary | null;
+  jobsLoadError: string | null;
   at: number;
 } | null = null;
 
@@ -82,10 +82,12 @@ export function OrchestrationPanel() {
   const [overrideAction, setOverrideAction] = useState<OrchestrationActionKind>("run_full_audit");
   const [enqueueSecret, setEnqueueSecret] = useState<string>("");
   const [enqueueAuthOptional, setEnqueueAuthOptional] = useState(false);
+  const [jobsLoadError, setJobsLoadError] = useState<string | null>(null);
+  const [showClearQueueConfirm, setShowClearQueueConfirm] = useState(false);
 
   useEffect(() => {
     try {
-      const s = sessionStorage.getItem(STORAGE_KEY);
+      const s = sessionStorage.getItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
       if (s) setEnqueueSecret(s);
     } catch {
       /* ignore */
@@ -95,8 +97,9 @@ export function OrchestrationPanel() {
   const persistSecret = (v: string) => {
     setEnqueueSecret(v);
     try {
-      if (v.trim()) sessionStorage.setItem(STORAGE_KEY, v.trim());
-      else sessionStorage.removeItem(STORAGE_KEY);
+      if (v.trim())
+        sessionStorage.setItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY, v.trim());
+      else sessionStorage.removeItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
     } catch {
       /* ignore */
     }
@@ -119,6 +122,7 @@ export function OrchestrationPanel() {
       setJobsConfigured(orchestrationCache.jobsConfigured);
       setRedisConfigured(orchestrationCache.redisConfigured);
       setDurable(orchestrationCache.durable);
+      setJobsLoadError(orchestrationCache.jobsLoadError ?? null);
       setLoading(false);
       return;
     }
@@ -143,6 +147,7 @@ export function OrchestrationPanel() {
     let runsVal: LyraAuditRunRow[] = [];
     let jobsConfiguredVal = false;
     let redisConfiguredVal = false;
+    let jobsErr: string | null = null;
     if (jobsRes.ok) {
       const j = await jobsRes.json();
       jobsConfiguredVal = Boolean(j.configured);
@@ -154,7 +159,11 @@ export function OrchestrationPanel() {
       runsVal = Array.isArray(j.runs) ? j.runs : [];
       setJobs(jobsVal);
       setRuns(runsVal);
+      setJobsLoadError(null);
     } else {
+      const errText = await jobsRes.text();
+      jobsErr = `Jobs list failed (${jobsRes.status}): ${errText.slice(0, 200)}`;
+      setJobsLoadError(jobsErr);
       setJobsConfigured(false);
       setJobs([]);
       setRuns([]);
@@ -176,6 +185,7 @@ export function OrchestrationPanel() {
       jobsConfigured: jobsConfiguredVal,
       redisConfigured: redisConfiguredVal,
       durable: durableVal,
+      jobsLoadError: jobsErr,
       at: Date.now(),
     };
     setLoading(false);
@@ -230,6 +240,7 @@ export function OrchestrationPanel() {
   );
 
   const clearQueue = useCallback(async () => {
+    setShowClearQueueConfirm(false);
     setDispatchError(null);
     setDispatching("clear_queue");
     try {
@@ -342,6 +353,30 @@ export function OrchestrationPanel() {
         <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Re-audit due</div><div style={{ fontSize: "22px" }}>{data.summary.audit_due}</div></div>
       </div>
 
+      {jobsLoadError && (
+        <div
+          style={{
+            marginBottom: "0.75rem",
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-amber)",
+            lineHeight: 1.45,
+          }}
+        >
+          {jobsLoadError}
+          <button
+            type="button"
+            onClick={() => void load(undefined, { bypassCache: true })}
+            style={{ marginLeft: "0.5rem", fontSize: "11px", textDecoration: "underline", cursor: "pointer", border: "none", background: "none", color: "inherit" }}
+          >
+            Retry
+          </button>
+          <button type="button" onClick={() => setJobsLoadError(null)} style={{ marginLeft: "0.35rem", opacity: 0.8 }} aria-label="Dismiss jobs error">
+            ×
+          </button>
+        </div>
+      )}
+
       {dispatchError && (
         <div style={{ marginBottom: "0.75rem", fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--color-text-danger)" }}>
           {dispatchError}
@@ -383,13 +418,56 @@ export function OrchestrationPanel() {
           </button>
           <button
             type="button"
-            onClick={() => void clearQueue()}
+            onClick={() => setShowClearQueueConfirm(true)}
             disabled={!canEnqueue || dispatching === "clear_queue"}
             title="Removes all BullMQ jobs on lyra-audit and marks DB queued rows as failed"
             style={{ fontSize: "11px", fontFamily: "var(--font-mono)", padding: "4px 10px", color: "var(--ink-amber)" }}
           >
             {dispatching === "clear_queue" ? "…" : "Clear queue (Redis + DB)"}
           </button>
+        </div>
+      )}
+
+      {showClearQueueConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="clear-queue-confirm-title"
+          style={{
+            marginBottom: "1rem",
+            padding: "1rem 1.15rem",
+            borderRadius: "var(--radius-md)",
+            border: "0.5px solid var(--ink-amber)",
+            background: "var(--ink-bg-sunken)",
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-text-2)",
+            lineHeight: 1.5,
+          }}
+        >
+          <div id="clear-queue-confirm-title" style={{ fontWeight: 600, color: "var(--ink-amber)", marginBottom: "0.5rem" }}>
+            Clear entire queue?
+          </div>
+          <p style={{ margin: "0 0 0.75rem" }}>
+            This removes <strong>all</strong> BullMQ jobs on the lyra-audit queue and marks in-flight queued rows in the database as failed. Running workers may still finish current work; new work will not be picked up from the cleared queue.
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => void clearQueue()}
+              disabled={dispatching === "clear_queue"}
+              style={{ fontSize: "11px", fontFamily: "var(--font-mono)", padding: "4px 12px", color: "var(--ink-red)" }}
+            >
+              Yes, clear queue
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowClearQueueConfirm(false)}
+              style={{ fontSize: "11px", fontFamily: "var(--font-mono)", padding: "4px 12px" }}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 

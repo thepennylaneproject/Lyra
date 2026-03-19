@@ -17,26 +17,52 @@ interface LinearSyncProps {
 
 export function LinearSync({ projectName }: LinearSyncProps) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
+  const [statusLoadError, setStatusLoadError] = useState<string | null>(null);
   const [action, setAction] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
+    setStatusLoadError(null);
     try {
       const res = await apiFetch(
         `/api/sync/linear/status?project=${encodeURIComponent(projectName)}`
       );
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        configured?: boolean;
+        last_sync?: string | null;
+        synced_count?: number;
+        in_linear_only?: number;
+        unsynced_unresolved?: number;
+      };
       if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
+        setStatus({
+          configured: Boolean(data.configured),
+          last_sync: data.last_sync ?? null,
+          synced_count: Number(data.synced_count ?? 0),
+          in_linear_only: Number(data.in_linear_only ?? 0),
+          unsynced_unresolved: Number(data.unsynced_unresolved ?? 0),
+        });
+        setStatusLoadError(null);
+      } else {
+        setStatus(null);
+        setStatusLoadError(
+          typeof data.error === "string"
+            ? data.error
+            : `Status failed (${res.status}). Use dashboard login or paste orchestration secret.`
+        );
       }
     } catch {
       setStatus(null);
+      setStatusLoadError("Network error loading Linear status");
     }
   }, [projectName]);
 
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+    setStatus(null);
+    setStatusLoadError(null);
+    void fetchStatus();
+  }, [projectName, fetchStatus]);
 
   const push = useCallback(async () => {
     setAction("push");
@@ -80,13 +106,28 @@ export function LinearSync({ projectName }: LinearSyncProps) {
     }
   }, [projectName, fetchStatus]);
 
+  if (statusLoadError && !status) {
+    return (
+      <div
+        style={{
+          fontSize: "11px",
+          fontFamily: "var(--font-mono)",
+          color: "var(--ink-red)",
+          marginBottom: "1rem",
+        }}
+      >
+        linear: {statusLoadError}
+      </div>
+    );
+  }
+
   if (status === null) {
     return (
       <div
         style={{
-          fontSize:     "11px",
-          fontFamily:   "var(--font-mono)",
-          color:        "var(--ink-text-4)",
+          fontSize: "11px",
+          fontFamily: "var(--font-mono)",
+          color: "var(--ink-text-4)",
           marginBottom: "1rem",
         }}
       >
@@ -99,9 +140,9 @@ export function LinearSync({ projectName }: LinearSyncProps) {
     return (
       <div
         style={{
-          fontSize:     "11px",
-          fontFamily:   "var(--font-mono)",
-          color:        "var(--ink-text-4)",
+          fontSize: "11px",
+          fontFamily: "var(--font-mono)",
+          color: "var(--ink-text-4)",
           marginBottom: "1rem",
         }}
       >
@@ -115,9 +156,9 @@ export function LinearSync({ projectName }: LinearSyncProps) {
       {syncError && (
         <div
           style={{
-            fontSize:     "11px",
-            fontFamily:   "var(--font-mono)",
-            color:        "var(--ink-red)",
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-red)",
             marginBottom: "0.5rem",
           }}
         >
@@ -126,10 +167,10 @@ export function LinearSync({ projectName }: LinearSyncProps) {
       )}
       <div
         style={{
-          display:      "flex",
-          alignItems:   "center",
-          gap:          "0.75rem",
-          flexWrap:     "wrap",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.75rem",
+          flexWrap: "wrap",
         }}
       >
         <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>

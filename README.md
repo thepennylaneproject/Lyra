@@ -94,10 +94,11 @@ From the dashboard UI, use **Import project** to load `open_findings.json`, then
 
 ## Orchestration (Supabase + Netlify + worker)
 
-- **Postgres:** `DATABASE_URL` — projects in `lyra_projects`, jobs in `lyra_audit_jobs` (see `supabase/migrations/`).
-- **Enqueue / API gate:** `ORCHESTRATION_ENQUEUE_SECRET` or `DASHBOARD_API_SECRET` — Netlify cron and dashboard POST use Bearer; browser session uses the unlock screen after first load.
-- **Worker:** `worker/` with `OPENAI_API_KEY`, same `DATABASE_URL`, optional `REDIS_URL` for BullMQ.
+- **Postgres:** `DATABASE_URL` — projects in `lyra_projects`, jobs in `lyra_audit_jobs`, completed summaries in **`lyra_audit_runs`**, Linear mappings in **`lyra_linear_sync`** when migrations are applied (see `supabase/migrations/`).
+- **Enqueue / API gate:** `ORCHESTRATION_ENQUEUE_SECRET` or `DASHBOARD_API_SECRET` — Netlify cron and dashboard POST use Bearer; browser session uses the unlock screen after first load. Client `apiFetch` also sends the orchestration secret from **session storage** when set (same value as the orchestration panel field).
+- **Worker:** `worker/` with `OPENAI_API_KEY`, same `DATABASE_URL`, optional `REDIS_URL` for BullMQ. Audits use **sampled** code context (see `worker/README.md`), not a full-repo scan.
 - **Weekly schedule:** Netlify function `dashboard/netlify/functions/enqueue-weekly-audit.ts` (Monday 09:00 UTC).
+- **Per-project audit history:** Dashboard project view lists recent `lyra_audit_runs` / `lyra_audit_jobs` for that app. `GET /api/orchestration/runs?project=Name` returns the same JSON.
 
 Routing remains env-driven: `LYRA_ROUTING_CONFIG`, `LYRA_ROUTING_STRATEGY`, and `LYRA_*_MODEL` for the dashboard engine view and repair engine.
 

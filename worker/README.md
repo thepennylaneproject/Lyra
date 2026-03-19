@@ -28,3 +28,13 @@ Deploy this process on any long-lived host (Railway, Fly, VPS, etc.) with repo c
 If the dashboard shows Redis on but jobs never leave `queued`, the worker is not running or is pointed at a different Redis/DB than the dashboard. Start the worker locally: `cd worker && npm install && npm run dev`.
 
 To drop pending work: use the dashboard **Clear queue (Redis + DB)** or `POST /api/orchestration/queue/clear` with the same Bearer secret as enqueue.
+
+## Code context sampling (why few findings?)
+
+Each job runs **one LLM pass** per app. The worker sends the expectations doc plus a **sample** of source files from `the_penny_lane_project/<App>/`, not the whole repo or the manual `audits/` corpus. Limits are defined in `src/context.ts` (currently on the order of **12 files**, **~6k characters** per file, bounded recursion). A small `findings` array is normal unless you raise those limits or add other importers.
+
+Without `OPENAI_API_KEY`, the worker records a single **config** finding instead of a real audit.
+
+## Where completed runs are stored
+
+Postgres tables **`lyra_audit_jobs`** (enqueue + status) and **`lyra_audit_runs`** (finished run: `job_type`, `summary`, `findings_added`, `payload`). The dashboard **project** view includes a **Worker audit history** section when `DATABASE_URL` is set.

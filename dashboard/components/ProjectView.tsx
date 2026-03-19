@@ -9,6 +9,7 @@ import { EmptyState } from "./EmptyState";
 import { FindingRow } from "./FindingRow";
 import { FindingDetail } from "./FindingDetail";
 import { LinearSync } from "./LinearSync";
+import { ProjectAuditHistory } from "./ProjectAuditHistory";
 import { STATUS_GROUPS, sortFindings } from "@/lib/constants";
 
 type FilterKey = "active" | "pending" | "resolved" | "all";
@@ -34,6 +35,7 @@ export function ProjectView({
   const [search,   setSearch]   = useState("");
   const [selected, setSelected] = useState<Finding | null>(null);
   const [findings, setFindings] = useState<Finding[]>(project.findings ?? []);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     setFindings(project.findings ?? []);
@@ -64,11 +66,18 @@ export function ProjectView({
 
   const handleAction = useCallback(
     async (findingId: string, newStatus: FindingStatus) => {
-      await onUpdateFinding(project.name, findingId, newStatus);
-      const updated = await refetchProject();
-      if (updated) setFindings(updated.findings ?? []);
-      const f = updated?.findings?.find((x) => x.finding_id === findingId);
-      if (f) setSelected({ ...f, status: newStatus });
+      setActionError(null);
+      try {
+        await onUpdateFinding(project.name, findingId, newStatus);
+        const updated = await refetchProject();
+        if (updated) setFindings(updated.findings ?? []);
+        const f = updated?.findings?.find((x) => x.finding_id === findingId);
+        if (f) setSelected({ ...f, status: newStatus });
+      } catch (e) {
+        const msg =
+          e instanceof Error ? e.message : "Could not update finding. Check connection and try again.";
+        setActionError(msg);
+      }
     },
     [project.name, onUpdateFinding, refetchProject]
   );
@@ -147,6 +156,38 @@ export function ProjectView({
 
       {/* Linear sync */}
       <LinearSync projectName={project.name} />
+
+      <ProjectAuditHistory projectName={project.name} />
+
+      {actionError && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: "1rem",
+            padding: "0.65rem 0.85rem",
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-red)",
+            background: "var(--ink-bg-sunken)",
+            border: "0.5px solid var(--ink-border-faint)",
+            borderRadius: "var(--radius-md)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "0.75rem",
+          }}
+        >
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            aria-label="Dismiss"
+            style={{ flexShrink: 0, border: "none", background: "transparent", color: "var(--ink-text-4)", cursor: "pointer", padding: "0 4px" }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Finding detail panel */}
       {selectedFinding && (

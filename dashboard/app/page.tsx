@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import type { Project, FindingStatus } from "@/lib/types";
 import { apiFetch } from "@/lib/api-fetch";
 import { DashboardLogin } from "@/components/DashboardLogin";
@@ -17,6 +18,9 @@ import { Shell, type NavView } from "@/components/Shell";
 import { STATUS_GROUPS, PRIORITY_ORDER, SEVERITY_ORDER, sortFindings } from "@/lib/constants";
 
 export default function Home() {
+  const router = useRouter();
+  const pathname = usePathname() ?? "/";
+
   const [projects,         setProjects]         = useState<Project[]>([]);
   const [activeProject,   setActiveProject]     = useState<string | null>(null);
   const [activeView,      setActiveView]        = useState<NavView>("portfolio");
@@ -25,6 +29,8 @@ export default function Home() {
   const [needsAuth,        setNeedsAuth]         = useState(false);
   const [projectsError,    setProjectsError]     = useState<string | null>(null);
   const [queuedFindingIds, setQueuedFindingIds] = useState<Set<string>>(new Set());
+  const [queueError,       setQueueError]       = useState<string | null>(null);
+  const [removeError,      setRemoveError]      = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
     setProjectsError(null);
@@ -55,6 +61,7 @@ export default function Home() {
   }, []);
 
   const fetchQueue = useCallback(async () => {
+    setQueueError(null);
     try {
       const res = await apiFetch("/api/engine/queue");
       if (res.ok) {
@@ -62,14 +69,44 @@ export default function Home() {
         setQueuedFindingIds(
           new Set((data.queue ?? []).map((j: { finding_id: string }) => j.finding_id))
         );
+        return;
       }
-    } catch {}
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const msg =
+        typeof body.error === "string"
+          ? body.error
+          : `Repair queue could not be loaded (${res.status}). “Queued” badges may be wrong.`;
+      setQueueError(msg);
+    } catch (e) {
+      setQueueError(
+        e instanceof Error ? e.message : "Network error loading repair queue."
+      );
+    }
   }, []);
 
   useEffect(() => {
     fetchProjects();
     fetchQueue();
   }, [fetchProjects, fetchQueue]);
+
+  useLayoutEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const p = q.get("project");
+    if (p) setActiveProject(p);
+    if (q.get("view") === "engine") setActiveView("engine");
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (activeView === "engine") params.set("view", "engine");
+    if (activeProject) params.set("project", activeProject);
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (typeof window !== "undefined") {
+      const cur = `${window.location.pathname}${window.location.search}`;
+      if (cur !== next) router.replace(next, { scroll: false });
+    }
+  }, [activeView, activeProject, pathname, router]);
 
   const refetchProject = useCallback(async (): Promise<Project | null> => {
     if (!activeProject) return null;
@@ -94,7 +131,14 @@ export default function Home() {
           body:    JSON.stringify({ status }),
         }
       );
-      if (!res.ok) throw new Error("Failed to update finding");
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        const msg =
+          typeof body.error === "string"
+            ? body.error
+            : `Could not save status (${res.status}). Try again.`;
+        throw new Error(msg);
+      }
     },
     []
   );
@@ -115,14 +159,22 @@ export default function Home() {
 
   const handleRemove = useCallback(async (name: string) => {
     if (!confirm(`Remove ${name}?`)) return;
+    setRemoveError(null);
     try {
       const res = await apiFetch(`/api/projects/${encodeURIComponent(name)}`, { method: "DELETE" });
       if (res.ok) {
         setProjects((prev) => prev.filter((p) => p.name !== name));
         if (activeProject === name) setActiveProject(null);
+        return;
       }
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setRemoveError(
+        typeof body.error === "string"
+          ? body.error
+          : `Could not remove project (${res.status}). Try again.`
+      );
     } catch (e) {
-      console.error("Failed to remove project", e);
+      setRemoveError(e instanceof Error ? e.message : "Network error while removing project.");
     }
   }, [activeProject]);
 
@@ -268,6 +320,64 @@ export default function Home() {
       {/* Import modal */}
       {showImport && (
         <ImportModal onImport={handleImport} onClose={() => setShowImport(false)} />
+      )}
+
+      {(queueError || removeError) && (
+        <div
+          style={{
+            marginBottom: "1rem",
+            padding: "0.65rem 0.85rem",
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-amber)",
+            background: "var(--ink-bg-sunken)",
+            border: "0.5px solid var(--ink-border-faint)",
+            borderRadius: "var(--radius-md)",
+            lineHeight: 1.45,
+          }}
+        >
+          {queueError && (
+            <div style={{ marginBottom: removeError ? "0.5rem" : 0 }}>
+              <span>{queueError}</span>
+              <button
+                type="button"
+                onClick={() => void fetchQueue()}
+                style={{
+                  marginLeft: "0.5rem",
+                  fontSize: "11px",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  border: "none",
+                  background: "none",
+                  color: "inherit",
+                }}
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={() => setQueueError(null)}
+                aria-label="Dismiss queue message"
+                style={{ marginLeft: "0.35rem", opacity: 0.8, border: "none", background: "none", color: "inherit", cursor: "pointer" }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+          {removeError && (
+            <div>
+              <span>{removeError}</span>
+              <button
+                type="button"
+                onClick={() => setRemoveError(null)}
+                aria-label="Dismiss remove error"
+                style={{ marginLeft: "0.35rem", opacity: 0.8, border: "none", background: "none", color: "inherit", cursor: "pointer" }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Portfolio header */}

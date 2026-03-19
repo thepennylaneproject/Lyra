@@ -141,6 +141,40 @@ export async function listRecentAuditRuns(limit = 15): Promise<LyraAuditRunRow[]
   return rows.map(rowRun);
 }
 
+/** Completed runs for one project (case-insensitive name match). */
+export async function listAuditRunsForProject(
+  projectName: string,
+  limit = 30
+): Promise<LyraAuditRunRow[]> {
+  const p = pool();
+  const rows = await p.query(
+    `SELECT * FROM lyra_audit_runs
+     WHERE project_name IS NOT NULL
+       AND LOWER(TRIM(project_name)) = LOWER(TRIM($1))
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [projectName, limit]
+  );
+  return rows.map(rowRun);
+}
+
+/** Job rows for one project (queued/running/history). */
+export async function listAuditJobsForProject(
+  projectName: string,
+  limit = 20
+): Promise<LyraAuditJobRow[]> {
+  const p = pool();
+  const rows = await p.query(
+    `SELECT * FROM lyra_audit_jobs
+     WHERE project_name IS NOT NULL
+       AND LOWER(TRIM(project_name)) = LOWER(TRIM($1))
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [projectName, limit]
+  );
+  return rows.map(rowJob);
+}
+
 export async function getAuditJob(id: string): Promise<LyraAuditJobRow | null> {
   const p = pool();
   const rows = await p.query(`SELECT * FROM lyra_audit_jobs WHERE id = $1`, [
