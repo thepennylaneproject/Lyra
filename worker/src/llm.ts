@@ -46,7 +46,7 @@ ${visualOnly ? "Focus on visual/UI/UX expectations only.\n" : ""}
 ## Expectations document
 ${expectations}
 
-## Codebase excerpts
+## Mirror context (intelligence report + sampled files)
 ${codeContext}
 
 Return JSON: { "findings": [ ... ] } per audit-agent output contract.`;

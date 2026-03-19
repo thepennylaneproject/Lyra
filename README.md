@@ -72,6 +72,8 @@ python3 audits/session.py status # Full dashboard
 
 See [`audits/README.md`](audits/README.md) for full documentation.
 
+Near-term theme priorities and CLI vs dashboard workflows: [`docs/LYRA_NEAR_TERM_THEMES.md`](docs/LYRA_NEAR_TERM_THEMES.md).
+
 ## Dashboard
 
 The dashboard is the primary way to review audit output, queue repairs, and manage projects without running everything manually.

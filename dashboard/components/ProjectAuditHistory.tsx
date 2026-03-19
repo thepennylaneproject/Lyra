@@ -11,6 +11,17 @@ interface ProjectAuditHistoryProps {
   projectName: string;
 }
 
+function deltaVsPrior(
+  current: number,
+  prior: number | undefined
+): string | null {
+  if (prior === undefined) return null;
+  const d = current - prior;
+  if (d === 0) return "same as prior run";
+  if (d > 0) return `+${d} vs prior run`;
+  return `${d} vs prior run`;
+}
+
 export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [runs, setRuns] = useState<LyraAuditRunRow[]>([]);
@@ -98,6 +109,14 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
 
   const hasAny = runs.length > 0 || jobs.length > 0;
 
+  const newest = runs[0];
+  const second = runs[1];
+  const spike =
+    newest &&
+    second &&
+    newest.findings_added >= 5 &&
+    newest.findings_added - second.findings_added >= 3;
+
   return (
     <div
       style={{
@@ -118,6 +137,33 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
       >
         Worker audit history
       </div>
+      <div
+        style={{
+          fontSize: "10px",
+          fontFamily: "var(--font-mono)",
+          color: "var(--ink-text-4)",
+          lineHeight: 1.45,
+          marginBottom: "0.75rem",
+        }}
+      >
+        Automated audits sample the mirror under <code>the_penny_lane_project/</code> — intelligence{" "}
+        <code>*report*.md</code> excerpt plus up to <strong>12</strong> text files (~6k chars each), not a full
+        repo. Interpret severity accordingly.
+      </div>
+      {spike && (
+        <div
+          style={{
+            fontSize: "10px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-amber)",
+            marginBottom: "0.65rem",
+            lineHeight: 1.45,
+          }}
+        >
+          Latest run added notably more findings than the previous completed run — review new items or drift in
+          expectations.
+        </div>
+      )}
       {!hasAny && (
         <div style={{ fontSize: "10px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
           No jobs or completed runs for this project yet. Enqueue onboard / re-audit from Orchestration.
@@ -145,12 +191,19 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
               lineHeight: 1.5,
             }}
           >
-            {runs.map((r) => (
+            {runs.map((r, i) => {
+              const older = runs[i + 1];
+              const priorAdded = older?.findings_added;
+              const delta = deltaVsPrior(r.findings_added, priorAdded);
+              return (
               <li key={r.id} style={{ marginBottom: "0.4rem" }}>
                 <span style={{ color: "var(--ink-text-4)" }}>
                   {r.created_at.slice(0, 19).replace("T", " ")}
                 </span>{" "}
                 <strong>{r.job_type}</strong> · {r.status} · +{r.findings_added} findings
+                {delta && (
+                  <span style={{ color: "var(--ink-text-3)" }}> · {delta}</span>
+                )}
                 {r.job_id && (
                   <span style={{ color: "var(--ink-text-4)" }}> · job {r.job_id.slice(0, 8)}…</span>
                 )}
@@ -160,7 +213,8 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
                   </div>
                 )}
               </li>
-            ))}
+            );
+            })}
           </ul>
         </div>
       )}

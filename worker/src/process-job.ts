@@ -3,7 +3,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
 import { resolveApps } from "./apps.js";
-import { gatherCodeContext, readExpectations } from "./context.js";
+import { buildCodeContextForAudit, readExpectations } from "./context.js";
 import { auditWithLlm } from "./llm.js";
 import {
   claimJob,
@@ -102,7 +102,7 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
 
     for (const app of apps) {
       const expectations = readExpectations(root, app.expectations);
-      const code = gatherCodeContext(root, app.scanDir);
+      const code = buildCodeContextForAudit(root, app.scanDir);
       const findings = await auditWithLlm(
         core,
         auditAgent,

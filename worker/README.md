@@ -31,7 +31,12 @@ To drop pending work: use the dashboard **Clear queue (Redis + DB)** or `POST /a
 
 ## Code context sampling (why few findings?)
 
-Each job runs **one LLM pass** per app. The worker sends the expectations doc plus a **sample** of source files from `the_penny_lane_project/<App>/`, not the whole repo or the manual `audits/` corpus. Limits are defined in `src/context.ts` (currently on the order of **12 files**, **~6k characters** per file, bounded recursion). A small `findings` array is normal unless you raise those limits or add other importers.
+Each job runs **one LLM pass** per app. The worker sends the expectations doc plus:
+
+1. **Intelligence report** — If the mirror tree contains a markdown file whose name includes `report` (e.g. `advocera_report.md`), the worker prepends a **bounded excerpt** (see `MAX_REPORT_CHARS` in `src/context.ts`).
+2. **Sampled source files** from `the_penny_lane_project/<App>/`, not the whole repo or the full manual `audits/` corpus. Limits are in `src/context.ts` (on the order of **12 files**, **~6k characters** per file, bounded recursion). A small `findings` array is normal unless you raise those limits or add other importers.
+
+See [docs/LYRA_NEAR_TERM_THEMES.md](../docs/LYRA_NEAR_TERM_THEMES.md) for workflow and theme priorities.
 
 Without `OPENAI_API_KEY`, the worker records a single **config** finding instead of a real audit.
 
