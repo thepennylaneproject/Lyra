@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
 import { getEngineStatus } from "@/lib/audit-reader";
 import { derivePortfolioOrchestration } from "@/lib/orchestration";
+import { apiErrorMessage } from "@/lib/api-error";
 
 export async function GET() {
   try {
@@ -14,7 +15,7 @@ export async function GET() {
   } catch (e) {
     console.error("GET /api/orchestration", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }

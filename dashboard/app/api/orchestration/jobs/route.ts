@@ -8,6 +8,7 @@ import {
   type LyraJobType,
 } from "@/lib/orchestration-jobs";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
+import { apiErrorMessage } from "@/lib/api-error";
 
 const JOB_TYPES: LyraJobType[] = [
   "weekly_audit",
@@ -85,7 +86,7 @@ export async function GET() {
   } catch (e) {
     console.error("GET /api/orchestration/jobs", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }
@@ -188,7 +189,7 @@ export async function POST(request: Request) {
   } catch (e) {
     console.error("POST /api/orchestration/jobs", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }

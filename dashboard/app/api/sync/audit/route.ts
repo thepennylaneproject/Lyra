@@ -3,6 +3,7 @@ import { readOpenFindings, readAuditRunFiles } from "@/lib/audit-reader";
 import { getRepository } from "@/lib/repository-instance";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import type { Project, Finding } from "@/lib/types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 /**
  * GET  /api/sync/audit — preview what's available to import.
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
   } catch (e) {
     console.error("POST /api/sync/audit", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }

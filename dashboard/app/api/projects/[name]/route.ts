@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
 import type { Project } from "@/lib/types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -16,7 +17,7 @@ export async function GET(_request: Request, { params }: Params) {
   } catch (e) {
     console.error("GET /api/projects/[name]", e);
     return NextResponse.json(
-      { error: String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }
@@ -42,7 +43,7 @@ export async function PUT(request: Request, { params }: Params) {
   } catch (e) {
     console.error("PUT /api/projects/[name]", e);
     return NextResponse.json(
-      { error: String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }
@@ -61,7 +62,7 @@ export async function DELETE(_request: Request, { params }: Params) {
   } catch (e) {
     console.error("DELETE /api/projects/[name]", e);
     return NextResponse.json(
-      { error: String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }

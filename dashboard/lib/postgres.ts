@@ -159,20 +159,6 @@ export function createPostgresPool(): PostgresPool {
     throw new Error("DATABASE_URL is required");
   }
   const settings = parseDatabaseUrl(rawUrl);
-  // #region agent log
-  fetch("http://127.0.0.1:7282/ingest/b02da152-e83c-445f-a22d-32676413b958", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "102243" },
-    body: JSON.stringify({
-      sessionId: "102243",
-      location: "dashboard/lib/postgres.ts:createPostgresPool",
-      message: "Postgres pool created",
-      data: { host: settings.host, port: settings.port },
-      timestamp: Date.now(),
-      hypothesisId: "H4",
-    }),
-  }).catch(() => {});
-  // #endregion
   return new PostgresPool(settings);
 }
 

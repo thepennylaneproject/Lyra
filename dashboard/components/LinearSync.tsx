@@ -18,6 +18,7 @@ interface LinearSyncProps {
 export function LinearSync({ projectName }: LinearSyncProps) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [action, setAction] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -39,6 +40,7 @@ export function LinearSync({ projectName }: LinearSyncProps) {
 
   const push = useCallback(async () => {
     setAction("push");
+    setSyncError(null);
     try {
       const res = await apiFetch("/api/sync/linear/push", {
         method: "POST",
@@ -46,8 +48,12 @@ export function LinearSync({ projectName }: LinearSyncProps) {
         body: JSON.stringify({ projectName }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) await fetchStatus();
-      else alert(data.error ?? "Push failed");
+      if (res.ok) {
+        setSyncError(null);
+        await fetchStatus();
+      } else {
+        setSyncError((data as { error?: string }).error ?? "Push failed");
+      }
     } finally {
       setAction(null);
     }
@@ -55,6 +61,7 @@ export function LinearSync({ projectName }: LinearSyncProps) {
 
   const pull = useCallback(async () => {
     setAction("pull");
+    setSyncError(null);
     try {
       const res = await apiFetch("/api/sync/linear/pull", {
         method: "POST",
@@ -62,8 +69,12 @@ export function LinearSync({ projectName }: LinearSyncProps) {
         body: JSON.stringify({ projectName }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) await fetchStatus();
-      else alert(data.error ?? "Pull failed");
+      if (res.ok) {
+        setSyncError(null);
+        await fetchStatus();
+      } else {
+        setSyncError((data as { error?: string }).error ?? "Pull failed");
+      }
     } finally {
       setAction(null);
     }
@@ -100,47 +111,60 @@ export function LinearSync({ projectName }: LinearSyncProps) {
   }
 
   return (
-    <div
-      style={{
-        display:      "flex",
-        alignItems:   "center",
-        gap:          "0.75rem",
-        marginBottom: "1rem",
-        flexWrap:     "wrap",
-      }}
-    >
-      <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
-        linear
-      </span>
-      {status.last_sync && (
-        <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
-          {status.last_sync.slice(0, 10)}
-        </span>
+    <div style={{ marginBottom: "1rem" }}>
+      {syncError && (
+        <div
+          style={{
+            fontSize:     "11px",
+            fontFamily:   "var(--font-mono)",
+            color:        "var(--ink-red)",
+            marginBottom: "0.5rem",
+          }}
+        >
+          {syncError}
+        </div>
       )}
-      <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-3)" }}>
-        {status.synced_count} synced
-      </span>
-      {status.unsynced_unresolved > 0 && (
-        <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-amber)" }}>
-          {status.unsynced_unresolved} to push
+      <div
+        style={{
+          display:      "flex",
+          alignItems:   "center",
+          gap:          "0.75rem",
+          flexWrap:     "wrap",
+        }}
+      >
+        <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+          linear
         </span>
-      )}
-      <button
-        type="button"
-        onClick={push}
-        disabled={!!action}
-        style={{ fontSize: "10px", fontFamily: "var(--font-mono)", padding: "2px 8px" }}
-      >
-        {action === "push" ? "…" : "push"}
-      </button>
-      <button
-        type="button"
-        onClick={pull}
-        disabled={!!action}
-        style={{ fontSize: "10px", fontFamily: "var(--font-mono)", padding: "2px 8px" }}
-      >
-        {action === "pull" ? "…" : "pull"}
-      </button>
+        {status.last_sync && (
+          <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+            {status.last_sync.slice(0, 10)}
+          </span>
+        )}
+        <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-3)" }}>
+          {status.synced_count} synced
+        </span>
+        {status.unsynced_unresolved > 0 && (
+          <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-amber)" }}>
+            {status.unsynced_unresolved} to push
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={push}
+          disabled={!!action}
+          style={{ fontSize: "10px", fontFamily: "var(--font-mono)", padding: "2px 8px" }}
+        >
+          {action === "push" ? "…" : "push"}
+        </button>
+        <button
+          type="button"
+          onClick={pull}
+          disabled={!!action}
+          style={{ fontSize: "10px", fontFamily: "var(--font-mono)", padding: "2px 8px" }}
+        >
+          {action === "pull" ? "…" : "pull"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readRepairQueue, writeRepairQueue } from "@/lib/audit-reader";
 import type { RepairJob } from "@/lib/types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 /**
  * GET    /api/engine/queue — return all jobs in the repair queue.
@@ -13,8 +14,9 @@ export async function GET() {
     const queue = readRepairQueue();
     return NextResponse.json({ queue, size: queue.length });
   } catch (e) {
+    console.error("GET /api/engine/queue", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }
@@ -54,7 +56,7 @@ export async function POST(request: Request) {
   } catch (e) {
     console.error("POST /api/engine/queue", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }
@@ -78,8 +80,9 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ removed: queue.length - next.length });
   } catch (e) {
+    console.error("DELETE /api/engine/queue", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }

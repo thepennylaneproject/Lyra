@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
 import type { Finding } from "@/lib/types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -16,7 +17,7 @@ export async function GET(_request: Request, { params }: Params) {
   } catch (e) {
     console.error("GET /api/projects/[name]/findings", e);
     return NextResponse.json(
-      { error: String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }
@@ -44,7 +45,7 @@ export async function POST(request: Request, { params }: Params) {
   } catch (e) {
     console.error("POST /api/projects/[name]/findings", e);
     return NextResponse.json(
-      { error: String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }

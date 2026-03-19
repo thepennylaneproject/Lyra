@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
 import type { Project } from "@/lib/types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 export async function GET() {
   try {
@@ -10,7 +11,7 @@ export async function GET() {
   } catch (e) {
     console.error("GET /api/projects", e);
     return NextResponse.json(
-      { error: String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }
@@ -41,6 +42,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 409 });
     }
     console.error("POST /api/projects", e);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
   }
 }

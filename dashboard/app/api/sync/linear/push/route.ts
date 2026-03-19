@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
+import { apiErrorMessage } from "@/lib/api-error";
 import {
   isLinearConfigured,
   getTeamStates,
@@ -53,8 +54,9 @@ export async function POST(request: Request) {
     try {
       states = await getTeamStates();
     } catch (e) {
+      console.error("sync/linear/push getTeamStates", e);
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : "Failed to get Linear states" },
+        { error: apiErrorMessage(e) },
         { status: 502 }
       );
     }

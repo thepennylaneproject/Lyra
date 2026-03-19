@@ -46,7 +46,12 @@ export function NextActionCard({
       onClick={onOpen}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onOpen()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
       {/* Label */}
       <div

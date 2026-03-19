@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getEngineStatus } from "@/lib/audit-reader";
+import { apiErrorMessage } from "@/lib/api-error";
 
 /**
  * GET /api/engine/status — return current engine status.
@@ -17,7 +18,7 @@ export async function GET() {
   } catch (e) {
     console.error("GET /api/engine/status", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }

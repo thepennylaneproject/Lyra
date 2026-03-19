@@ -21,7 +21,12 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
       onClick={onClick}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onClick()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       style={{
         background:   "var(--ink-bg-raised)",
         border:       "0.5px solid var(--ink-border-faint)",

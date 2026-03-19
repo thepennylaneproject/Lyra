@@ -1179,12 +1179,18 @@
         "estimated_effort": "small",
         "tests_needed": []
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:30:00.000Z",
           "actor": "performance-cost-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T02:30:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "OrchestrationPanel: 15s module-level cache for load(); remounts within window skip refetch."
         }
       ]
     },
@@ -1220,12 +1226,18 @@
           "EXPLAIN on staging"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:30:00.000Z",
           "actor": "performance-cost-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T02:30:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added supabase/migrations/20260319140000_lyra_queued_poll_index.sql: partial index on (created_at ASC) WHERE status = 'queued'."
         }
       ]
     },
@@ -1556,7 +1568,7 @@
         "estimated_effort": "small"
       },
       "owner": "solo-dev",
-      "status": "open",
+      "status": "resolved",
       "related_ids": [],
       "history": [
         {
@@ -1564,6 +1576,12 @@
           "actor": "security-privacy-auditor",
           "event": "created",
           "notes": ""
+        },
+        {
+          "timestamp": "2026-03-19T02:30:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added dashboard/lib/api-error.ts (apiErrorMessage); all API routes return generic message in production, full message in dev."
         }
       ],
       "artifacts": []
@@ -1836,12 +1854,18 @@
         "estimated_effort": "small",
         "tests_needed": []
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T02:30:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "LinearSync: syncError state; inline error banner (red) for push/pull failures; removed alert()."
         }
       ]
     },
@@ -1920,12 +1944,18 @@
           "Keyboard: Tab to card, Space activates"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T02:30:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "NextActionCard, FindingRow, ProjectCard: onKeyDown handles Space (preventDefault + activate) in addition to Enter."
         }
       ]
     },

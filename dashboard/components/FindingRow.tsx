@@ -30,7 +30,12 @@ export function FindingRow({ finding, onClick }: FindingRowProps) {
       onClick={onClick}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onClick()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       style={{
         display:       "flex",
         alignItems:    "flex-start",

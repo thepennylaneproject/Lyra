@@ -24,6 +24,17 @@ const DISPATCHABLE_ACTIONS = new Set<OrchestrationActionKind>([
 
 const STORAGE_KEY = "lyra_enqueue_secret";
 
+const ORCHESTRATION_CACHE_MS = 15_000;
+let orchestrationCache: {
+  data: PortfolioOrchestrationState | null;
+  jobs: LyraAuditJobRow[];
+  runs: LyraAuditRunRow[];
+  jobsConfigured: boolean;
+  redisConfigured: boolean;
+  durable: DurableStateSummary | null;
+  at: number;
+} | null = null;
+
 function actionToJob(
   action: OrchestrationActionKind,
   projectName?: string
@@ -93,6 +104,21 @@ export function OrchestrationPanel() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoadError(null);
+    const now = Date.now();
+    if (
+      orchestrationCache &&
+      now - orchestrationCache.at < ORCHESTRATION_CACHE_MS
+    ) {
+      setData(orchestrationCache.data);
+      setJobs(orchestrationCache.jobs);
+      setRuns(orchestrationCache.runs);
+      setJobsConfigured(orchestrationCache.jobsConfigured);
+      setRedisConfigured(orchestrationCache.redisConfigured);
+      setDurable(orchestrationCache.durable);
+      setLoading(false);
+      return;
+    }
+
     const [orchestrationRes, jobsRes, durableRes] = await Promise.all([
       apiFetch("/api/orchestration"),
       apiFetch("/api/orchestration/jobs"),
@@ -100,33 +126,54 @@ export function OrchestrationPanel() {
     ]);
 
     if (signal?.aborted) return;
+    let dataVal: PortfolioOrchestrationState | null = null;
     if (orchestrationRes.ok) {
-      setData(await orchestrationRes.json());
+      dataVal = await orchestrationRes.json();
+      setData(dataVal);
     } else {
       const errText = await orchestrationRes.text();
       setLoadError(`Orchestration failed (${orchestrationRes.status}): ${errText.slice(0, 200)}`);
     }
     if (signal?.aborted) return;
+    let jobsVal: LyraAuditJobRow[] = [];
+    let runsVal: LyraAuditRunRow[] = [];
+    let jobsConfiguredVal = false;
+    let redisConfiguredVal = false;
     if (jobsRes.ok) {
       const j = await jobsRes.json();
-      setJobsConfigured(Boolean(j.configured));
-      setRedisConfigured(Boolean(j.redis_configured));
+      jobsConfiguredVal = Boolean(j.configured);
+      redisConfiguredVal = Boolean(j.redis_configured);
+      setJobsConfigured(jobsConfiguredVal);
+      setRedisConfigured(redisConfiguredVal);
       setEnqueueAuthOptional(Boolean(j.enqueue_auth_optional));
-      setJobs(Array.isArray(j.jobs) ? j.jobs : []);
-      setRuns(Array.isArray(j.runs) ? j.runs : []);
+      jobsVal = Array.isArray(j.jobs) ? j.jobs : [];
+      runsVal = Array.isArray(j.runs) ? j.runs : [];
+      setJobs(jobsVal);
+      setRuns(runsVal);
     } else {
       setJobsConfigured(false);
       setJobs([]);
       setRuns([]);
     }
     if (signal?.aborted) return;
+    let durableVal: DurableStateSummary | null = null;
     if (durableRes.ok) {
       const payload = await durableRes.json();
-      setDurable(payload.state ?? null);
+      durableVal = payload.state ?? null;
+      setDurable(durableVal);
     } else {
       setDurable(null);
     }
     if (signal?.aborted) return;
+    orchestrationCache = {
+      data: dataVal,
+      jobs: jobsVal,
+      runs: runsVal,
+      jobsConfigured: jobsConfiguredVal,
+      redisConfigured: redisConfiguredVal,
+      durable: durableVal,
+      at: Date.now(),
+    };
     setLoading(false);
   }, []);
 

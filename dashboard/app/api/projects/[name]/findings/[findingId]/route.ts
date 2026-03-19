@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
 import type { Finding } from "@/lib/types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type Params = { params: Promise<{ name: string; findingId: string }> };
 
@@ -42,7 +43,7 @@ export async function PATCH(request: Request, { params }: Params) {
   } catch (e) {
     console.error("PATCH /api/projects/[name]/findings/[findingId]", e);
     return NextResponse.json(
-      { error: String(e) },
+      { error: apiErrorMessage(e) },
       { status: 500 }
     );
   }

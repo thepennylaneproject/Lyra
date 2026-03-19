@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
 import { parseOpenFindingsPayload } from "@/lib/repository";
 import type { Project } from "@/lib/types";
+import { apiErrorMessage } from "@/lib/api-error";
 
 export async function POST(request: Request) {
   try {
@@ -47,6 +48,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
     console.error("POST /api/import", e);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
   }
 }
