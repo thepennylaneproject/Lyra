@@ -64,6 +64,8 @@ export function OrchestrationPanel() {
   const [redisConfigured, setRedisConfigured] = useState(false);
   const [durable, setDurable] = useState<DurableStateSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [dispatching, setDispatching] = useState<string | null>(null);
   const [overrideProject, setOverrideProject] = useState<string>("");
   const [overrideAction, setOverrideAction] = useState<OrchestrationActionKind>("run_full_audit");
@@ -89,16 +91,22 @@ export function OrchestrationPanel() {
     }
   };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setLoadError(null);
     const [orchestrationRes, jobsRes, durableRes] = await Promise.all([
       apiFetch("/api/orchestration"),
       apiFetch("/api/orchestration/jobs"),
       apiFetch("/api/durable-state"),
     ]);
 
+    if (signal?.aborted) return;
     if (orchestrationRes.ok) {
       setData(await orchestrationRes.json());
+    } else {
+      const errText = await orchestrationRes.text();
+      setLoadError(`Orchestration failed (${orchestrationRes.status}): ${errText.slice(0, 200)}`);
     }
+    if (signal?.aborted) return;
     if (jobsRes.ok) {
       const j = await jobsRes.json();
       setJobsConfigured(Boolean(j.configured));
@@ -111,28 +119,28 @@ export function OrchestrationPanel() {
       setJobs([]);
       setRuns([]);
     }
+    if (signal?.aborted) return;
     if (durableRes.ok) {
       const payload = await durableRes.json();
       setDurable(payload.state ?? null);
     } else {
       setDurable(null);
     }
+    if (signal?.aborted) return;
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    async function run() {
+    const ac = new AbortController();
+    const signal = ac.signal;
+    (async () => {
       try {
-        await load();
-      } finally {
-        if (cancelled) return;
+        await load(signal);
+      } catch {
+        if (!signal.aborted) setLoading(false);
       }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
+    })();
+    return () => ac.abort();
   }, [load]);
 
   const authHeaders = (): HeadersInit => {
@@ -146,6 +154,7 @@ export function OrchestrationPanel() {
 
   const dispatchAction = useCallback(
     async (action: OrchestrationActionKind, projectName?: string) => {
+      setDispatchError(null);
       setDispatching(projectName ? `${action}:${projectName}` : action);
       try {
         const body = actionToJob(action, projectName);
@@ -159,6 +168,9 @@ export function OrchestrationPanel() {
           throw new Error(err.error ?? `Failed (${res.status})`);
         }
         await load();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setDispatchError(msg);
       } finally {
         setDispatching(null);
       }
@@ -167,6 +179,7 @@ export function OrchestrationPanel() {
   );
 
   const enqueueWeekly = useCallback(async () => {
+    setDispatchError(null);
     setDispatching("weekly_audit");
     try {
       const res = await apiFetch("/api/orchestration/jobs", {
@@ -179,6 +192,9 @@ export function OrchestrationPanel() {
         throw new Error(err.error ?? `Failed (${res.status})`);
       }
       await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setDispatchError(msg);
     } finally {
       setDispatching(null);
     }
@@ -192,7 +208,16 @@ export function OrchestrationPanel() {
     );
   }
 
-  if (!data) return null;
+  if (!data) {
+    if (loadError) {
+      return (
+        <div style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--color-text-danger)", marginBottom: "1rem" }}>
+          {loadError}
+        </div>
+      );
+    }
+    return null;
+  }
 
   const canEnqueue =
     jobsConfigured &&
@@ -244,6 +269,12 @@ export function OrchestrationPanel() {
         <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Re-audit due</div><div style={{ fontSize: "22px" }}>{data.summary.audit_due}</div></div>
       </div>
 
+      {dispatchError && (
+        <div style={{ marginBottom: "0.75rem", fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--color-text-danger)" }}>
+          {dispatchError}
+          <button type="button" onClick={() => setDispatchError(null)} style={{ marginLeft: "0.5rem", opacity: 0.8 }} aria-label="Dismiss">×</button>
+        </div>
+      )}
       {jobsConfigured && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem", alignItems: "center" }}>
           <button

@@ -4,12 +4,13 @@
   "run_id": "synthesized-20260318-153100",
   "run_metadata": {
     "timestamp": "2026-03-19T00:44:27Z",
+    "updated": "2026-03-19T01:00:00Z",
     "branch": "unknown",
     "commit": "unknown",
     "environment": "local",
     "tool_platform": "cursor",
     "model": "synthesizer",
-    "notes": "Inputs copied from Desktop lyra/lyra:lyra/ \u2192 audits/lyra-agent-outputs/"
+    "notes": "Inputs copied from Desktop lyra/lyra:lyra/ \u2192 audits/lyra-agent-outputs/. Progress update: 22 findings resolved (auth, RLS, CI, error boundaries, health, worker stuck-job, run payload, deploy docs, failed-projects UX; + empty catch, loadProject/listAllProjects parse, undefined name, resolveApps dead branch, ProjectView setSelected, orchestration silent failure, job_type CHECK)."
   },
   "suite": "synthesized",
   "agent": {
@@ -61,12 +62,18 @@
           "Policy tests with Supabase SQL or integration test using anon vs service role"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2025-03-18T14:45:00Z",
           "actor": "schema-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added supabase/migrations/20260319120000_lyra_rls.sql: RLS enabled on lyra_projects, lyra_audit_jobs, lyra_audit_runs; no policies so anon/authenticated PostgREST blocked."
         }
       ]
     },
@@ -146,12 +153,18 @@
         ],
         "estimated_effort": "trivial"
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2025-03-18T14:45:00Z",
           "actor": "schema-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "LyraAuditRunRow.payload added; rowRun() maps payload from SELECT *."
         }
       ]
     },
@@ -186,12 +199,18 @@
         "approach": "Add CHECK (job_type IN (...)) or Postgres ENUM matching LyraJobType; keep worker/dashboard in sync.",
         "estimated_effort": "small"
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2025-03-18T14:45:00Z",
           "actor": "schema-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:15:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added supabase/migrations/20260319130000_lyra_job_type_check.sql: CHECK on lyra_audit_jobs and lyra_audit_runs job_type."
         }
       ]
     },
@@ -233,13 +252,19 @@
           "Confirm workflow fails on intentional TS error"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:45:30Z",
           "actor": "build-deploy-auditor",
           "event": "created",
           "notes": "History lookup: open_findings.json had no prior ci-gap entries."
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added .github/workflows/ci.yml (dashboard lint, tsc --noEmit, build; worker build). dashboard/package.json typecheck script."
         }
       ]
     },
@@ -270,12 +295,18 @@
         ],
         "estimated_effort": "small"
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:45:30Z",
           "actor": "build-deploy-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added dashboard/app/error.tsx and global-error.tsx with fallback UI and reset/link home."
         }
       ]
     },
@@ -305,12 +336,18 @@
         ],
         "estimated_effort": "small"
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:45:30Z",
           "actor": "build-deploy-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added GET /api/health returning { ok: true, service: \"lyra-dashboard\" }; public, no auth."
         }
       ]
     },
@@ -336,17 +373,23 @@
       "impact": "Silent failures in that UI path; difficult to debug production or local issues.",
       "suggested_fix": {
         "approach": "Log with console.error or structured logger; rethrow or set user-visible error state.",
-        "affected_files": [
-          "lyra-dashboard.jsx"
-        ],
+"affected_files": [
+        "lyra-dashboard.jsx"
+      ],
         "estimated_effort": "trivial"
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:45:30Z",
           "actor": "build-deploy-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:15:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added console.error in both catch blocks (load/save projects)."
         }
       ]
     },
@@ -428,12 +471,18 @@
         ],
         "estimated_effort": "trivial"
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:45:30Z",
           "actor": "build-deploy-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "README updated: Netlify canonical; dashboard/vercel.json optional/alternate."
         }
       ]
     },
@@ -443,7 +492,7 @@
       "category": "error-handling",
       "severity": "major",
       "priority": "P1",
-      "status": "open",
+      "status": "resolved",
       "title": "Worker can leave audit job stuck in running if loadPrompts fails after claim",
       "description": "After claimJob sets status to running, loadPrompts(), repoRoot(), and payload reads run outside the try/catch. readFileSync in loadPrompts can throw (permissions, IO). No completeJob(failed) runs, so the row may remain running indefinitely.",
       "confidence": "inference",
@@ -481,6 +530,12 @@
           "actor": "synthesizer",
           "event": "note_added",
           "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "process-job.ts: loadPrompts/repoRoot inside try; on throw call completeJob(failed); inner completeJob wrapped in try/catch."
         }
       ]
     },
@@ -490,6 +545,7 @@
       "category": "error-handling",
       "severity": "major",
       "priority": "P1",
+      "status": "resolved",
       "title": "runOne swallows errors; stuck jobs if completeJob fails in processJob catch",
       "description": "index.ts runOne catches all processJob errors and only logs. If processJob catch block fails while calling completeJob (e.g. DB down), the exception propagates to runOne and is swallowed\u2014job may stay running. Same for any unexpected throw outside processJob inner catch.",
       "confidence": "inference",
@@ -519,7 +575,7 @@
       "tests_needed": [
         "Integration test: completeJob failure after audit failure still records failure or dead-letter."
       ],
-      "status": "open",
+      "status": "resolved",
       "impact": "index.ts runOne catches all processJob errors and only logs. If processJob catch block fails while calling completeJob (e.g. DB down), the exception propagates to runOne and is swallowed\u2014job may stay running. Same for any unexpected throw outside processJob inner catch.",
       "suggested_fix": {
         "approach": "Integration test: completeJob failure after audit failure still records failure or dead-letter.",
@@ -536,6 +592,12 @@
           "actor": "synthesizer",
           "event": "note_added",
           "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "index.ts runOne catch: on processJob throw, query job row and call completeJob(failed) if status still running; log completeJob failures."
         }
       ]
     },
@@ -565,12 +627,12 @@
       "tests_needed": [
         "Test loadProject returns null or safe empty project on parse error."
       ],
-      "status": "open",
       "impact": "When project_json is a string, JSON.parse(j) is unwrapped. Corrupt DB or manual edits cause worker/API using loadProject to crash.",
       "suggested_fix": {
         "approach": "Test loadProject returns null or safe empty project on parse error.",
         "estimated_effort": "small"
       },
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:00:00Z",
@@ -582,6 +644,12 @@
           "actor": "synthesizer",
           "event": "note_added",
           "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        },
+        {
+          "timestamp": "2026-03-19T01:15:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "loadProject: try/catch around JSON.parse; return null and log on parse error. listAllProjects: try/catch per row, skip invalid; safe name fallback."
         }
       ]
     },
@@ -619,12 +687,12 @@
       "tests_needed": [
         "listAllProjects coerces name to string or skips invalid rows."
       ],
-      "status": "open",
       "impact": "j.name is used without fallback; malformed JSON yields undefined in synthesize portfolio lines.",
       "suggested_fix": {
         "approach": "listAllProjects coerces name to string or skips invalid rows.",
         "estimated_effort": "small"
       },
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:00:00Z",
@@ -636,6 +704,12 @@
           "actor": "synthesizer",
           "event": "note_added",
           "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        },
+        {
+          "timestamp": "2026-03-19T01:15:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "listAllProjects: name fallback (j?.name ?? 'unknown'), try/catch per row; skip invalid."
         }
       ]
     },
@@ -660,12 +734,12 @@
       ],
       "repro_steps": [],
       "tests_needed": [],
-      "status": "open",
       "impact": "jobType === 'synthesize_project' returns PORTFOLIO_APPS; final return is identical. synthesize path never calls resolveApps from processJob. Dead/unreachable in practice or redundant.",
       "suggested_fix": {
         "approach": "Address per description; add regression tests.",
         "estimated_effort": "small"
       },
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:00:00Z",
@@ -677,6 +751,12 @@
           "actor": "synthesizer",
           "event": "note_added",
           "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        },
+        {
+          "timestamp": "2026-03-19T01:15:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Collapsed redundant branch to single return PORTFOLIO_APPS in apps.ts."
         }
       ]
     },
@@ -706,7 +786,7 @@
       "tests_needed": [
         "Component test with unmount during pending fetch; assert no setState after unmount."
       ],
-      "status": "open",
+      "status": "resolved",
       "impact": "useEffect runs load() without abort; load() always calls setLoading/setData/setJobs at end. Rapid unmount triggers React warnings or stale updates. finally block only returns when cancelled and does not guard load internals.",
       "suggested_fix": {
         "approach": "Component test with unmount during pending fetch; assert no setState after unmount.",
@@ -723,6 +803,12 @@
           "actor": "synthesizer",
           "event": "note_added",
           "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        },
+        {
+          "timestamp": "2026-03-19T02:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "OrchestrationPanel: load() accepts optional AbortSignal; useEffect uses AbortController; guard setState after each await; cleanup aborts."
         }
       ]
     },
@@ -752,12 +838,12 @@
       "tests_needed": [
         "handleAction uses updated?.findings?.find after refetch for setSelected."
       ],
-      "status": "open",
       "impact": "After refetchProject(), setSelected uses findings.find from pre-await closure. Detail panel can show wrong merged fields if list changed server-side.",
       "suggested_fix": {
         "approach": "handleAction uses updated?.findings?.find after refetch for setSelected.",
         "estimated_effort": "small"
       },
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:00:00Z",
@@ -769,6 +855,12 @@
           "actor": "synthesizer",
           "event": "note_added",
           "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        },
+        {
+          "timestamp": "2026-03-19T01:15:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "handleAction now uses updated?.findings?.find for setSelected after refetch."
         }
       ]
     },
@@ -798,12 +890,12 @@
       "tests_needed": [
         "E2E or component: failed orchestration fetch shows error state."
       ],
-      "status": "open",
       "impact": "If orchestrationRes.ok is false, setData is never updated; loading ends with data still null; UI returns null\u2014no error surface.",
       "suggested_fix": {
         "approach": "E2E or component: failed orchestration fetch shows error state.",
         "estimated_effort": "small"
       },
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:00:00Z",
@@ -815,6 +907,12 @@
           "actor": "synthesizer",
           "event": "note_added",
           "notes": "Normalized logic agent output: hook_type on proof_hooks, history[], suggested_fix/impact."
+        },
+        {
+          "timestamp": "2026-03-19T01:15:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "OrchestrationPanel: loadError state; show error UI when !orchestrationRes.ok."
         }
       ]
     },
@@ -1216,7 +1314,7 @@
         ]
       },
       "owner": "solo-dev",
-      "status": "open",
+      "status": "resolved",
       "related_ids": [],
       "history": [
         {
@@ -1224,6 +1322,12 @@
           "actor": "security-privacy-auditor",
           "event": "created",
           "notes": "open_findings.json was empty."
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "dashboard/middleware.ts: when DASHBOARD_API_SECRET or ORCHESTRATION_ENQUEUE_SECRET set, all /api/* require Bearer, x-lyra-api-secret, or session cookie; /api/health and POST /api/auth/login exempt. DashboardLogin + apiFetch(credentials:include). README updated."
         }
       ],
       "artifacts": []
@@ -1259,7 +1363,7 @@
         ]
       },
       "owner": "solo-dev",
-      "status": "open",
+      "status": "resolved",
       "related_ids": [
         "f-auth-bypass-dashboard-apis-001"
       ],
@@ -1269,6 +1373,12 @@
           "actor": "security-privacy-auditor",
           "event": "created",
           "notes": ""
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Middleware protects all /api/* including GET /api/orchestration/jobs when secret configured."
         }
       ],
       "artifacts": []
@@ -1304,7 +1414,7 @@
         ]
       },
       "owner": "solo-dev",
-      "status": "open",
+      "status": "resolved",
       "related_ids": [
         "f-auth-bypass-dashboard-apis-001"
       ],
@@ -1314,6 +1424,12 @@
           "actor": "security-privacy-auditor",
           "event": "created",
           "notes": ""
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Middleware protects POST /api/sync/linear/push when secret configured."
         }
       ],
       "artifacts": []
@@ -1346,7 +1462,7 @@
         "estimated_effort": "trivial"
       },
       "owner": "solo-dev",
-      "status": "open",
+      "status": "resolved",
       "related_ids": [
         "f-auth-bypass-dashboard-apis-001"
       ],
@@ -1356,6 +1472,12 @@
           "actor": "security-privacy-auditor",
           "event": "created",
           "notes": ""
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Middleware protects GET /api/durable-state when secret configured."
         }
       ],
       "artifacts": []
@@ -1484,12 +1606,18 @@
           "E2E or integration: mock 500 on /api/projects, assert error UI"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "page.tsx: projectsError state; on !res.ok set message and show Retry; 401 triggers needsAuth (login)."
         }
       ]
     },
@@ -1524,12 +1652,18 @@
           "Trigger throw in dev, confirm branded fallback"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T01:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Addressed by app/error.tsx and global-error.tsx (same patch as f-2b8d3e6a)."
         }
       ]
     },
@@ -1563,12 +1697,18 @@
           "Mock failed routing fetch, assert error copy"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T02:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "EngineView: routingError state; set when !routingRes.ok or catch; show 'Could not load routing' + Retry in routing section."
         }
       ]
     },
@@ -1602,12 +1742,18 @@
           "Mock 401 POST /api/orchestration/jobs, assert error message visible"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T02:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "OrchestrationPanel: dispatchError state; catch in dispatchAction/enqueueWeekly; show inline error + dismiss."
         }
       ]
     },
@@ -1647,12 +1793,18 @@
         "estimated_effort": "trivial",
         "tests_needed": []
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T02:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Standardized on 'Onboard': page.tsx header and empty-state button now 'Onboard project'; ImportModal already used Onboard project/Onboard."
         }
       ]
     },
@@ -1722,12 +1874,18 @@
           "axe or manual SR check"
         ]
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T02:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "ProjectView: added aria-label='Search findings' to search input."
         }
       ]
     },
@@ -1879,7 +2037,8 @@
       "question": 3
     },
     "by_status": {
-      "open": 41
+      "open": 22,
+      "resolved": 19
     }
   },
   "next_actions": [

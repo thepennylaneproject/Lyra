@@ -95,12 +95,19 @@ export async function loadProject(
   );
   if (r.rows.length === 0) return null;
   const j = r.rows[0].project_json;
-  const p = typeof j === "string" ? JSON.parse(j) : j;
+  let p: Record<string, unknown>;
+  try {
+    p = typeof j === "string" ? JSON.parse(j) : (j as Record<string, unknown>);
+  } catch (e) {
+    console.error(`[lyra-worker] loadProject parse error for ${name}`, e);
+    return null;
+  }
+  if (!p || typeof p !== "object") return null;
   return {
-    name: p.name || name,
+    name: (p.name as string) || name,
     findings: Array.isArray(p.findings) ? p.findings : [],
-    repositoryUrl: p.repositoryUrl,
-    lastUpdated: p.lastUpdated,
+    repositoryUrl: p.repositoryUrl as string | undefined,
+    lastUpdated: p.lastUpdated as string | undefined,
   };
 }
 
@@ -134,14 +141,23 @@ export async function listAllProjects(
   pool: pg.Pool
 ): Promise<Array<{ name: string; findings: unknown[] }>> {
   const r = await pool.query(`SELECT project_json FROM lyra_projects`);
-  return r.rows.map((row) => {
-    const j =
-      typeof row.project_json === "string"
-        ? JSON.parse(row.project_json)
-        : row.project_json;
-    return {
-      name: j.name,
+  const out: Array<{ name: string; findings: unknown[] }> = [];
+  for (const row of r.rows) {
+    let j: Record<string, unknown>;
+    try {
+      j =
+        typeof row.project_json === "string"
+          ? JSON.parse(row.project_json)
+          : (row.project_json as Record<string, unknown>);
+    } catch (e) {
+      console.error("[lyra-worker] listAllProjects parse error", e);
+      continue;
+    }
+    if (!j || typeof j !== "object") continue;
+    out.push({
+      name: (j.name != null && String(j.name)) || "unknown",
       findings: Array.isArray(j.findings) ? j.findings : [],
-    };
-  });
+    });
+  }
+  return out;
 }

@@ -3,6 +3,11 @@ import { AUTH_COOKIE_NAME } from "@/lib/auth-constants";
 import { createAuthSessionToken } from "@/lib/auth-session";
 import { getDashboardApiSecret } from "@/lib/dashboard-secret";
 
+/** Normalize for comparison: trim and strip newlines (env / paste often have trailing newline). */
+function normalizeSecret(s: string): string {
+  return s.trim().replace(/\r?\n/g, "").trim();
+}
+
 export async function POST(request: Request) {
   const secret = getDashboardApiSecret();
   if (!secret) {
@@ -15,9 +20,16 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const provided =
-    typeof body.secret === "string" ? body.secret.trim() : "";
-  if (provided !== secret) {
-    return NextResponse.json({ error: "Invalid secret" }, { status: 401 });
+    typeof body.secret === "string" ? normalizeSecret(body.secret) : "";
+  const expected = normalizeSecret(secret);
+  if (provided !== expected) {
+    return NextResponse.json(
+      {
+        error: "Invalid secret",
+        hint: "Use the same value as ORCHESTRATION_ENQUEUE_SECRET or DASHBOARD_API_SECRET in dashboard/.env.local (local) or Netlify env (production). Check for extra spaces or newlines.",
+      },
+      { status: 401 }
+    );
   }
 
   const token = createAuthSessionToken(secret);

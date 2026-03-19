@@ -37,12 +37,5 @@ export function resolveApps(
       },
     ];
   }
-  if (
-    jobType === "weekly_audit" ||
-    jobType === "onboard_project" ||
-    jobType === "synthesize_project"
-  ) {
-    return [...PORTFOLIO_APPS];
-  }
   return [...PORTFOLIO_APPS];
 }

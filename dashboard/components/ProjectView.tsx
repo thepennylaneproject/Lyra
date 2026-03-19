@@ -67,10 +67,10 @@ export function ProjectView({
       await onUpdateFinding(project.name, findingId, newStatus);
       const updated = await refetchProject();
       if (updated) setFindings(updated.findings ?? []);
-      const f = findings.find((x) => x.finding_id === findingId);
+      const f = updated?.findings?.find((x) => x.finding_id === findingId);
       if (f) setSelected({ ...f, status: newStatus });
     },
-    [project.name, onUpdateFinding, refetchProject, findings]
+    [project.name, onUpdateFinding, refetchProject]
   );
 
   const selectedFinding =
@@ -195,6 +195,7 @@ export function ProjectView({
           placeholder="search findings…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search findings"
           style={{
             marginLeft:  "auto",
             fontSize:    "11px",

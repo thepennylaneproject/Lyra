@@ -43,23 +43,25 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const secret =
+  const raw =
     process.env.DASHBOARD_API_SECRET?.trim() ||
     process.env.ORCHESTRATION_ENQUEUE_SECRET?.trim();
-  if (!secret) {
+  if (!raw) {
     return NextResponse.next();
   }
 
+  const norm = (s: string) => s.trim().replace(/\r?\n/g, "").trim();
   const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) {
+  if (auth?.startsWith("Bearer ") && norm(auth.slice(7)) === norm(raw)) {
     return NextResponse.next();
   }
-  if (request.headers.get("x-lyra-api-secret") === secret) {
+  const headerVal = request.headers.get("x-lyra-api-secret");
+  if (headerVal != null && norm(headerVal) === norm(raw)) {
     return NextResponse.next();
   }
 
   const cookie = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-  if (cookie && (await verifySessionCookie(cookie, secret))) {
+  if (cookie && (await verifySessionCookie(cookie, raw))) {
     return NextResponse.next();
   }
 

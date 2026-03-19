@@ -122,16 +122,22 @@ function ModelChip({ alias }: { alias: string }) {
 }
 
 export function EngineView() {
-  const [data,    setData]    = useState<EngineData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data,         setData]         = useState<EngineData | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [routingError, setRoutingError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
+    setRoutingError(null);
     try {
       const [routingRes, statusRes, queueRes] = await Promise.all([
         apiFetch("/api/engine/routing"),
         apiFetch("/api/engine/status"),
         apiFetch("/api/engine/queue"),
       ]);
+      if (!routingRes.ok) {
+        const errText = await routingRes.text();
+        setRoutingError(`Could not load routing (${routingRes.status}): ${errText.slice(0, 120)}`);
+      }
       const routing     = routingRes.ok  ? await routingRes.json()  : {};
       const status      = statusRes.ok   ? await statusRes.json()   : {};
       const queueData   = queueRes.ok    ? await queueRes.json()    : {};
@@ -142,7 +148,8 @@ export function EngineView() {
         recentRuns:  status.recent_repair_runs ?? [],
         totalCost:   status.total_cost_usd ?? 0,
       });
-    } catch {
+    } catch (e) {
+      setRoutingError(e instanceof Error ? e.message : "Could not load routing");
     } finally {
       setLoading(false);
     }
@@ -245,11 +252,20 @@ export function EngineView() {
               style={{
                 fontSize:   "12px",
                 fontFamily: "var(--font-mono)",
-                color:      "var(--ink-text-4)",
+                color:      routingError ? "var(--color-text-danger)" : "var(--ink-text-4)",
                 padding:    "0.75rem 0",
               }}
             >
-              no routing config found
+              {routingError ? (
+                <>
+                  {routingError}
+                  <button type="button" onClick={() => fetchAll()} style={{ marginLeft: "0.5rem", fontSize: "11px" }}>
+                    Retry
+                  </button>
+                </>
+              ) : (
+                "no routing config found"
+              )}
             </div>
           )}
         </div>

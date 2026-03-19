@@ -295,7 +295,7 @@ export default function Home() {
           onClick={() => setShowImport(true)}
           style={{ fontSize: "11px", fontFamily: "var(--font-mono)", padding: "4px 12px" }}
         >
-          import project
+          Onboard project
         </button>
       </div>
 
@@ -347,7 +347,7 @@ export default function Home() {
               onClick={() => setShowImport(true)}
               style={{ fontSize: "12px", fontFamily: "var(--font-mono)", padding: "5px 14px" }}
             >
-              onboard project
+              Onboard project
             </button>
           }
         />

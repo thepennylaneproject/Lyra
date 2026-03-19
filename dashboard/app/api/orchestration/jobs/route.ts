@@ -25,25 +25,45 @@ function enqueueSecret(): string {
   );
 }
 
+/** Normalize for comparison (trim + strip newlines). */
+function normalizeSecret(s: string): string {
+  return s.trim().replace(/\r?\n/g, "").trim();
+}
+
 function authorize(request: Request): boolean {
   const secret = enqueueSecret();
   if (!secret) {
     return process.env.NODE_ENV === "development";
   }
+  const normalizedSecret = normalizeSecret(secret);
   const auth = request.headers.get("authorization");
+  const bearerMatch =
+    auth?.startsWith("Bearer ") &&
+    normalizeSecret(auth.slice(7)) === normalizedSecret;
   const header =
     request.headers.get("x-lyra-enqueue-secret") ??
     request.headers.get("x-lyra-api-secret");
-  return auth === `Bearer ${secret}` || header === secret;
+  return bearerMatch || (header != null && normalizeSecret(header) === normalizedSecret);
+}
+
+/** True only if REDIS_URL/LYRA_REDIS_URL is set and parses to a non-empty host. */
+function redisConfigured(): boolean {
+  const raw =
+    process.env.REDIS_URL?.trim() || process.env.LYRA_REDIS_URL?.trim();
+  if (!raw) return false;
+  try {
+    const u = new URL(raw);
+    return Boolean(u.hostname?.trim());
+  } catch {
+    return false;
+  }
 }
 
 export async function GET() {
   if (!jobsStoreConfigured()) {
     return NextResponse.json({
       configured: false,
-      redis_configured: Boolean(
-        process.env.REDIS_URL?.trim() || process.env.LYRA_REDIS_URL?.trim()
-      ),
+      redis_configured: redisConfigured(),
       enqueue_auth_optional: false,
       jobs: [],
       runs: [],
@@ -56,9 +76,7 @@ export async function GET() {
     ]);
     return NextResponse.json({
       configured: true,
-      redis_configured: Boolean(
-        process.env.REDIS_URL?.trim() || process.env.LYRA_REDIS_URL?.trim()
-      ),
+      redis_configured: redisConfigured(),
       enqueue_auth_optional:
         process.env.NODE_ENV === "development" && !enqueueSecret(),
       jobs,
@@ -115,30 +133,43 @@ export async function POST(request: Request) {
       process.env.REDIS_URL?.trim() || process.env.LYRA_REDIS_URL?.trim();
     let bullmqQueued = false;
     if (redisUrl) {
-      const u = new URL(redisUrl);
-      const connection = {
-        host: u.hostname,
-        port: Number(u.port || 6379),
-        password: u.password ? decodeURIComponent(u.password) : undefined,
-        username:
-          u.username && u.username !== "default"
-            ? decodeURIComponent(u.username)
-            : u.username === "default" && u.password
-              ? "default"
-              : undefined,
-        tls: u.protocol === "rediss:" ? {} : undefined,
-        maxRetriesPerRequest: null,
-      };
-      const queue = new Queue("lyra-audit", { connection });
       try {
-        await queue.add(
-          "process",
-          { dbJobId: row.id },
-          { jobId: row.id, removeOnComplete: true, removeOnFail: false }
+        const u = new URL(redisUrl);
+        if (!u.hostname?.trim()) {
+          console.warn(
+            "[orchestration/jobs] REDIS_URL has no host; skipping BullMQ"
+          );
+        } else {
+          const connection = {
+            host: u.hostname,
+            port: Number(u.port || 6379),
+            password: u.password ? decodeURIComponent(u.password) : undefined,
+            username:
+              u.username && u.username !== "default"
+                ? decodeURIComponent(u.username)
+                : u.username === "default" && u.password
+                  ? "default"
+                  : undefined,
+            tls: u.protocol === "rediss:" ? {} : undefined,
+            maxRetriesPerRequest: null,
+          };
+          const queue = new Queue("lyra-audit", { connection });
+          try {
+            await queue.add(
+              "process",
+              { dbJobId: row.id },
+              { jobId: row.id, removeOnComplete: true, removeOnFail: false }
+            );
+            bullmqQueued = true;
+          } finally {
+            await queue.close();
+          }
+        }
+      } catch (redisErr) {
+        console.warn(
+          "[orchestration/jobs] Redis connect failed:",
+          redisErr instanceof Error ? redisErr.message : redisErr
         );
-        bullmqQueued = true;
-      } finally {
-        await queue.close();
       }
     }
 

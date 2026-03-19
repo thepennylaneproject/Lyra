@@ -326,7 +326,9 @@ export default function LYRADashboard() {
         if (result?.value) {
           setProjects(JSON.parse(result.value));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("[lyra-dashboard] load projects", e);
+      }
       setLoaded(true);
     })();
   }, []);
@@ -336,7 +338,9 @@ export default function LYRADashboard() {
     (async () => {
       try {
         await window.storage.set("lyra-projects", JSON.stringify(projects));
-      } catch (e) {}
+      } catch (e) {
+        console.error("[lyra-dashboard] save projects", e);
+      }
     })();
   }, [projects, loaded]);
 

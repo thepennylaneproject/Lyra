@@ -20,7 +20,9 @@ export function DashboardLogin({ onSuccess }: { onSuccess: () => void }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(typeof data.error === "string" ? data.error : "Invalid secret");
+        const msg = typeof data.error === "string" ? data.error : "Invalid secret";
+        const hint = typeof data.hint === "string" ? data.hint : "";
+        setError(hint ? `${msg}. ${hint}` : msg);
         return;
       }
       if (data.auth_required === false) {
@@ -77,9 +79,8 @@ export function DashboardLogin({ onSuccess }: { onSuccess: () => void }) {
           Enter the same value as{" "}
           <code style={{ fontSize: "11px" }}>DASHBOARD_API_SECRET</code> or{" "}
           <code style={{ fontSize: "11px" }}>ORCHESTRATION_ENQUEUE_SECRET</code>{" "}
-          on the server. CI and Netlify functions can use{" "}
-          <code style={{ fontSize: "11px" }}>Authorization: Bearer …</code>{" "}
-          instead.
+          from <strong>dashboard/.env.local</strong> (local dev) or <strong>Netlify env</strong> (production). CI and Netlify functions use{" "}
+          <code style={{ fontSize: "11px" }}>Authorization: Bearer …</code>.
         </p>
         <label
           htmlFor="dashboard-secret"
