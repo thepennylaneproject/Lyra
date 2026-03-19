@@ -148,3 +148,16 @@ export async function getAuditJob(id: string): Promise<LyraAuditJobRow | null> {
   ]);
   return rows[0] ? rowJob(rows[0]) : null;
 }
+
+/** Mark every queued job failed (e.g. operator cancelled / queue reset). */
+export async function failAllQueuedJobs(errorMessage: string): Promise<number> {
+  const p = pool();
+  const rows = await p.query(
+    `UPDATE lyra_audit_jobs
+     SET status = 'failed', finished_at = now(), error = $1
+     WHERE status = 'queued'
+     RETURNING id`,
+    [errorMessage]
+  );
+  return rows.length;
+}

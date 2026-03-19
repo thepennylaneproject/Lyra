@@ -7,7 +7,12 @@ export function createPool(): pg.Pool {
     process.env.DATABASE_URL?.trim() ||
     process.env.LYRA_DATABASE_URL?.trim() ||
     "";
-  if (!url) throw new Error("DATABASE_URL is required");
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL or LYRA_DATABASE_URL is required. " +
+        "Add it to dashboard/.env.local or repo .env.local, or run from worker/ with worker/.env — see worker/README.md"
+    );
+  }
   return new Pool({
     connectionString: url,
     ssl: url.includes("localhost") ? false : { rejectUnauthorized: false },

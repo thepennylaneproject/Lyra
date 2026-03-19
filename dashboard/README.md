@@ -15,7 +15,9 @@ Orchestration events/snapshots still use `lyra_orchestration_events` / `lyra_pro
 
 1. Set `ORCHESTRATION_ENQUEUE_SECRET` in production.
 2. `POST /api/orchestration/jobs` with `Authorization: Bearer <secret>` and body `{ "job_type": "weekly_audit" }` (etc.).
-3. Run the **worker** (`../worker/`) against the same DB; optional `REDIS_URL` for instant pickup.
+3. Run the **worker** (`../worker/`) against the same DB with the **same** `REDIS_URL` when the dashboard uses Redis — otherwise jobs stay `queued` forever in Postgres/BullMQ.
+
+`POST /api/orchestration/queue/clear` (same auth) **obliterates** the `lyra-audit` BullMQ queue and marks all DB rows still in `queued` as `failed`. The orchestration panel includes a **Clear queue (Redis + DB)** button.
 
 Dashboard UI: paste the same secret once (session storage) to enable Run buttons.
 

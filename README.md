@@ -46,6 +46,7 @@ audits/                   # LYRA audit system — multi-agent quality assurance
 - **Dashboard:** Next.js in `dashboard/` — **canonical host: Netlify** (see root `netlify.toml`). `dashboard/vercel.json` is optional/alternate; prefer one host to avoid divergent config.
 - **API auth (production):** Set **`DASHBOARD_API_SECRET`** or reuse **`ORCHESTRATION_ENQUEUE_SECRET`**. When set, all `/api/*` routes except **`GET /api/health`** require either a browser login (unlock screen) or `Authorization: Bearer <secret>` / `x-lyra-api-secret`. Netlify scheduled `enqueue-weekly-audit` already sends Bearer for orchestration POST.
 - **Health:** `GET /api/health` — public JSON `{ ok: true }` for uptime checks.
+- **Observability (optional):** Set **`SENTRY_DSN`** (and **`NEXT_PUBLIC_SENTRY_DSN`** for client) for error monitoring; no DSN = no-op. Optionally set `SENTRY_ORG` and `SENTRY_PROJECT` for source map uploads in CI.
 - **Data:** **Supabase Postgres** — run migrations in `supabase/migrations/` (core tables + RLS). RLS locks `lyra_*` for anon/authenticated PostgREST; the app server using `DATABASE_URL` (owner/service role) keeps full access.
 - **Worker:** `worker/` — BullMQ (or DB poll) + OpenAI; processes queued audits. See `worker/README.md` and `audits/COPILOT-AGENTS.md`.
 - **CI:** GitHub Actions (`.github/workflows/ci.yml`) — dashboard lint, `tsc --noEmit`, build; worker build.
@@ -89,7 +90,7 @@ npm run typecheck
 npm run build
 ```
 
-From the dashboard UI, use **Import project** to load `open_findings.json`, then use **sync now** and the project-level repair controls to keep manual work inside the app.
+From the dashboard UI, use **Import project** to load `open_findings.json`, then use **sync now** and the project-level repair controls to keep manual work inside the app. UI copy conventions (nav vs actions) are in [`docs/VOICE.md`](docs/VOICE.md).
 
 ## Orchestration (Supabase + Netlify + worker)
 

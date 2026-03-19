@@ -110,12 +110,18 @@
         ],
         "estimated_effort": "medium"
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2025-03-18T14:45:00Z",
           "actor": "schema-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T05:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added supabase/migrations/20260319150000_lyra_project_name_fk.sql: backfill orphan project_name, FK on lyra_audit_jobs and lyra_audit_runs to lyra_projects(name) ON DELETE SET NULL."
         }
       ]
     },
@@ -427,12 +433,18 @@
         ],
         "estimated_effort": "medium"
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:45:30Z",
           "actor": "build-deploy-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T05:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added @sentry/nextjs; instrumentation-client.ts, sentry.server.config.ts, sentry.edge.config.ts, instrumentation.ts; withSentryConfig in next.config; captureException in error.tsx and global-error.tsx. README documents SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN."
         }
       ]
     },
@@ -1094,12 +1106,18 @@
         "risk_notes": "LISTEN/NOTIFY adds operational complexity.",
         "tests_needed": []
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T14:30:00.000Z",
           "actor": "performance-cost-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T05:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "worker/README.md: production should set REDIS_URL to avoid DB QPS. worker/src/index.ts: idle backoff (LYRA_JOB_POLL_IDLE_MS, default 30s) when queue empty; poll only pollMs after a job ran."
         }
       ]
     },
@@ -1528,7 +1546,7 @@
         "risk_notes": "Major version bump may need app changes."
       },
       "owner": "solo-dev",
-      "status": "open",
+      "status": "resolved",
       "related_ids": [],
       "history": [
         {
@@ -1536,6 +1554,12 @@
           "actor": "security-privacy-auditor",
           "event": "created",
           "notes": ""
+        },
+        {
+          "timestamp": "2026-03-19T05:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Upgraded dashboard next to ^16.1.7 (patched for GHSA-3x4c-7xq6-9pq8). npm audit no longer reports next moderate."
         }
       ],
       "artifacts": []
@@ -1984,12 +2008,18 @@
         "estimated_effort": "medium",
         "tests_needed": []
       },
-      "status": "open",
+      "status": "resolved",
       "history": [
         {
           "timestamp": "2026-03-18T12:15:00.000Z",
           "actor": "ux-flow-auditor",
           "event": "created"
+        },
+        {
+          "timestamp": "2026-03-19T05:00:00Z",
+          "actor": "cursor",
+          "event": "resolved",
+          "notes": "Added docs/VOICE.md (nav/chrome Title Case; actions sentence case). Shell and page.tsx already aligned; README links to VOICE.md."
         }
       ]
     },

@@ -102,10 +102,14 @@ export function OrchestrationPanel() {
     }
   };
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async (
+    signal?: AbortSignal,
+    opts?: { bypassCache?: boolean }
+  ) => {
     setLoadError(null);
     const now = Date.now();
     if (
+      !opts?.bypassCache &&
       orchestrationCache &&
       now - orchestrationCache.at < ORCHESTRATION_CACHE_MS
     ) {
@@ -225,6 +229,28 @@ export function OrchestrationPanel() {
     [load, enqueueSecret]
   );
 
+  const clearQueue = useCallback(async () => {
+    setDispatchError(null);
+    setDispatching("clear_queue");
+    try {
+      const res = await apiFetch("/api/orchestration/queue/clear", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `Failed (${res.status})`);
+      }
+      await load(undefined, { bypassCache: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setDispatchError(msg);
+    } finally {
+      setDispatching(null);
+    }
+  }, [load, enqueueSecret]);
+
   const enqueueWeekly = useCallback(async () => {
     setDispatchError(null);
     setDispatching("weekly_audit");
@@ -322,6 +348,29 @@ export function OrchestrationPanel() {
           <button type="button" onClick={() => setDispatchError(null)} style={{ marginLeft: "0.5rem", opacity: 0.8 }} aria-label="Dismiss">×</button>
         </div>
       )}
+
+      {jobsConfigured && redisConfigured && (
+        <div
+          style={{
+            marginBottom: "0.75rem",
+            padding: "0.5rem 0.65rem",
+            borderRadius: "var(--radius-md)",
+            background: "var(--ink-bg-sunken)",
+            border: "0.5px solid var(--ink-border-faint)",
+            fontSize: "10px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-text-3)",
+            lineHeight: 1.45,
+          }}
+        >
+          <strong style={{ color: "var(--ink-amber)" }}>Worker required.</strong>{" "}
+          With Redis on, jobs stay <code>queued</code> until{" "}
+          <code>worker/</code> runs with the same <code>DATABASE_URL</code> and{" "}
+          <code>REDIS_URL</code>:{" "}
+          <code style={{ whiteSpace: "nowrap" }}>cd worker && npm install && npm run dev</code>
+        </div>
+      )}
+
       {jobsConfigured && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem", alignItems: "center" }}>
           <button
@@ -331,6 +380,15 @@ export function OrchestrationPanel() {
             style={{ fontSize: "11px", fontFamily: "var(--font-mono)", padding: "4px 10px" }}
           >
             {dispatching === "weekly_audit" ? "…" : "Enqueue weekly audit (all apps)"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void clearQueue()}
+            disabled={!canEnqueue || dispatching === "clear_queue"}
+            title="Removes all BullMQ jobs on lyra-audit and marks DB queued rows as failed"
+            style={{ fontSize: "11px", fontFamily: "var(--font-mono)", padding: "4px 10px", color: "var(--ink-amber)" }}
+          >
+            {dispatching === "clear_queue" ? "…" : "Clear queue (Redis + DB)"}
           </button>
         </div>
       )}

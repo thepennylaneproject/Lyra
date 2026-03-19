@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./load-env.js";
 import { createRequire } from "node:module";
 import { Worker } from "bullmq";
 import { completeJob, createPool } from "./db.js";
@@ -14,6 +14,7 @@ const IoRedis = require("ioredis") as new (
 const redisUrl =
   process.env.REDIS_URL?.trim() || process.env.LYRA_REDIS_URL?.trim();
 const pollMs = Number(process.env.LYRA_JOB_POLL_MS?.trim() || "8000");
+const pollIdleMs = Number(process.env.LYRA_JOB_POLL_IDLE_MS?.trim() || "30000");
 
 async function main() {
   const pool = createPool();
@@ -71,10 +72,15 @@ async function main() {
     console.log("[lyra-worker] BullMQ listening on queue lyra-audit");
   } else {
     console.log(
-      "[lyra-worker] REDIS_URL not set; polling lyra_audit_jobs every",
+      "[lyra-worker] REDIS_URL not set; polling lyra_audit_jobs (interval:",
       pollMs,
-      "ms"
+      "ms, idle backoff:",
+      pollIdleMs,
+      "ms)"
     );
+    const scheduleNext = (afterMs: number) => {
+      setTimeout(() => void poll(), afterMs);
+    };
     const poll = async () => {
       try {
         const r = await pool.query(
@@ -82,12 +88,15 @@ async function main() {
         );
         if (r.rows[0]?.id) {
           await runOne(String(r.rows[0].id));
+          scheduleNext(pollMs);
+        } else {
+          scheduleNext(pollIdleMs);
         }
       } catch (e) {
         console.error("[lyra-worker] poll error", e);
+        scheduleNext(pollMs);
       }
     };
-    setInterval(poll, pollMs);
     await poll();
   }
 }
