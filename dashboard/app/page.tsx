@@ -14,7 +14,6 @@ import { NextActionCard } from "@/components/NextActionCard";
 import { PatternPanel } from "@/components/PatternPanel";
 import { EngineView } from "@/components/EngineView";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
-import { BulkActionsPanel } from "@/components/BulkActionsPanel";
 import { Shell, type NavView } from "@/components/Shell";
 import { STATUS_GROUPS, PRIORITY_ORDER, SEVERITY_ORDER, sortFindings } from "@/lib/constants";
 import { isInQueuedSet } from "@/lib/finding-validation";
@@ -494,15 +493,6 @@ export default function Home() {
 
       {/* Orchestration summary */}
       <OrchestrationPanel />
-
-      {/* Bulk operations panel */}
-      <BulkActionsPanel
-        activeProject={activeProject}
-        onActionComplete={() => {
-          void fetchProjects();
-          void fetchQueue();
-        }}
-      />
 
       {/* Empty state */}
       {projects.length === 0 && !showImport && (
