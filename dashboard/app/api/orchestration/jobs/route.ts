@@ -5,6 +5,7 @@ import {
   jobsStoreConfigured,
   listRecentAuditJobs,
   listRecentAuditRuns,
+  updateAuditJobStatus,
   type LyraJobType,
 } from "@/lib/orchestration-jobs";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
@@ -18,35 +19,6 @@ const JOB_TYPES: LyraJobType[] = [
   "synthesize_project",
   "audit_project",
 ];
-
-function enqueueSecret(): string {
-  return (
-    process.env.ORCHESTRATION_ENQUEUE_SECRET?.trim() ||
-    process.env.DASHBOARD_API_SECRET?.trim() ||
-    ""
-  );
-}
-
-/** Normalize for comparison (trim + strip newlines). */
-function normalizeSecret(s: string): string {
-  return s.trim().replace(/\r?\n/g, "").trim();
-}
-
-function authorize(request: Request): boolean {
-  const secret = enqueueSecret();
-  if (!secret) {
-    return process.env.NODE_ENV === "development";
-  }
-  const normalizedSecret = normalizeSecret(secret);
-  const auth = request.headers.get("authorization");
-  const bearerMatch =
-    auth?.startsWith("Bearer ") &&
-    normalizeSecret(auth.slice(7)) === normalizedSecret;
-  const header =
-    request.headers.get("x-lyra-enqueue-secret") ??
-    request.headers.get("x-lyra-api-secret");
-  return bearerMatch || (header != null && normalizeSecret(header) === normalizedSecret);
-}
 
 /** True only if REDIS_URL/LYRA_REDIS_URL is set and parses to a non-empty host. */
 function redisConfigured(): boolean {
@@ -71,8 +43,7 @@ export async function GET() {
     return NextResponse.json({
       configured: true,
       redis_configured: redisConfigured(),
-      enqueue_auth_optional:
-        process.env.NODE_ENV === "development" && !enqueueSecret(),
+      enqueue_auth_optional: false,
       jobs,
       runs,
     });
@@ -85,10 +56,8 @@ export async function GET() {
   }
 }
 
+// Auth is handled centrally by middleware (Bearer, x-lyra-api-secret, or session cookie).
 export async function POST(request: Request) {
-  if (!authorize(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
   if (!jobsStoreConfigured()) {
     return NextResponse.json(
       { error: "DATABASE_URL required for orchestration jobs" },
@@ -123,52 +92,33 @@ export async function POST(request: Request) {
           : {},
     });
 
-    let bullmqQueued = false;
     const connection = bullmqConnectionFromEnv();
     if (connection) {
+      const queue = new Queue("lyra-audit", { connection });
       try {
-        const queue = new Queue("lyra-audit", { connection });
-        try {
-          await queue.add(
-            "process",
-            { dbJobId: row.id },
-            { jobId: row.id, removeOnComplete: true, removeOnFail: false }
-          );
-          bullmqQueued = true;
-        } finally {
-          await queue.close();
-        }
+        await queue.add(
+          "process",
+          { dbJobId: row.id },
+          { jobId: row.id, removeOnComplete: true, removeOnFail: false }
+        );
       } catch (redisErr) {
-        console.warn(
-          "[orchestration/jobs] Redis connect failed:",
-          redisErr instanceof Error ? redisErr.message : redisErr
-        );
-        // QA-002: Redis is configured but the job could not be enqueued.
-        // Record the failure in durable state before returning an error so
-        // operators can see the stuck job and clean it up manually.
-        await recordDurableEventBestEffort({
-          event_type: "orchestration_job_enqueue_failed",
-          project_name: row.project_name,
-          source: "orchestration_api",
-          summary: `Failed to enqueue ${jobType} job ${row.id} in Redis`,
-          payload: {
-            job_id: row.id,
-            bullmq: false,
-            error:
-              redisErr instanceof Error ? redisErr.message : String(redisErr),
-          },
-        });
+        // BullMQ enqueue failed — mark the DB row failed immediately so the
+        // operator sees it rather than leaving it stuck in "queued" forever.
+        const msg =
+          redisErr instanceof Error ? redisErr.message : String(redisErr);
+        console.error("[orchestration/jobs] Redis enqueue failed:", msg);
+        try {
+          await updateAuditJobStatus(row.id, "failed", `Redis enqueue error: ${msg}`);
+        } catch (dbErr) {
+          console.error("[orchestration/jobs] Could not mark job failed:", dbErr);
+        }
+        await queue.close();
         return NextResponse.json(
-          {
-            error:
-              "Job was recorded but could not be enqueued in Redis. " +
-              "The job will not run until the queue is available. " +
-              "Fix the Redis connection and retry.",
-            job: row,
-            bullmq_queued: false,
-          },
-          { status: 503 }
+          { error: `Redis enqueue failed: ${msg}` },
+          { status: 502 }
         );
+      } finally {
+        await queue.close();
       }
     }
 
@@ -177,11 +127,11 @@ export async function POST(request: Request) {
       project_name: row.project_name,
       source: "orchestration_api",
       summary: `Enqueued ${jobType} job ${row.id}`,
-      payload: { job_id: row.id, bullmq: bullmqQueued },
+      payload: { job_id: row.id, bullmq: connection != null },
     });
 
     return NextResponse.json(
-      { job: row, bullmq_queued: bullmqQueued },
+      { job: row, bullmq_queued: connection != null },
       { status: 202 }
     );
   } catch (e) {
@@ -192,3 +142,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

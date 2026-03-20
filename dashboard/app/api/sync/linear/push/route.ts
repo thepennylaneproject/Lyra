@@ -32,16 +32,18 @@ export async function POST(request: Request) {
   } catch {
     // no body
   }
-  const projectName = body.projectName ?? "";
-  if (!projectName.trim()) {
+  // Normalize once so repo lookup and sync-state key are consistent (ARCH-012)
+  const rawName = body.projectName ?? "";
+  if (!rawName.trim()) {
     return NextResponse.json(
       { error: "projectName is required" },
       { status: 400 }
     );
   }
+  const projectName = rawName.trim();
 
   const repo = getRepository();
-  const project = await repo.getByName(projectName.trim());
+  const project = await repo.getByName(projectName);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
@@ -70,7 +72,8 @@ export async function POST(request: Request) {
   let created = 0;
   let updated = 0;
   let skipped = 0;
-  const failed: string[] = [];
+  let failed = 0;
+  const errors: string[] = [];
 
   for (const f of findings) {
     const fid = f.finding_id;
@@ -92,10 +95,21 @@ export async function POST(request: Request) {
       if (existing.lyra_status !== status) {
         if (dryRun) {
           updated += 1;
-        } else if (stateId && (await updateIssueState(existing.linear_id, stateId))) {
-          existing.lyra_status = status;
-          existing.last_synced = new Date().toISOString();
-          updated += 1;
+        } else {
+          try {
+            const ok = stateId && (await updateIssueState(existing.linear_id, stateId));
+            if (ok) {
+              existing.lyra_status = status;
+              existing.last_synced = new Date().toISOString();
+              updated += 1;
+            } else {
+              failed += 1;
+              errors.push(`update ${fid}: stateId not resolved or API returned false`);
+            }
+          } catch (e) {
+            failed += 1;
+            errors.push(`update ${fid}: ${e instanceof Error ? e.message : String(e)}`);
+          }
         }
       } else {
         skipped += 1;
@@ -104,11 +118,8 @@ export async function POST(request: Request) {
       if (dryRun) {
         created += 1;
       } else {
-        const description = findingToDescription(f);
-        // QA-003: Wrap each createIssue call so a partial failure (one issue
-        // created, the next throws) still persists the already-created mappings.
-        // Without this, retry would re-create the first issue in Linear.
         try {
+          const description = findingToDescription(f);
           const issue = await createIssue({
             title,
             description,
@@ -127,28 +138,23 @@ export async function POST(request: Request) {
               last_synced: new Date().toISOString(),
             };
             created += 1;
+          } else {
+            failed += 1;
+            errors.push(`create ${fid}: createIssue returned null`);
           }
-        } catch (issueErr) {
-          console.error(
-            `sync/linear/push createIssue failed for finding ${fid}:`,
-            issueErr
-          );
-          // Persist whatever mappings we have so far before continuing so
-          // that retry does not re-create issues that already exist in Linear.
-          await setProjectSyncState(projectName, {
-            mappings,
-            last_sync: new Date().toISOString(),
-          });
-          failed.push(fid);
+        } catch (e) {
+          failed += 1;
+          errors.push(`create ${fid}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
     }
   }
 
+  // Only advance last_sync when the whole batch succeeded (ARCH-013)
   if (!dryRun) {
     await setProjectSyncState(projectName, {
       mappings,
-      last_sync: new Date().toISOString(),
+      last_sync: failed === 0 ? new Date().toISOString() : syncState.last_sync,
     });
   }
 
@@ -157,6 +163,8 @@ export async function POST(request: Request) {
     updated,
     skipped,
     failed,
+    errors: errors.length > 0 ? errors : undefined,
     dryRun,
+    partial_failure: failed > 0,
   });
 }

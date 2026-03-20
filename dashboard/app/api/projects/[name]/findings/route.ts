@@ -39,7 +39,13 @@ export async function POST(request: Request, { params }: Params) {
         { status: 400 }
       );
     }
-    const updated = [...findings, body];
+    if (findings.some((f) => f.finding_id === body.finding_id.trim())) {
+      return NextResponse.json(
+        { error: "finding_id already exists in this project" },
+        { status: 409 }
+      );
+    }
+    const updated = [...findings, { ...body, finding_id: body.finding_id.trim() }];
     await repo.update({ ...project, findings: updated });
     return NextResponse.json(body);
   } catch (e) {
