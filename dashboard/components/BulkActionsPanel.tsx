@@ -315,7 +315,7 @@ export function BulkActionsPanel({
               onClick={() =>
                 setShowConfirmModal({
                   action: "repairQueue",
-                  message: `Queue ${selectedFindingIds.size} finding(s) for repair? They will be processed by the repair engine.`,
+                  message: `Queue ${selectedFindingIds.size} finding(s) for repair? They will be added to the maintenance backlog for follow-up (see docs/DASHBOARD.md).`,
                 })
               }
               disabled={

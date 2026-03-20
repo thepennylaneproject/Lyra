@@ -413,6 +413,24 @@ export function EngineView() {
       {/* Repair pipeline */}
       <div>
         <SectionLabel>Repair queue</SectionLabel>
+        <div
+          style={{
+            fontSize:      "11px",
+            fontFamily:    "var(--font-mono)",
+            lineHeight:    1.45,
+            color:         "var(--ink-text-3)",
+            background:    "var(--ink-bg-sunken)",
+            border:        "0.5px solid var(--ink-border-faint)",
+            borderRadius:  "var(--radius-md)",
+            padding:       "0.65rem 0.75rem",
+            marginBottom:  "1rem",
+          }}
+        >
+          Queuing records work in the app; it does not run the Python repair engine on the server.
+          Next: apply or generate fixes in the target repo, then trigger a new audit here to verify.
+          Full loop: repository root{" "}
+          <span style={{ color: "var(--ink-text-2)" }}>docs/DASHBOARD.md</span>.
+        </div>
         {allJobs.length === 0 ? (
           <div
             style={{

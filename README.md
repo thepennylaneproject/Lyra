@@ -76,7 +76,7 @@ Near-term theme priorities and CLI vs dashboard workflows: [`docs/LYRA_NEAR_TERM
 
 ## Dashboard
 
-The dashboard is the primary way to review audit output, queue repairs, and manage projects without running everything manually.
+The dashboard is the primary way to review audit output, queue repairs, and manage projects without running everything manually. For how queuing, audits, and the repair engine fit together (dashboard-first workflow), see **[`docs/DASHBOARD.md`](docs/DASHBOARD.md)**.
 
 ```bash
 cd dashboard

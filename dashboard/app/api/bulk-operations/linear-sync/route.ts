@@ -55,22 +55,42 @@ export async function POST(request: Request) {
 
     const pool = createPostgresPool();
 
-    // Query findings for this project
-    let findingsQuery =
-      "SELECT DISTINCT finding_id FROM lyra_linear_sync WHERE project_name = $1";
-    const params: unknown[] = [projectName];
+    // Get project to extract findings
+    const projectRows = await pool.query(
+      "SELECT project_json FROM lyra_projects WHERE name = $1",
+      [projectName]
+    );
 
-    if (findingIds.length > 0) {
-      // If specific finding IDs provided, only sync those
-      const placeholders = findingIds
-        .map((_, i) => `$${i + 2}`)
-        .join(", ");
-      findingsQuery += ` AND finding_id IN (${placeholders})`;
-      params.push(...findingIds);
+    if (!projectRows.rows || projectRows.rows.length === 0) {
+      return NextResponse.json(
+        { error: `Project not found: ${projectName}` },
+        { status: 404 }
+      );
     }
 
-    const syncedRows = await pool.query(findingsQuery, params);
-    const syncedCount = syncedRows.length;
+    const projectJson = projectRows.rows[0].project_json;
+    const project = typeof projectJson === "object" && projectJson !== null ? projectJson : {};
+    const projectFindings = Array.isArray(project.findings) ? project.findings : [];
+
+    // Determine which findings to sync
+    const toSync = findingIds.length > 0
+      ? findingIds
+      : projectFindings.map((f: { finding_id?: string }) => f.finding_id).filter(Boolean);
+
+    // Create/update sync mappings for each finding
+    const syncPromises = toSync.map((fId: string) =>
+      pool.query(
+        `INSERT INTO lyra_linear_sync_new (project_name, finding_id, linear_issue_id, linear_team_key)
+         VALUES ($1, $2, '', $3)
+         ON CONFLICT (project_name, finding_id) DO UPDATE SET
+           linear_team_key = COALESCE($3, linear_team_key),
+           updated_at = now()`,
+        [projectName, fId, teamKey]
+      )
+    );
+
+    await Promise.all(syncPromises);
+    const syncedCount = toSync.length;
 
     // Log this as an event (actual Linear sync happens async in a separate worker)
     await recordDurableEventBestEffort({
