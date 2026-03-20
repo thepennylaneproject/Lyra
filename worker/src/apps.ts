@@ -29,13 +29,13 @@ export function resolveApps(
       (a) => a.projectName.toLowerCase() === p.toLowerCase()
     );
     if (one) return [one];
-    return [
-      {
-        projectName: p,
-        expectations: `expectations/${p.toLowerCase().replace(/\s+/g, "-")}-expectations.md`,
-        scanDir: `the_penny_lane_project/${p}`,
-      },
-    ];
+    // QA-006: Reject non-portfolio projects with a clear error instead of
+    // fabricating placeholder paths that produce meaningless audit results.
+    throw new Error(
+      `Project "${p}" is not a recognized portfolio project. ` +
+        `Only portfolio projects can be audited by the worker. ` +
+        `Known projects: ${PORTFOLIO_APPS.map((a) => a.projectName).join(", ")}.`
+    );
   }
   return [...PORTFOLIO_APPS];
 }

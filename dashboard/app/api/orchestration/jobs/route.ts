@@ -143,6 +143,32 @@ export async function POST(request: Request) {
           "[orchestration/jobs] Redis connect failed:",
           redisErr instanceof Error ? redisErr.message : redisErr
         );
+        // QA-002: Redis is configured but the job could not be enqueued.
+        // Record the failure in durable state before returning an error so
+        // operators can see the stuck job and clean it up manually.
+        await recordDurableEventBestEffort({
+          event_type: "orchestration_job_enqueue_failed",
+          project_name: row.project_name,
+          source: "orchestration_api",
+          summary: `Failed to enqueue ${jobType} job ${row.id} in Redis`,
+          payload: {
+            job_id: row.id,
+            bullmq: false,
+            error:
+              redisErr instanceof Error ? redisErr.message : String(redisErr),
+          },
+        });
+        return NextResponse.json(
+          {
+            error:
+              "Job was recorded but could not be enqueued in Redis. " +
+              "The job will not run until the queue is available. " +
+              "Fix the Redis connection and retry.",
+            job: row,
+            bullmq_queued: false,
+          },
+          { status: 503 }
+        );
       }
     }
 

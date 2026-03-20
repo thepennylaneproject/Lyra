@@ -34,6 +34,12 @@ function loadPrompts(): { core: string; auditAgent: string } {
   return { core, auditAgent };
 }
 
+const ACTIVE_FINDING_STATUSES = new Set([
+  "open",
+  "accepted",
+  "in_progress",
+]);
+
 function mergeFindings2(
   existing: Array<Record<string, unknown>>,
   incoming: Array<Record<string, unknown>>
@@ -44,15 +50,31 @@ function mergeFindings2(
     if (id) byId.set(id, { ...f });
   }
   let added = 0;
+  const incomingIds = new Set<string>();
   for (const f of incoming) {
     const id = String(f.finding_id ?? "");
     if (!id) continue;
+    incomingIds.add(id);
     if (!byId.has(id)) {
       byId.set(id, { ...f, status: f.status ?? "open" });
       added++;
     } else {
       const old = byId.get(id)!;
       byId.set(id, { ...old, ...f, finding_id: id });
+    }
+  }
+  // QA-001: Resolve stale active findings that the LLM no longer reports.
+  // Only do this when the re-audit actually produced findings; an empty
+  // incoming set more likely indicates an audit/LLM failure than every issue
+  // being fixed, so we leave existing findings untouched in that case.
+  if (existing.length > 0 && incoming.length > 0) {
+    for (const [id, f] of byId) {
+      if (
+        !incomingIds.has(id) &&
+        ACTIVE_FINDING_STATUSES.has(String(f.status ?? ""))
+      ) {
+        byId.set(id, { ...f, status: "fixed_verified" });
+      }
     }
   }
   return { merged: [...byId.values()], added };
@@ -174,7 +196,12 @@ async function runSynthesize(
   core: string,
   auditAgent: string
 ): Promise<void> {
-  const projects = await listAllProjects(pool);
+  const allProjects = await listAllProjects(pool);
+  // QA-004: Scope synthesis to the requested project, not the whole portfolio.
+  const projects =
+    job.project_name?.trim()
+      ? allProjects.filter((p) => p.name === job.project_name)
+      : allProjects;
   const lines = projects.flatMap((p) =>
     (p.findings as Array<{ title?: string; severity?: string }>).map(
       (f) => `- [${p.name}] ${f.severity ?? "?"}: ${f.title ?? "?"}`
