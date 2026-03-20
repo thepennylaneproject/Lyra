@@ -101,7 +101,11 @@ export function deriveProjectOrchestration(
   const resolvedFindings = resolvedFindingCount(project);
   const visualCoverage = hasVisualCoverage(project);
   const ageDays = daysSince(project.lastUpdated ?? undefined);
-  const queueBusy = (engineStatus?.queue_size ?? 0) > 0;
+  // QA-007: Use per-project queue membership instead of the global queue_size
+  // so that a repair job for project A does not make project B appear blocked.
+  const queueBusy = (engineStatus?.queued_findings ?? []).some(
+    (j) => j.project_name === project.name && j.status === "queued"
+  );
   const reAuditDue = activeFindings > 0 || (ageDays != null && ageDays >= 7);
 
   if ((project.findings ?? []).length === 0) {

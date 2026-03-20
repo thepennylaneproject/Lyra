@@ -38,7 +38,11 @@ export async function POST(request: Request) {
     }
 
     const queue = readRepairQueue();
-    const existing = queue.find((j) => j.finding_id === findingId);
+    // QA-005: Deduplicate by composite key (finding_id + project_name) so that
+    // identical finding IDs in different projects don't block each other.
+    const existing = queue.find(
+      (j) => j.finding_id === findingId && j.project_name === projectName
+    );
     if (existing) {
       return NextResponse.json({ job: existing, added: false });
     }
@@ -67,15 +71,21 @@ export async function DELETE(request: Request) {
     const body = await request.json();
     const findingId =
       typeof body.finding_id === "string" ? body.finding_id.trim() : "";
-    if (!findingId) {
+    const projectName =
+      typeof body.project_name === "string" ? body.project_name.trim() : "";
+    // QA-005: Require project_name so that identical finding IDs from different
+    // projects do not accidentally remove each other's queue entries.
+    if (!findingId || !projectName) {
       return NextResponse.json(
-        { error: "finding_id is required" },
+        { error: "finding_id and project_name are required" },
         { status: 400 }
       );
     }
 
     const queue = readRepairQueue();
-    const next = queue.filter((j) => j.finding_id !== findingId);
+    const next = queue.filter(
+      (j) => !(j.finding_id === findingId && j.project_name === projectName)
+    );
     writeRepairQueue(next);
 
     return NextResponse.json({ removed: queue.length - next.length });

@@ -70,6 +70,7 @@ export async function POST(request: Request) {
   let created = 0;
   let updated = 0;
   let skipped = 0;
+  const failed: string[] = [];
 
   for (const f of findings) {
     const fid = f.finding_id;
@@ -104,24 +105,41 @@ export async function POST(request: Request) {
         created += 1;
       } else {
         const description = findingToDescription(f);
-        const issue = await createIssue({
-          title,
-          description,
-          priority,
-          stateId: stateId || undefined,
-          labelIds,
-          projectId,
-        });
-        if (issue) {
-          mappings[fid] = {
-            linear_id: issue.id,
-            identifier: issue.identifier,
-            url: issue.url,
-            lyra_status: status,
-            created_at: new Date().toISOString(),
-            last_synced: new Date().toISOString(),
-          };
-          created += 1;
+        // QA-003: Wrap each createIssue call so a partial failure (one issue
+        // created, the next throws) still persists the already-created mappings.
+        // Without this, retry would re-create the first issue in Linear.
+        try {
+          const issue = await createIssue({
+            title,
+            description,
+            priority,
+            stateId: stateId || undefined,
+            labelIds,
+            projectId,
+          });
+          if (issue) {
+            mappings[fid] = {
+              linear_id: issue.id,
+              identifier: issue.identifier,
+              url: issue.url,
+              lyra_status: status,
+              created_at: new Date().toISOString(),
+              last_synced: new Date().toISOString(),
+            };
+            created += 1;
+          }
+        } catch (issueErr) {
+          console.error(
+            `sync/linear/push createIssue failed for finding ${fid}:`,
+            issueErr
+          );
+          // Persist whatever mappings we have so far before continuing so
+          // that retry does not re-create issues that already exist in Linear.
+          await setProjectSyncState(projectName, {
+            mappings,
+            last_sync: new Date().toISOString(),
+          });
+          failed.push(fid);
         }
       }
     }
@@ -138,6 +156,7 @@ export async function POST(request: Request) {
     created,
     updated,
     skipped,
+    failed,
     dryRun,
   });
 }
