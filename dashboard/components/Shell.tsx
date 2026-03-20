@@ -88,7 +88,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
 
   const NAV_ITEMS: { key: NavView; label: string }[] = [
     { key: "portfolio", label: "Portfolio" },
-    { key: "engine",    label: "Engine" },
+    { key: "engine",    label: "Repair queue" },
   ];
 
   return (

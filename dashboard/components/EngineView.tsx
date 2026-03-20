@@ -66,6 +66,15 @@ const STATUS_MARK: Record<string, { symbol: string; color: string }> = {
   failed:    { symbol: "✗",  color: "var(--ink-red)" },
 };
 
+const TASK_LABELS: Record<string, string> = {
+  generate_pseudo_code_fixes: "Code fix generation",
+  apply_code_patches: "Patch application",
+  run_tests: "Test execution",
+  validate_output: "Output validation",
+  analyze_findings: "Finding analysis",
+  generate_summary: "Summary generation",
+};
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -219,9 +228,9 @@ export function EngineView() {
               key={task}
               style={{
                 display:       "grid",
-                gridTemplateColumns: "1fr auto auto",
+                gridTemplateColumns: "1fr auto auto auto",
                 alignItems:    "center",
-                gap:           "1rem",
+                gap:           "0.75rem",
                 padding:       "0.625rem 0",
                 borderBottom:  "0.5px solid var(--ink-border-faint)",
               }}
@@ -233,7 +242,16 @@ export function EngineView() {
                   color:      "var(--ink-text-2)",
                 }}
               >
-                {task.replace(/_/g, " ")}
+                {TASK_LABELS[task] ?? task.replace(/_/g, " ")}
+              </span>
+              <span
+                style={{
+                  fontSize:   "9px",
+                  fontFamily: "var(--font-mono)",
+                  color:      "var(--ink-text-4)",
+                }}
+              >
+                ({task})
               </span>
               <ModelChip alias={route.primary} />
               <span
