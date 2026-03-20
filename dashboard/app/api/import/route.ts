@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
     const project: Project = {
       name: projectName,
-      findings,
+      findings: mergedFindings,
       lastUpdated: new Date().toISOString(),
       repositoryUrl:
         typeof body.repositoryUrl === "string"

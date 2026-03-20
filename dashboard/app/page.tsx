@@ -149,14 +149,20 @@ export default function Home() {
   );
 
   const handleImport = useCallback(async (project: Project) => {
-    const res = await apiFetch("/api/projects", {
+    // QA-008: Use /api/import which handles both create and update so that
+    // re-importing an existing project merges findings instead of returning 409.
+    const res = await apiFetch("/api/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(project),
+      body: JSON.stringify({
+        name: project.name,
+        open_findings: project.findings ?? [],
+        repositoryUrl: project.repositoryUrl,
+      }),
     });
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
-      throw new Error(error.error ?? "Failed to create project");
+      throw new Error(error.error ?? "Failed to import project");
     }
     await fetchProjects();
     setShowImport(false);

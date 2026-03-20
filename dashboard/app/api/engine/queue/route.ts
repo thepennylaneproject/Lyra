@@ -73,7 +73,7 @@ export async function DELETE(request: Request) {
       typeof body.project_name === "string" ? body.project_name.trim() : "";
     if (!findingId) {
       return NextResponse.json(
-        { error: "finding_id is required" },
+        { error: "finding_id and project_name are required" },
         { status: 400 }
       );
     }

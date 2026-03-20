@@ -1,10 +1,28 @@
 import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
-import type { Finding } from "@/lib/types";
+import type { Finding, FindingStatus } from "@/lib/types";
 import { apiErrorMessage } from "@/lib/api-error";
 import { validatePartialFinding } from "@/lib/finding-validation";
 
 type Params = { params: Promise<{ name: string; findingId: string }> };
+
+const VALID_STATUSES: FindingStatus[] = [
+  "open",
+  "accepted",
+  "in_progress",
+  "fixed_pending_verify",
+  "fixed_verified",
+  "wont_fix",
+  "deferred",
+  "duplicate",
+  "converted_to_enhancement",
+];
+
+/** Fields allowed in a PATCH body; everything else is ignored. */
+interface FindingPatchDTO {
+  status?: FindingStatus;
+  notes?: string;
+}
 
 export async function PATCH(request: Request, { params }: Params) {
   try {
@@ -28,22 +46,42 @@ export async function PATCH(request: Request, { params }: Params) {
     if (index === -1) {
       return NextResponse.json({ error: "Finding not found" }, { status: 404 });
     }
+
+    // Validate status if provided
+    if (raw.status !== undefined) {
+      if (!VALID_STATUSES.includes(raw.status as FindingStatus)) {
+        return NextResponse.json(
+          { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` },
+          { status: 422 }
+        );
+      }
+    }
+
+    // Accept only the narrow DTO fields
+    const body: FindingPatchDTO = {
+      ...(raw.status !== undefined ? { status: raw.status as FindingStatus } : {}),
+      ...(typeof raw.notes === "string" ? { notes: raw.notes } : {}),
+    };
+
     const existing = findings[index];
     const updatedFinding: Finding = {
       ...existing,
-      ...body,
+      ...(body.status !== undefined ? { status: body.status } : {}),
       finding_id: existing.finding_id,
     };
-    if (body.status !== undefined) {
+
+    // Only append history on a real status transition
+    if (body.status !== undefined && body.status !== existing.status) {
       const history = [...(existing.history ?? [])];
       history.push({
         timestamp: new Date().toISOString(),
         actor: "dashboard",
-        event: String(body.status),
-        notes: `Status changed to ${body.status}`,
+        event: body.status,
+        notes: body.notes ?? `Status changed to ${body.status}`,
       });
       updatedFinding.history = history;
     }
+
     const newFindings = [...findings];
     newFindings[index] = updatedFinding;
     await repo.update({ ...project, findings: newFindings });

@@ -5,47 +5,14 @@ import { failAllQueuedJobs, jobsStoreConfigured } from "@/lib/orchestration-jobs
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import { apiErrorMessage } from "@/lib/api-error";
 
-function enqueueSecret(): string {
-  return (
-    process.env.ORCHESTRATION_ENQUEUE_SECRET?.trim() ||
-    process.env.DASHBOARD_API_SECRET?.trim() ||
-    ""
-  );
-}
-
-function normalizeSecret(s: string): string {
-  return s.trim().replace(/\r?\n/g, "").trim();
-}
-
-function authorize(request: Request): boolean {
-  const secret = enqueueSecret();
-  if (!secret) {
-    return process.env.NODE_ENV === "development";
-  }
-  const normalizedSecret = normalizeSecret(secret);
-  const auth = request.headers.get("authorization");
-  const bearerMatch =
-    auth?.startsWith("Bearer ") &&
-    normalizeSecret(auth.slice(7)) === normalizedSecret;
-  const header =
-    request.headers.get("x-lyra-enqueue-secret") ??
-    request.headers.get("x-lyra-api-secret");
-  return (
-    bearerMatch || (header != null && normalizeSecret(header) === normalizedSecret)
-  );
-}
-
 const CANCEL_MSG =
   "Cancelled: queue cleared from dashboard (BullMQ + DB queued rows).";
 
 /**
  * POST — obliterate BullMQ `lyra-audit` (if Redis configured) and mark all DB
- * `queued` jobs as failed. Same auth as POST /api/orchestration/jobs.
+ * `queued` jobs as failed. Auth is handled centrally by middleware.
  */
 export async function POST(request: Request) {
-  if (!authorize(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
   if (!jobsStoreConfigured()) {
     return NextResponse.json(
       { error: "DATABASE_URL required for orchestration jobs" },
