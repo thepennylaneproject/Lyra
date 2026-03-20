@@ -118,33 +118,31 @@ export async function POST(request: Request) {
       if (dryRun) {
         created += 1;
       } else {
-        try {
-          const description = findingToDescription(f);
-          const issue = await createIssue({
-            title,
-            description,
-            priority,
-            stateId: stateId || undefined,
-            labelIds,
-            projectId,
+        const description = findingToDescription(f);
+        const issue = await createIssue({
+          title,
+          description,
+          priority,
+          stateId: stateId || undefined,
+          labelIds,
+          projectId,
+        });
+        if (issue) {
+          mappings[fid] = {
+            linear_id: issue.id,
+            identifier: issue.identifier,
+            url: issue.url,
+            lyra_status: status,
+            created_at: new Date().toISOString(),
+            last_synced: new Date().toISOString(),
+          };
+          // Persist mapping immediately after each successful issue creation
+          // so a partial failure doesn't cause duplicates on retry.
+          await setProjectSyncState(projectName, {
+            mappings,
+            last_sync: syncState.last_sync,
           });
-          if (issue) {
-            mappings[fid] = {
-              linear_id: issue.id,
-              identifier: issue.identifier,
-              url: issue.url,
-              lyra_status: status,
-              created_at: new Date().toISOString(),
-              last_synced: new Date().toISOString(),
-            };
-            created += 1;
-          } else {
-            failed += 1;
-            errors.push(`create ${fid}: createIssue returned null`);
-          }
-        } catch (e) {
-          failed += 1;
-          errors.push(`create ${fid}: ${e instanceof Error ? e.message : String(e)}`);
+          created += 1;
         }
       }
     }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
 import type { Finding, FindingStatus } from "@/lib/types";
 import { apiErrorMessage } from "@/lib/api-error";
+import { validatePartialFinding } from "@/lib/finding-validation";
 
 type Params = { params: Promise<{ name: string; findingId: string }> };
 
@@ -27,7 +28,14 @@ export async function PATCH(request: Request, { params }: Params) {
   try {
     const { name, findingId } = await params;
     const id = decodeURIComponent(findingId);
-    const raw = (await request.json()) as Record<string, unknown>;
+    const body = (await request.json()) as Partial<Finding>;
+    const errors = validatePartialFinding(body);
+    if (errors.length > 0) {
+      return NextResponse.json(
+        { error: "Validation failed", details: errors },
+        { status: 422 }
+      );
+    }
     const repo = getRepository();
     const project = await repo.getByName(decodeURIComponent(name));
     if (!project) {

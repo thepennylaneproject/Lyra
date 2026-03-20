@@ -15,9 +15,10 @@ interface SyncStatus {
 
 interface LinearSyncProps {
   projectName: string;
+  onRefresh?: () => Promise<void>;
 }
 
-export function LinearSync({ projectName }: LinearSyncProps) {
+export function LinearSync({ projectName, onRefresh }: LinearSyncProps) {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [statusLoadError, setStatusLoadError] = useState<string | null>(null);
   const [action, setAction] = useState<string | null>(null);
@@ -87,13 +88,14 @@ export function LinearSync({ projectName }: LinearSyncProps) {
       if (res.ok) {
         setSyncError(null);
         await fetchStatus();
+        await onRefresh?.();
       } else {
         setSyncError((data as { error?: string }).error ?? "Push failed");
       }
     } finally {
       setAction(null);
     }
-  }, [projectName, fetchStatus]);
+  }, [projectName, fetchStatus, onRefresh]);
 
   const pull = useCallback(async () => {
     setAction("pull");
@@ -108,13 +110,14 @@ export function LinearSync({ projectName }: LinearSyncProps) {
       if (res.ok) {
         setSyncError(null);
         await fetchStatus();
+        await onRefresh?.();
       } else {
         setSyncError((data as { error?: string }).error ?? "Pull failed");
       }
     } finally {
       setAction(null);
     }
-  }, [projectName, fetchStatus]);
+  }, [projectName, fetchStatus, onRefresh]);
 
   if (statusLoadError && !status) {
     return (

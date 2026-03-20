@@ -155,7 +155,10 @@ export function ProjectView({
       </div>
 
       {/* Linear sync */}
-      <LinearSync projectName={project.name} />
+      <LinearSync
+        projectName={project.name}
+        onRefresh={async () => { await refetchProject(); }}
+      />
 
       <ProjectAuditHistory projectName={project.name} />
 

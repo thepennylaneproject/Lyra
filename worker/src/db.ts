@@ -66,34 +66,39 @@ export async function completeJob(
   }
 ): Promise<void> {
   const status = error ? "failed" : "completed";
-  await pool.query(
-    `UPDATE lyra_audit_jobs SET status = $2, finished_at = now(), error = $3 WHERE id = $1`,
-    [jobId, status, error]
-  );
-  await pool.query(
-    `INSERT INTO lyra_audit_runs (job_id, job_type, project_name, status, summary, findings_added, payload)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-    [
-      jobId,
-      run.job_type,
-      run.project_name,
-      status,
-      run.summary,
-      run.findings_added,
-      JSON.stringify(run.payload ?? {}),
-    ]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE lyra_audit_jobs SET status = $2, finished_at = now(), error = $3 WHERE id = $1`,
+      [jobId, status, error]
+    );
+    await client.query(
+      `INSERT INTO lyra_audit_runs (job_id, job_type, project_name, status, summary, findings_added, payload)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [
+        jobId,
+        run.job_type,
+        run.project_name,
+        status,
+        run.summary,
+        run.findings_added,
+        JSON.stringify(run.payload ?? {}),
+      ]
+    );
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 export async function loadProject(
   pool: pg.Pool,
   name: string
-): Promise<{
-  name: string;
-  findings: unknown[];
-  repositoryUrl?: string;
-  lastUpdated?: string;
-} | null> {
+): Promise<Record<string, unknown> | null> {
   const r = await pool.query(
     `SELECT project_json FROM lyra_projects WHERE name = $1`,
     [name]
@@ -108,28 +113,23 @@ export async function loadProject(
     return null;
   }
   if (!p || typeof p !== "object") return null;
+  // Return the full project object to preserve stack and any future fields.
   return {
+    ...p,
     name: (p.name as string) || name,
     findings: Array.isArray(p.findings) ? p.findings : [],
-    repositoryUrl: p.repositoryUrl as string | undefined,
-    lastUpdated: p.lastUpdated as string | undefined,
   };
 }
 
 export async function saveProject(
   pool: pg.Pool,
-  project: {
-    name: string;
-    findings: unknown[];
-    repositoryUrl?: string | null;
-    lastUpdated?: string;
-  }
+  project: Record<string, unknown> & { name: string; findings: unknown[] }
 ): Promise<void> {
+  // repositoryUrl goes into the dedicated column; body goes into project_json.
+  const repositoryUrl = (project.repositoryUrl as string | null | undefined) ?? null;
   const body = {
-    name: project.name,
-    findings: project.findings,
-    repositoryUrl: project.repositoryUrl ?? undefined,
-    lastUpdated: project.lastUpdated ?? new Date().toISOString(),
+    ...project,
+    lastUpdated: (project.lastUpdated as string | undefined) ?? new Date().toISOString(),
   };
   await pool.query(
     `INSERT INTO lyra_projects (name, repository_url, project_json, updated_at)
@@ -138,7 +138,7 @@ export async function saveProject(
        repository_url = COALESCE(EXCLUDED.repository_url, lyra_projects.repository_url),
        project_json = EXCLUDED.project_json,
        updated_at = now()`,
-    [project.name, project.repositoryUrl ?? null, JSON.stringify(body)]
+    [project.name, repositoryUrl, JSON.stringify(body)]
   );
 }
 

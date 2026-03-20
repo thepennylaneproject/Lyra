@@ -38,8 +38,6 @@ export async function POST(request: Request) {
     }
 
     const queue = readRepairQueue();
-    // Key deduplication on (project_name, finding_id) so different projects
-    // can have the same finding_id without colliding (ARCH-014)
     const existing = queue.find(
       (j) => j.finding_id === findingId && j.project_name === projectName
     );
@@ -81,13 +79,22 @@ export async function DELETE(request: Request) {
     }
 
     const queue = readRepairQueue();
-    // Remove by (project_name, finding_id); if no project_name given, remove
-    // all matching finding_ids for backwards compatibility
-    const next = projectName
-      ? queue.filter(
-          (j) => !(j.finding_id === findingId && j.project_name === projectName)
-        )
-      : queue.filter((j) => j.finding_id !== findingId);
+    // Remove by composite key (project_name, finding_id) when project_name is provided,
+    // fall back to finding_id-only match for backwards compatibility.
+    let next: typeof queue;
+    if (projectName) {
+      next = queue.filter(
+        (j) => !(j.finding_id === findingId && j.project_name === projectName)
+      );
+    } else {
+      // Legacy path: no project_name supplied. Warn and fall back to finding_id only.
+      // This may remove entries from multiple projects if finding_ids are reused.
+      console.warn(
+        `DELETE /api/engine/queue called without project_name for finding_id=${findingId}. ` +
+          "Provide project_name to scope the removal correctly."
+      );
+      next = queue.filter((j) => j.finding_id !== findingId);
+    }
     writeRepairQueue(next);
 
     return NextResponse.json({ removed: queue.length - next.length });
