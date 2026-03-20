@@ -105,7 +105,7 @@ export function createDraftProjectFromRepository(
   const actor = input.actor?.trim() || "dashboard";
   const access = resolveRepoAccess(input);
   try {
-    const snapshot = collectRepoSnapshot(access, input.default_branch);
+    const snapshot = collectRepoSnapshot(access, input.default_branch, input.name);
     const now = new Date().toISOString();
     const profileArtifact = makeArtifact(
       buildProjectProfile(snapshot),
@@ -235,7 +235,7 @@ function resolveRepoAccess(input: OnboardRepositoryInput): RepoAccess {
   };
 }
 
-function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string): RepoSnapshot {
+function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string, providedName?: string): RepoSnapshot {
   const root = access.path;
   const pkg = readJsonIfExists(join(root, "package.json"));
   const pyproject = readTextIfExists(join(root, "pyproject.toml"));
@@ -269,6 +269,7 @@ function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string): RepoSn
   const projectName =
     deriveProjectName({
       name:
+        providedName ||
         (pkg && typeof pkg.name === "string" && pkg.name) ||
         basename(root),
     });
