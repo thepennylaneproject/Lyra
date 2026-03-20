@@ -12,6 +12,7 @@ import { LinearSync } from "./LinearSync";
 import { ProjectAuditHistory } from "./ProjectAuditHistory";
 import { OnboardingReviewPanel } from "./OnboardingReviewPanel";
 import { MaintenancePanel } from "./MaintenancePanel";
+import { BulkActionsPanel } from "./BulkActionsPanel";
 import { STATUS_GROUPS, sortFindings } from "@/lib/constants";
 
 type FilterKey = "active" | "pending" | "resolved" | "all";
@@ -135,6 +136,14 @@ export function ProjectView({
         project={project}
         onUpdated={async (_updatedProject) => {
           await refetchProject();
+        }}
+      />
+
+      {/* Bulk operations */}
+      <BulkActionsPanel
+        activeProject={project.name}
+        onActionComplete={() => {
+          void refetchProject();
         }}
       />
 
