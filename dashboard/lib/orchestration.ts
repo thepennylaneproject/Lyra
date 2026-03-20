@@ -101,8 +101,19 @@ export function deriveProjectOrchestration(
   const resolvedFindings = resolvedFindingCount(project);
   const visualCoverage = hasVisualCoverage(project);
   const ageDays = daysSince(project.lastUpdated ?? undefined);
-  const queueBusy = (engineStatus?.queue_size ?? 0) > 0;
-  const reAuditDue = activeFindings > 0 || (ageDays != null && ageDays >= 7);
+  // Only consider this project's own queued jobs, not the global queue size
+  const projectQueuedFindings = (engineStatus?.queued_findings ?? []).filter(
+    (j) => j.project_name === project.name
+  );
+  const queueBusy = projectQueuedFindings.length > 0;
+  // pending (fixed_pending_verify) findings represent unresolved verification debt
+  const pendingFindings = (project.findings ?? []).filter((f) =>
+    STATUS_GROUPS.pending.includes(f.status)
+  ).length;
+  const reAuditDue =
+    activeFindings > 0 ||
+    pendingFindings > 0 ||
+    (ageDays != null && ageDays >= 7);
 
   if ((project.findings ?? []).length === 0) {
     return {

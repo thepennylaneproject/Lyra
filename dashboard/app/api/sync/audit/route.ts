@@ -77,23 +77,46 @@ export async function POST(request: Request) {
       const now = new Date().toISOString();
 
       if (existing) {
-        // Merge: skip findings already present (by finding_id)
+        // Upsert: update existing findings with incoming content, preserve
+        // local workflow fields (status/history); append brand-new findings.
+        const incomingById = new Map(projectFindings.map((f) => [f.finding_id, f]));
+        let changed = false;
+
+        // Update content of existing findings, preserving workflow fields
+        const updatedFindings = existing.findings.map((prev) => {
+          const incoming = incomingById.get(prev.finding_id);
+          if (!incoming) return prev;
+          // Replace audit content fields but keep workflow state
+          const merged = {
+            ...incoming,
+            finding_id: prev.finding_id,
+            status: prev.status,
+            history: prev.history,
+          };
+          changed = true;
+          return merged;
+        });
+
+        // Append brand-new findings not yet in the project
         const existingIds = new Set(existing.findings.map((f) => f.finding_id));
-        const newFindings = projectFindings.filter(
-          (f) => !existingIds.has(f.finding_id)
-        );
+        const newFindings = projectFindings.filter((f) => !existingIds.has(f.finding_id));
         if (newFindings.length > 0) {
+          updatedFindings.push(...newFindings);
+          changed = true;
+          findingsImported += newFindings.length;
+        }
+
+        if (changed) {
           await repo.update({
             ...existing,
-            findings: [...existing.findings, ...newFindings],
+            findings: updatedFindings,
             lastUpdated: now,
           });
           existingByName.set(projectName, {
             ...existing,
-            findings: [...existing.findings, ...newFindings],
+            findings: updatedFindings,
             lastUpdated: now,
           });
-          findingsImported += newFindings.length;
           projectsUpdated++;
         }
       } else {

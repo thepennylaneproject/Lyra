@@ -195,3 +195,18 @@ export async function failAllQueuedJobs(errorMessage: string): Promise<number> {
   );
   return rows.length;
 }
+
+/** Update status (and optionally error message) for a specific job row. */
+export async function updateAuditJobStatus(
+  id: string,
+  status: LyraJobStatus,
+  error?: string
+): Promise<void> {
+  const p = pool();
+  await p.query(
+    `UPDATE lyra_audit_jobs
+     SET status = $2, finished_at = CASE WHEN $2 IN ('completed','failed') THEN now() ELSE finished_at END, error = $3
+     WHERE id = $1`,
+    [id, status, error ?? null]
+  );
+}

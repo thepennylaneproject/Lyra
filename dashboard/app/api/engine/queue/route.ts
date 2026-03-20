@@ -38,7 +38,11 @@ export async function POST(request: Request) {
     }
 
     const queue = readRepairQueue();
-    const existing = queue.find((j) => j.finding_id === findingId);
+    // Key deduplication on (project_name, finding_id) so different projects
+    // can have the same finding_id without colliding (ARCH-014)
+    const existing = queue.find(
+      (j) => j.finding_id === findingId && j.project_name === projectName
+    );
     if (existing) {
       return NextResponse.json({ job: existing, added: false });
     }
@@ -67,6 +71,8 @@ export async function DELETE(request: Request) {
     const body = await request.json();
     const findingId =
       typeof body.finding_id === "string" ? body.finding_id.trim() : "";
+    const projectName =
+      typeof body.project_name === "string" ? body.project_name.trim() : "";
     if (!findingId) {
       return NextResponse.json(
         { error: "finding_id is required" },
@@ -75,7 +81,13 @@ export async function DELETE(request: Request) {
     }
 
     const queue = readRepairQueue();
-    const next = queue.filter((j) => j.finding_id !== findingId);
+    // Remove by (project_name, finding_id); if no project_name given, remove
+    // all matching finding_ids for backwards compatibility
+    const next = projectName
+      ? queue.filter(
+          (j) => !(j.finding_id === findingId && j.project_name === projectName)
+        )
+      : queue.filter((j) => j.finding_id !== findingId);
     writeRepairQueue(next);
 
     return NextResponse.json({ removed: queue.length - next.length });

@@ -22,16 +22,18 @@ export async function POST(request: Request) {
   } catch {
     // no body
   }
-  const projectName = body.projectName ?? "";
-  if (!projectName.trim()) {
+  // Normalize once so repo lookup and sync-state key are consistent (ARCH-012)
+  const rawName = body.projectName ?? "";
+  if (!rawName.trim()) {
     return NextResponse.json(
       { error: "projectName is required" },
       { status: 400 }
     );
   }
+  const projectName = rawName.trim();
 
   const repo = getRepository();
-  const project = await repo.getByName(projectName.trim());
+  const project = await repo.getByName(projectName);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
@@ -47,6 +49,8 @@ export async function POST(request: Request) {
 
   const findings = [...(project.findings ?? [])];
   let pulled = 0;
+  let failed = 0;
+  const errors: string[] = [];
 
   for (const [fid, info] of Object.entries(mappings)) {
     const linearId = info.linear_id;
@@ -55,7 +59,10 @@ export async function POST(request: Request) {
     let issue: { state?: { name?: string } } | null = null;
     try {
       issue = await getIssue(linearId);
-    } catch {
+    } catch (e) {
+      // Track failures instead of silently swallowing them (ARCH-013)
+      failed += 1;
+      errors.push(`fetch ${fid}: ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
     if (!issue) continue;
@@ -88,10 +95,16 @@ export async function POST(request: Request) {
     findings,
     lastUpdated: new Date().toISOString(),
   });
+  // Only advance last_sync when the whole batch succeeded (ARCH-013)
   await setProjectSyncState(projectName, {
     mappings,
-    last_sync: new Date().toISOString(),
+    last_sync: failed === 0 ? new Date().toISOString() : syncState.last_sync,
   });
 
-  return NextResponse.json({ pulled });
+  return NextResponse.json({
+    pulled,
+    failed,
+    errors: errors.length > 0 ? errors : undefined,
+    partial_failure: failed > 0,
+  });
 }

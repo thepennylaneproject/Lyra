@@ -29,11 +29,38 @@ export async function POST(request: Request) {
     const { findings } = parseOpenFindingsPayload(raw);
     const repo = getRepository();
     const existing = await repo.getByName(projectName);
+
+    // Merge incoming findings with existing ones by finding_id.
+    // Preserve existing status, history, and other workflow fields unless
+    // the caller passes replace=true to fully overwrite.
+    const replace = body.replace === true;
+
+    let mergedFindings: typeof findings;
+    if (existing && !replace) {
+      const existingById = new Map(existing.findings.map((f) => [f.finding_id, f]));
+      mergedFindings = findings.map((incoming) => {
+        const prev = existingById.get(incoming.finding_id);
+        if (!prev) return incoming;
+        // Preserve workflow fields from the existing record
+        return {
+          ...incoming,
+          finding_id: prev.finding_id,
+          status: prev.status,
+          history: prev.history,
+        };
+      });
+    } else {
+      mergedFindings = findings;
+    }
+
     const project: Project = {
       name: projectName,
-      findings,
+      findings: mergedFindings,
       lastUpdated: new Date().toISOString(),
-      repositoryUrl: typeof body.repositoryUrl === "string" ? body.repositoryUrl.trim() || undefined : undefined,
+      repositoryUrl:
+        typeof body.repositoryUrl === "string"
+          ? body.repositoryUrl.trim() || undefined
+          : existing?.repositoryUrl,
       stack: existing?.stack,
     };
     if (existing) {

@@ -37,6 +37,7 @@ export async function PUT(request: Request, { params }: Params) {
       findings: Array.isArray(body.findings) ? body.findings : existing.findings,
       lastUpdated: new Date().toISOString(),
       stack: body.stack ?? existing.stack,
+      repositoryUrl: body.repositoryUrl ?? existing.repositoryUrl,
     };
     const project = await repo.update(updated);
     return NextResponse.json(project);
