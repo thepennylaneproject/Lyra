@@ -428,7 +428,7 @@ export function ProjectAuditHistory({ projectName, projectStatus }: ProjectAudit
               }}
             />
             <div style={{ fontSize: "9px", color: "var(--ink-text-4)" }}>
-              Usually not needed if you're logged in. Use this to bypass with a different key.
+              Usually not needed if you&apos;re logged in. Use this to bypass with a different key.
             </div>
           </div>
         </details>

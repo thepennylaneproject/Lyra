@@ -388,7 +388,7 @@ export function BulkActionsPanel({
 
           {/* Selection note */}
           <div style={{ color: "var(--ink-text-4)", fontSize: "12px" }}>
-            💡 Tips: Select findings in the project view to enable repair queueing. Use "Sync all to Linear" to sync all projects at once, or select a project to sync only that one.
+            💡 Tips: Select findings in the project view to enable repair queueing. Use &quot;Sync all to Linear&quot; to sync all projects at once, or select a project to sync only that one.
           </div>
         </div>
       )}
