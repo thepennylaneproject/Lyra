@@ -130,6 +130,14 @@ export function BulkActionsPanel({
     );
   }, [activeProject, selectedFindingIds, performBulkAction]);
 
+  const handleSyncAllLinear = useCallback(async () => {
+    await performBulkAction(
+      "/api/bulk-operations/linear-sync-all",
+      {},
+      "Sync All to Linear"
+    );
+  }, [performBulkAction]);
+
   const confirmAction = useCallback(
     async (callback: () => Promise<void>) => {
       setShowConfirmModal(null);
@@ -312,6 +320,24 @@ export function BulkActionsPanel({
             </button>
 
             <button
+              onClick={handleSyncAllLinear}
+              disabled={actionInProgress !== null}
+              style={{
+                padding: "0.5rem 1rem",
+                backgroundColor: "var(--canvas-3)",
+                border: "1px solid var(--border-1)",
+                borderRadius: "4px",
+                cursor: actionInProgress ? "not-allowed" : "pointer",
+                opacity: actionInProgress ? 0.5 : 1,
+                fontSize: "12px",
+              }}
+            >
+              {actionInProgress === "Sync All to Linear"
+                ? "Syncing all..."
+                : "Sync all to Linear"}
+            </button>
+
+            <button
               onClick={() =>
                 setShowConfirmModal({
                   action: "repairQueue",
@@ -362,7 +388,7 @@ export function BulkActionsPanel({
 
           {/* Selection note */}
           <div style={{ color: "var(--ink-text-4)", fontSize: "12px" }}>
-            💡 Tip: Select findings in the project view to enable repair queueing
+            💡 Tips: Select findings in the project view to enable repair queueing. Use "Sync all to Linear" to sync all projects at once, or select a project to sync only that one.
           </div>
         </div>
       )}
