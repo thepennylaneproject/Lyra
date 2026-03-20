@@ -49,6 +49,17 @@ Audit the design system foundation: are there defined, consistent tokens for col
 - If Tailwind: is the `theme.extend` section organized, or is it overriding base values chaotically?
 - Are any tokens documented (even as comments)?
 
+## ATLAS protocol alignment (code-verifiable)
+
+Cross-check tokens against [ATLAS_AUDIT_PROTOCOL.md](../../atlas/ATLAS_AUDIT_PROTOCOL.md) where determinable from config/CSS only:
+
+- **Layer 3 (Color):** Palette structure (semantic vs grab-bag), accent restraint in tokens (not per-page), semantic vs brand separation in variable names.
+- **Layer 4 (Spacing):** Spacing scale from a base unit (4/8px); flag magic numbers in theme vs in components.
+- **Layer 2 (Typography):** Type scale/modular steps in theme; font family count in tokens.
+- **Layer 8 (craft):** Systematic border-radius and shadow scales (sm/md/lg), not one-off token sprawl.
+
+If you cannot verify from files, omit or use `confidence: speculation` with a short verification note per the LYRA Audit Constitution.
+
 ## Scoring
 
 For each system (color, spacing, typography, elevation), rate:

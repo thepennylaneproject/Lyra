@@ -57,6 +57,22 @@ Collect every distinct font-size used across all pages:
 - Is truncation (`text-overflow: ellipsis`) used consistently and with appropriate `title` attributes?
 - Are empty-state messages and error messages styled with a consistent type treatment?
 
+## ATLAS protocol alignment (code-verifiable)
+
+Map findings to [ATLAS_AUDIT_PROTOCOL.md](../../atlas/ATLAS_AUDIT_PROTOCOL.md) **Layer 2 (Typography)** where supported by code:
+
+- Intentional type roles vs defaults; ≤2 families (+ optional mono for code).
+- Body size/line-height bands (e.g. ≥15px equivalent, line-height ~1.5–1.7) from classes or CSS.
+- Heading scale consistency (modular progression, not arbitrary jumps).
+- Purposeful weights (hierarchy, not decoration); letter-spacing patterns if defined.
+- Line length / max-width on text containers (measure) when inferable from `max-w-*` or CSS.
+- Tabular nums for data components when specified.
+- Text color roles (primary / secondary / muted) distinct in tokens or classes.
+
+**Layer 1 (First impressions):** Only flag hierarchy/purpose/primary-action issues when structure in code clearly shows competing `h1`s, missing page title patterns, or ambiguous emphasis across routes.
+
+Use `inference` or `speculation` when render-dependent; never invent scores—produce LYRA findings with proof hooks.
+
 ## How to Report
 
 Each finding should anchor to a specific page/component comparison. Use `ui_path` proof hooks to identify the page and `code_ref` to identify the specific classes or styles.

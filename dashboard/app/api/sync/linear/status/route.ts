@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
-import { isLinearConfigured } from "@/lib/linear";
+import { isLinearConfigured, pingLinearApi } from "@/lib/linear";
 import { getProjectSyncState } from "@/lib/sync-state";
 
 export async function GET(request: Request) {
@@ -33,8 +33,19 @@ export async function GET(request: Request) {
       ["open", "accepted", "in_progress", "fixed_pending_verify"].includes(f.status)
   );
 
+  const linearConfigured = isLinearConfigured();
+  let linearReachable: boolean | null = null;
+  let linearError: string | null = null;
+  if (linearConfigured) {
+    const ping = await pingLinearApi();
+    linearReachable = ping.ok;
+    linearError = ping.error ?? null;
+  }
+
   return NextResponse.json({
-    configured: isLinearConfigured(),
+    configured: linearConfigured,
+    linear_reachable: linearReachable,
+    linear_error: linearError,
     last_sync: syncState.last_sync,
     synced_count: inBoth.length,
     in_linear_only: inLinearOnly.length,

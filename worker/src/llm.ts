@@ -14,6 +14,12 @@ export interface FindingOut {
   }>;
 }
 
+export interface AuditLlmResult {
+  findings: FindingOut[];
+  model: string;
+  raw_response: string;
+}
+
 export async function auditWithLlm(
   corePrompt: string,
   auditAgentPrompt: string,
@@ -21,22 +27,26 @@ export async function auditWithLlm(
   codeContext: string,
   appName: string,
   visualOnly: boolean
-): Promise<FindingOut[]> {
+): Promise<AuditLlmResult> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) {
     console.warn("[lyra-worker] OPENAI_API_KEY not set; skipping LLM audit");
-    return [
-      {
-        finding_id: `${appName}-no-api-key`,
-        title: "OPENAI_API_KEY not configured",
-        description: "Worker cannot run LLM audit without OPENAI_API_KEY.",
-        type: "question",
-        severity: "minor",
-        priority: "P2",
-        status: "open",
-        category: "config",
-      },
-    ];
+    return {
+      model: "none",
+      raw_response: "OPENAI_API_KEY not configured",
+      findings: [
+        {
+          finding_id: `${appName}-no-api-key`,
+          title: "OPENAI_API_KEY not configured",
+          description: "Worker cannot run LLM audit without OPENAI_API_KEY.",
+          type: "question",
+          severity: "minor",
+          priority: "P2",
+          status: "open",
+          category: "config",
+        },
+      ],
+    };
   }
 
   const model = process.env.LYRA_AUDIT_MODEL?.trim() || "gpt-4o-mini";
@@ -82,30 +92,38 @@ Return JSON: { "findings": [ ... ] } per audit-agent output contract.`;
   try {
     parsed = JSON.parse(raw) as { findings?: FindingOut[] };
   } catch {
-    return [
-      {
-        finding_id: `${appName}-parse-error`,
-        title: "LLM returned non-JSON",
-        description: raw.slice(0, 500),
-        type: "bug",
-        severity: "minor",
-        priority: "P2",
-        status: "open",
-      },
-    ];
+    return {
+      model,
+      raw_response: raw,
+      findings: [
+        {
+          finding_id: `${appName}-parse-error`,
+          title: "LLM returned non-JSON",
+          description: raw.slice(0, 500),
+          type: "bug",
+          severity: "minor",
+          priority: "P2",
+          status: "open",
+        },
+      ],
+    };
   }
   const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
-  return findings.map((f, i) => ({
-    finding_id: f.finding_id || `${appName}-finding-${i}`,
-    title: f.title || "Untitled",
-    description: f.description,
-    type: (f.type as FindingOut["type"]) || "debt",
-    severity: normalizeSeverity(f.severity),
-    priority: normalizePriority(f.priority),
-    status: "open",
-    category: f.category,
-    proof_hooks: f.proof_hooks,
-  }));
+  return {
+    model,
+    raw_response: raw,
+    findings: findings.map((f, i) => ({
+      finding_id: f.finding_id || `${appName}-finding-${i}`,
+      title: f.title || "Untitled",
+      description: f.description,
+      type: (f.type as FindingOut["type"]) || "debt",
+      severity: normalizeSeverity(f.severity),
+      priority: normalizePriority(f.priority),
+      status: "open",
+      category: f.category,
+      proof_hooks: f.proof_hooks,
+    })),
+  };
 }
 
 function normalizeSeverity(s: string): FindingOut["severity"] {

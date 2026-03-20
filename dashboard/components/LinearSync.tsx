@@ -5,6 +5,8 @@ import { apiFetch } from "@/lib/api-fetch";
 
 interface SyncStatus {
   configured: boolean;
+  linear_reachable: boolean | null;
+  linear_error: string | null;
   last_sync: string | null;
   synced_count: number;
   in_linear_only: number;
@@ -30,6 +32,8 @@ export function LinearSync({ projectName }: LinearSyncProps) {
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         configured?: boolean;
+        linear_reachable?: boolean | null;
+        linear_error?: string | null;
         last_sync?: string | null;
         synced_count?: number;
         in_linear_only?: number;
@@ -38,6 +42,12 @@ export function LinearSync({ projectName }: LinearSyncProps) {
       if (res.ok) {
         setStatus({
           configured: Boolean(data.configured),
+          linear_reachable:
+            data.linear_reachable === true || data.linear_reachable === false
+              ? data.linear_reachable
+              : null,
+          linear_error:
+            typeof data.linear_error === "string" ? data.linear_error : null,
           last_sync: data.last_sync ?? null,
           synced_count: Number(data.synced_count ?? 0),
           in_linear_only: Number(data.in_linear_only ?? 0),
@@ -144,9 +154,52 @@ export function LinearSync({ projectName }: LinearSyncProps) {
           fontFamily: "var(--font-mono)",
           color: "var(--ink-text-4)",
           marginBottom: "1rem",
+          lineHeight: 1.45,
         }}
       >
-        linear: not configured
+        <div>linear: not configured</div>
+        <div style={{ marginTop: "0.35rem", color: "var(--ink-text-3)" }}>
+          Set <code>LINEAR_API_KEY</code> and <code>LINEAR_TEAM_ID</code> in{" "}
+          <code>dashboard/.env.local</code> (or repo root <code>.env.local</code> if you merge env — see
+          README). Team ID must be the team UUID from Linear → Settings → API, or your team key (e.g.{" "}
+          <code>ENG</code>).
+        </div>
+      </div>
+    );
+  }
+
+  if (status.linear_reachable === false && status.linear_error) {
+    return (
+      <div style={{ marginBottom: "1rem", lineHeight: 1.45 }}>
+        <div
+          style={{
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-red)",
+            marginBottom: "0.35rem",
+          }}
+        >
+          linear: API error — not communicating with Linear
+        </div>
+        <pre
+          style={{
+            margin: 0,
+            padding: "0.5rem",
+            fontSize: "10px",
+            fontFamily: "var(--font-mono)",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            background: "var(--ink-bg-sunken)",
+            border: "0.5px solid var(--ink-border-faint)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--ink-text-2)",
+          }}
+        >
+          {status.linear_error}
+        </pre>
+        <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)", marginTop: "0.35rem" }}>
+          Fix the key/team ID, restart <code>npm run dev</code>, then retry push/pull.
+        </div>
       </div>
     );
   }

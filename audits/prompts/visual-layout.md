@@ -61,6 +61,19 @@ For each page, document the layout skeleton:
 - Do all pages respect it, or do some go full-bleed while others are narrow?
 - Are there nested containers causing double-padding or unexpected width constraints?
 
+## ATLAS protocol alignment (code-verifiable)
+
+Align with [ATLAS_AUDIT_PROTOCOL.md](../../atlas/ATLAS_AUDIT_PROTOCOL.md) **Layer 4 (Spacing & layout)**:
+
+- Spacing scale usage vs one-off values; proximity (related vs unrelated grouping) from gap/padding patterns.
+- Grid alignment and consistent max-width / content constraints.
+- Whitespace rhythm between sections (vertical patterns across pages).
+- Responsive behavior: breakpoints and layout shifts, not only squeezed flex.
+
+**Layer 1:** Call out pages where code suggests no clear focal column, full-bleed chaos, or every section with identical weight (e.g. repeated large headings) when evidence is in layout code.
+
+Anchor with `code_ref` / `ui_path`; mark render-only guesses as lower confidence.
+
 ## How to Report
 
 Anchor every finding to specific page comparisons. "Page A uses X, Page B uses Y for the same structural role" is ideal. Use `ui_path` for the page/route and `code_ref` for the specific layout classes.

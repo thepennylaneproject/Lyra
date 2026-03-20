@@ -40,12 +40,67 @@ function getEnv(key: string): string {
   return (process.env[key] ?? "").trim();
 }
 
-export function isLinearConfigured(): boolean {
-  return !!(getEnv("LINEAR_API_KEY") && getEnv("LINEAR_TEAM_ID"));
+/** Linear expects the raw key in Authorization (no `Bearer ` prefix). */
+function linearApiKey(): string {
+  let k = getEnv("LINEAR_API_KEY");
+  if (/^bearer\s+/i.test(k)) k = k.replace(/^bearer\s+/i, "").trim();
+  return k;
 }
 
-async function gql(query: string, variables?: Record<string, unknown>): Promise<unknown> {
-  const apiKey = getEnv("LINEAR_API_KEY");
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim()
+  );
+}
+
+let cachedResolvedTeamId: string | null = null;
+
+/**
+ * LINEAR_TEAM_ID must be the team's UUID (Linear → Settings → API).
+ * If you set a team *key* (e.g. ENG) instead, we resolve it via the API.
+ */
+async function resolveLinearTeamId(): Promise<string> {
+  const raw = getEnv("LINEAR_TEAM_ID");
+  if (!raw) throw new Error("LINEAR_TEAM_ID not set");
+  if (looksLikeUuid(raw)) return raw.trim();
+  if (cachedResolvedTeamId) return cachedResolvedTeamId;
+
+  const result = (await gql(
+    `query {
+      teams {
+        nodes { id key name }
+      }
+    }`
+  )) as {
+    data?: { teams?: { nodes?: { id: string; key: string; name: string }[] } };
+  };
+
+  const nodes = result.data?.teams?.nodes ?? [];
+  const want = raw.trim().toLowerCase();
+  const found = nodes.find(
+    (n) => n.key?.toLowerCase() === want || n.name?.toLowerCase() === want
+  );
+  if (!found) {
+    throw new Error(
+      `LINEAR_TEAM_ID "${raw}" is not a UUID and does not match any team key/name. ` +
+        `Use the team UUID from Linear (Settings → API → Your teams), or set LINEAR_TEAM_ID to your team key (e.g. ENG).`
+    );
+  }
+  cachedResolvedTeamId = found.id;
+  return found.id;
+}
+
+export function isLinearConfigured(): boolean {
+  return !!(linearApiKey() && getEnv("LINEAR_TEAM_ID"));
+}
+
+type GqlResult<T> = { data?: T; errors?: Array<{ message?: string }> };
+
+async function gql<T = unknown>(
+  query: string,
+  variables?: Record<string, unknown>
+): Promise<GqlResult<T>> {
+  const apiKey = linearApiKey();
   if (!apiKey) throw new Error("LINEAR_API_KEY not set");
 
   const res = await fetch(LINEAR_API, {
@@ -59,25 +114,56 @@ async function gql(query: string, variables?: Record<string, unknown>): Promise<
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Linear API error (${res.status}): ${text}`);
+    throw new Error(`Linear API error (${res.status}): ${text.slice(0, 800)}`);
   }
-  return res.json() as Promise<{ data?: unknown; errors?: unknown[] }>;
+
+  const json = (await res.json()) as GqlResult<T>;
+  if (json.errors?.length) {
+    const msg = json.errors
+      .map((e) => e.message ?? JSON.stringify(e))
+      .join("; ");
+    throw new Error(`Linear GraphQL: ${msg}`);
+  }
+  return json;
+}
+
+/** Lightweight check that the API key works (used by dashboard status). */
+export async function pingLinearApi(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await gql<{ viewer?: { id?: string } }>(`query { viewer { id } }`);
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
 }
 
 export async function getTeamStates(): Promise<Record<string, string>> {
-  const teamId = getEnv("LINEAR_TEAM_ID");
-  if (!teamId) throw new Error("LINEAR_TEAM_ID not set");
+  const teamId = await resolveLinearTeamId();
 
   const result = (await gql(
     `query($teamId: String!) {
       team(id: $teamId) {
+        id
+        name
         states { nodes { id name type } }
       }
     }`,
     { teamId }
-  )) as { data?: { team?: { states?: { nodes?: { id: string; name: string }[] } } } };
+  )) as {
+    data?: { team?: { states?: { nodes?: { id: string; name: string }[] } } };
+  };
 
-  const nodes = result.data?.team?.states?.nodes ?? [];
+  const team = result.data?.team;
+  if (!team) {
+    throw new Error(
+      "Linear returned no team for LINEAR_TEAM_ID. Use the team UUID from Linear (Settings → API), not the workspace ID."
+    );
+  }
+
+  const nodes = team.states?.nodes ?? [];
   return Object.fromEntries(nodes.map((s) => [s.name, s.id]));
 }
 
@@ -89,8 +175,7 @@ export async function createIssue(params: {
   labelIds?: string[];
   projectId?: string;
 }): Promise<{ id: string; identifier?: string; url?: string } | null> {
-  const teamId = getEnv("LINEAR_TEAM_ID");
-  if (!teamId) throw new Error("LINEAR_TEAM_ID not set");
+  const teamId = await resolveLinearTeamId();
 
   const variables: Record<string, unknown> = {
     teamId,
@@ -120,10 +205,22 @@ export async function createIssue(params: {
       }
     }`,
     variables
-  )) as { data?: { issueCreate?: { success?: boolean; issue?: { id: string; identifier?: string; url?: string } } } };
+  )) as {
+    data?: {
+      issueCreate?: {
+        success?: boolean;
+        issue?: { id: string; identifier?: string; url?: string };
+      };
+    };
+  };
 
   const issueCreate = result.data?.issueCreate;
   if (issueCreate?.success && issueCreate.issue) return issueCreate.issue;
+  if (issueCreate && !issueCreate.success) {
+    throw new Error(
+      "Linear issueCreate returned success=false (check team permissions, label/project IDs, and title length)."
+    );
+  }
   return null;
 }
 

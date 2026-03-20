@@ -77,6 +77,13 @@ npm run dev
 
 See `.env.example`.
 
+### Linear sync troubleshooting
+
+- **`LINEAR_API_KEY`**: Personal API key from Linear → Settings → API. Put the key only (no `Bearer ` prefix); if you already prefixed it in env, the app strips `Bearer ` for you.
+- **`LINEAR_TEAM_ID`**: Must be your **team** UUID from the same API page (not workspace ID). You can also set the team **key** (e.g. `ENG`) — the app resolves it via the API.
+- **Env file location**: `next.config.ts` merges **`../.env.local`** (repo root) then **`dashboard/.env.local`**, so keys in either file load when you run `npm run dev` from `dashboard/`. Restart the dev server after changing env.
+- **UI**: If the key is wrong or GraphQL returns an error, the project page shows **linear: API error** with the message from Linear (previously many failures were silent because GraphQL `errors` were ignored).
+
 ## Scripts
 
 - `npm run dev` — Dev server

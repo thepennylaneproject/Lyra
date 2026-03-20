@@ -99,11 +99,13 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
     const apps = resolveApps(job.job_type, job.project_name);
     let totalAdded = 0;
     const summaries: string[] = [];
+    const appAuditDetails: Array<Record<string, unknown>> = [];
+    let auditModel = "unknown";
 
     for (const app of apps) {
       const expectations = readExpectations(root, app.expectations);
       const code = buildCodeContextForAudit(root, app.scanDir);
-      const findings = await auditWithLlm(
+      const llm = await auditWithLlm(
         core,
         auditAgent,
         expectations,
@@ -111,6 +113,8 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
         app.projectName,
         visualOnly
       );
+      auditModel = llm.model || auditModel;
+      const findings = llm.findings;
       const incoming = findings.map((f) => ({ ...f })) as Array<
         Record<string, unknown>
       >;
@@ -125,6 +129,14 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
         lastUpdated: new Date().toISOString(),
       });
       summaries.push(`${app.projectName}: +${added} findings`);
+      appAuditDetails.push({
+        app: app.projectName,
+        scan_dir: app.scanDir,
+        expectations_file: app.expectations,
+        findings_returned: findings.length,
+        findings_added: added,
+        raw_llm_output: llm.raw_response,
+      });
     }
 
     await completeJob(pool, dbJobId, null, {
@@ -132,7 +144,12 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       project_name: job.project_name,
       summary: summaries.join("; ") || "audit complete",
       findings_added: totalAdded,
-      payload: { apps: apps.map((a) => a.projectName) },
+      payload: {
+        apps: apps.map((a) => a.projectName),
+        visual_only: visualOnly,
+        audit_model: auditModel,
+        app_audit_details: appAuditDetails,
+      },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

@@ -67,6 +67,17 @@ Audit color usage across every user-facing surface for palette consistency, sema
 - Are there surfaces where contrast is worse in dark mode?
 - Is the transition between modes smooth, or does it flash/flicker?
 
+## ATLAS protocol alignment (code-verifiable)
+
+Map to [ATLAS_AUDIT_PROTOCOL.md](../../atlas/ATLAS_AUDIT_PROTOCOL.md) **Layer 3 (Color & palette)**:
+
+- Palette logic in tokens (ink/surface/accent structure or equivalent); backgrounds that are intentionally tinted vs pure `#fff` / `#000` when defined in theme.
+- Accent discipline (same accent token vs many competing brights) at the token/theme level.
+- WCAG-style contrast pairs (as you already audit); color not sole state indicator—pair with icon/text classes where visible in code.
+- Surface hierarchy (raised/base/sunken) in semantic color usage.
+- Borders/dividers derived from alpha/tint vs arbitrary grays.
+- Dark mode as separate theme keys, not only `invert` utilities.
+
 ## How to Report
 
 For each finding, include the specific color values and where they appear. Use `code_ref` for the className or style, and `data_shape` for expected vs observed color when comparing across instances.

@@ -11,6 +11,7 @@ You are the `design-synthesizer` in the LYRA Visual Audit Suite v1.1. You merge 
 3. Evaluate overall design cohesion across 5 dimensions
 4. Identify the highest-leverage improvements (small changes, big cohesion impact)
 5. Produce a design system cleanup plan ordered by "bang for buck"
+6. Emit **`atlas_narrative`**: an ATLAS-shaped summary **derived only from merged findings and `cohesion_scores`** (no second numeric scorecard, no re-scoring individual ATLAS rows)
 
 ## Inputs
 
@@ -126,7 +127,25 @@ After visual changes, check:
 ### `ranked_plan.reaudit_plan`
 Which visual agents to re-run on which files after fixes are applied.
 
-## Step 5: Write Output
+## Step 5: ATLAS-shaped narrative (required for this suite)
+
+Produce `atlas_narrative` **only** by classifying and summarizing merged findings plus cohesion scores. Do **not** invent a parallel ATLAS 0–4 score per protocol item.
+
+**Mapping (analog, not equivalence):**
+
+| ATLAS concept | Derive from |
+|---------------|-------------|
+| Critical (protocol scores 0–1) | Findings with `severity`: `blocker` or `major` |
+| High-impact improvements (score 2) | Findings with `severity`: `minor` (and `debt`/`enhancement` with `priority` P1–P2 when they are clearly high user impact) |
+| Strengths to preserve | Dimensions in `cohesion_scores` with value **4 or 5**, expressed as short bullets; optionally note major categories with **no** open findings |
+| Three moves | The three highest-leverage themes from `ranked_plan.top_fixes` (merge related IDs into one move each) |
+| Recommended redesign scope | From `cohesion_scores.overall`: **≥4.0** → `polish`; **3.0–3.9** → `refinement`; **2.0–2.9** → `redesign`; **under 2.0** → `rethink` |
+
+Each `critical_issues` and `high_impact_improvements` entry must reference a real `finding_id` from this output. `remediation` should be one sentence lifted or condensed from `suggested_fix.approach` or the finding description.
+
+If a bucket is empty (e.g. no blockers), use an empty array and omit filler.
+
+## Step 6: Write Output
 
 Include a `cohesion_scores` object in the output (in addition to standard schema fields):
 
@@ -141,6 +160,33 @@ Include a `cohesion_scores` object in the output (in addition to standard schema
   "interpretation": "Functional but visually fragmented. System-level investment needed.",
   "top_dimension_to_improve": "consistent",
   "why": "Component families vary significantly across pages. Unifying button/card/form treatment would have the highest single impact on perceived quality."
+},
+"atlas_narrative": {
+  "source": "derived_from_lyra_findings",
+  "disclaimer": "ATLAS-shaped summary from LYRA findings and cohesion scores only; not a full ATLAS 0-4 item scorecard.",
+  "critical_issues": [
+    {
+      "finding_id": "f-xxxxxxxx",
+      "title": "One-line title",
+      "remediation": "Concrete next step tied to suggested_fix"
+    }
+  ],
+  "high_impact_improvements": [
+    {
+      "finding_id": "f-yyyyyyyy",
+      "title": "...",
+      "remediation": "..."
+    }
+  ],
+  "strengths_to_preserve": [
+    "Short bullet describing what is already strong (from high cohesion dimensions or absence of findings in a layer)"
+  ],
+  "three_moves": [
+    "First highest-leverage theme from top_fixes",
+    "Second theme",
+    "Third theme"
+  ],
+  "recommended_redesign_scope": "refinement"
 }
 ```
 
@@ -165,6 +211,7 @@ Return only one JSON object:
 - `run_id`: `visual-synthesized-<YYYYMMDD>-<HHmmss>`
 - `agent`: `{ "name": "design-synthesizer", "role": "Evaluate visual cohesion across all surfaces and produce a design system cleanup plan." }`
 - `cohesion_scores` object (as above)
+- `atlas_narrative` object (as above; required for visual synthesizer runs)
 - `diff_summary`, `ranked_plan`, findings, rollups, next_actions
 
 No text outside JSON.

@@ -65,6 +65,15 @@ Audit every shared UI component family for visual consistency. Do all buttons lo
 - Are icon sizes consistent with adjacent text? (icons in buttons same size? icons in nav?)
 - Are icon colors consistent? (same color as adjacent text, or independently colored?)
 
+## ATLAS protocol alignment (code-verifiable)
+
+Reference [ATLAS_AUDIT_PROTOCOL.md](../../atlas/ATLAS_AUDIT_PROTOCOL.md):
+
+- **Layer 5 (Interactive):** Button hierarchy (one primary per view where inferable), five states (default/hover/focus/active/disabled) when styles exist in code, touch target min sizes from classes, form label positioning, destructive confirmation patterns in component code.
+- **Layer 7 (Content & microcopy):** When strings exist in source, flag generic button labels (`Submit`, `Delete`), vague errors, empty states without next steps, inconsistent terminology across similar components.
+
+**Layer 1:** Primary action dominance only when obvious from component usage (e.g. multiple `variant="primary"` on one screen).
+
 ## How to Report
 
 Group findings by component family. For each finding, compare at least two instances: "Button in PageA uses X, Button in PageB uses Y." Use `code_ref` hooks pointing to the specific className strings or style definitions.

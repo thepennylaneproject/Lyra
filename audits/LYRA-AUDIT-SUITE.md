@@ -4,6 +4,7 @@
 
 ### Changelog from v1.0
 
+- Visual synthesizer may include `cohesion_scores` and `atlas_narrative` (ATLAS-shaped summary derived from findings; see `audits/prompts/VISUAL-README.md`)
 - `kind` field distinguishes agent vs synthesizer output (from ChatGPT)
 - Typed proof hooks with sub-schemas replace generic {type, value} pairs (from ChatGPT + Sonar)
 - Coverage declaration per agent so the Synthesizer knows what was examined (from Kimi)
@@ -252,6 +253,17 @@ A successful audit run means:
 The full JSON Schema is in `audits/schema/audit-output.schema.json` (v1.1.0).
 An example run output is in `audits/runs/2025-03-04/logic.20250304-143022.json`.
 A finding case file template is in `audits/findings/TEMPLATE.md`.
+
+### Visual suite (`suite: visual`, synthesizer)
+
+Optional top-level fields on **visual** synthesizer JSON (see `audits/prompts/visual-synthesizer.md`):
+
+| Field | Purpose |
+|-------|---------|
+| `cohesion_scores` | Five dimensions (1–5) plus `overall` average—**code-extrapolated cohesion**, not ATLAS per-item scores. |
+| `atlas_narrative` | ATLAS-**shaped** buckets (`critical_issues`, `high_impact_improvements`, `strengths_to_preserve`, `three_moves`, `recommended_redesign_scope`) **derived from merged LYRA findings** only. |
+
+The standalone prompt `audits/prompts/visual-atlas-narrative.md` produces a **Markdown** memo from synthesizer output plus optional screenshots; it may optionally append a JSON `atlas_narrative` block with `"source": "narrative_supplement"`. See `atlas/ATLAS_AUDIT_PROTOCOL.md` for the original checklist semantics.
 
 ### Markdown Summary Template
 

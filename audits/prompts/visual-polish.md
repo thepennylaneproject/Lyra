@@ -72,6 +72,14 @@ Audit the tactile and dynamic layer: hover states, focus indicators, transitions
 - Is there visual clutter that could be simplified?
 - Are decorative elements (icons, illustrations, dividers) adding value or just adding noise?
 
+## ATLAS protocol alignment (code-verifiable)
+
+Align with [ATLAS_AUDIT_PROTOCOL.md](../../atlas/ATLAS_AUDIT_PROTOCOL.md):
+
+- **Layer 6 (Motion):** Transition duration/easing tokens, `prefers-reduced-motion` handling in CSS/variants, stagger patterns if defined, transform/opacity vs layout-affecting transitions.
+- **Layer 8 (Texture & craft):** Layered shadows, systematic radii, icon set consistency, `::selection` / scrollbar theming if present in source.
+- **Layer 9 (partial):** Focus visibility and keyboard-relevant styles in code; `font-display` on `@font-face`; lazy-loading attributes on media where present.
+
 ## How to Report
 
 For each finding, describe what happens vs what should happen. Use `code_ref` for the specific transition/shadow/radius classes. Use `ui_path` for the page and interaction sequence.

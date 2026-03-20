@@ -27,7 +27,7 @@ This gives Cursor 5 rules:
 | `lyra-context.mdc` | Working in `audits/` files | Loads enum rules, ID format, file locations |
 | `audit-core.mdc` | "audit logic", "audit security", etc. | Runs the appropriate core agent |
 | `audit-logic.mdc` | "audit logic", "run logic audit" | Runs logic agent with full method |
-| `audit-visual.mdc` | "audit visual", "check design" | Routes to visual agent prompts |
+| `audit-visual.mdc` | "audit visual", "check design" | Routes to visual agent prompts + synthesizer (`atlas_narrative`) + optional `visual-atlas-narrative.md` |
 | `fix-finding.mdc` | "fix finding", "fix f-xxx" | Loads finding context, enforces fix rules |
 
 After copying, restart Cursor (or open a new window) to load the rules.

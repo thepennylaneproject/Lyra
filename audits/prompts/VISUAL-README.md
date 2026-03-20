@@ -12,7 +12,8 @@ Systematic visual audit for app cohesion. Six agents read your code and produce 
 | V4: Components | `visual-components.md` | Buttons, cards, forms, modals, nav, toasts, badges, tables, icons |
 | V5: Color | `visual-color.md` | Palette usage, semantic color, contrast ratios, surface hierarchy, dark mode |
 | V6: Polish | `visual-polish.md` | Hover/focus/active states, transitions, shadows, radii, loading, micro-interactions |
-| Synthesizer | `visual-synthesizer.md` | Merges all, scores cohesion 1-5 on 5 dimensions, produces ranked cleanup plan |
+| Synthesizer | `visual-synthesizer.md` | Merges all, scores cohesion 1-5 on 5 dimensions, `atlas_narrative`, ranked cleanup plan |
+| Optional narrative | `visual-atlas-narrative.md` | Human-facing ATLAS-format memo from synthesizer JSON + optional screenshots |
 
 ## Cohesion Scoring
 
@@ -30,6 +31,33 @@ Overall score interpretation:
 - 2.5-3.4 = Visually fragmented, invest in system
 - 1.5-2.4 = Significant design debt
 - 1.0-1.4 = Rebuild visual layer
+
+## ATLAS design protocol (cross-reference)
+
+The repo includes [ATLAS_AUDIT_PROTOCOL.md](../../atlas/ATLAS_AUDIT_PROTOCOL.md) (scored design layers) and [ATLAS_AGENT_PROMPT.md](../../atlas/ATLAS_AGENT_PROMPT.md) (optional strong-POV design identity). Lyra visual agents embed **protocol-aligned checklist hints** where they can be verified from source; they do **not** adopt the full ATLAS agent voice by default.
+
+### Layer to Lyra agent map
+
+| ATLAS layer | Focus | Primary Lyra agent(s) | Notes |
+|-------------|--------|----------------------|--------|
+| 1 — First impressions | 3-second hierarchy, purpose, primary action, focal point | V3 Layout, V2 Typography, V4 Components | Code-only: infer from structure and emphasis patterns, not a live screenshot. |
+| 2 — Typography | Type scale, legibility, measure, weights | V2 Typography, V1 Tokens | |
+| 3 — Color & palette | Palette logic, contrast, semantic vs brand, dark mode | V5 Color, V1 Tokens | |
+| 4 — Spacing & layout | Scale, proximity, grid, max-width, rhythm | V3 Layout, V1 Tokens | |
+| 5 — Interactive elements | Buttons, states, forms, touch targets, friction | V4 Components, V6 Polish | |
+| 6 — Motion & animation | Transitions, easing, duration, reduced motion | V6 Polish | |
+| 7 — Content & microcopy | Labels, errors, empty states (when visible in code) | V4 Components | Strings in JSX/templates only. |
+| 8 — Texture & craft | Shadows, radii, icons, selection, scrollbars | V6 Polish, V1 Tokens | |
+| 9 — Performance & accessibility | Semantic HTML, a11y hints in code, asset patterns | V5 Color, V6 Polish | Partial; dedicated a11y crawl is future work. |
+
+### Scoring: not interchangeable
+
+- **Lyra cohesion** is the average of five 1–5 dimensions in the visual synthesizer output (`cohesion_scores.overall`). It measures codebase-extrapolated **system cohesion**.
+- **ATLAS** uses per-item scores (0–4) and a percentage letter grade across many checklist rows; that scale is **not** the same number line as Lyra’s 1–5. The synthesizer may emit an **`atlas_narrative`** object that **summarizes merged findings** in ATLAS-shaped headings (critical issues, three moves, redesign scope)—derived from LYRA severity/priority, not a second numeric scorecard.
+
+### Optional: narrative-only pass
+
+After the standard synthesizer run, you can run [visual-atlas-narrative.md](visual-atlas-narrative.md) with the merged JSON plus optional screenshots for a stakeholder-facing write-up. See that prompt for details.
 
 ## How to Run
 

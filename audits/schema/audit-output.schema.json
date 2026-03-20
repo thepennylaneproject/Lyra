@@ -281,9 +281,71 @@
           "description": "Targeted re-audit assignments. Only affected agents and surfaces."
         }
       }
+    },
+    "cohesion_scores": {
+      "type": "object",
+      "description": "Visual design synthesizer (`suite: visual`, kind: synthesizer_output). Five 1-5 cohesion dimensions plus overall; not the same scale as ATLAS per-item 0-4 scores.",
+      "properties": {
+        "systematic": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "hierarchical": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "consistent": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "communicative": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "polished": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "overall": { "type": "number", "description": "Average of the five dimensions, typically one decimal." },
+        "interpretation": { "type": "string" },
+        "top_dimension_to_improve": { "type": "string" },
+        "why": { "type": "string" }
+      }
+    },
+    "atlas_narrative": {
+      "type": "object",
+      "description": "ATLAS-protocol-shaped narrative derived from LYRA findings (visual synthesizer or optional narrative pass). Optional on all outputs; expected on visual synthesizer runs.",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "e.g. derived_from_lyra_findings (synthesizer) or narrative_supplement (optional human-facing pass)."
+        },
+        "disclaimer": { "type": "string" },
+        "critical_issues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AtlasNarrativeItem" }
+        },
+        "high_impact_improvements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AtlasNarrativeItem" }
+        },
+        "strengths_to_preserve": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "three_moves": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "maxItems": 3,
+          "description": "Visual synthesizer aims for exactly three moves; narrative pass may emit fewer."
+        },
+        "recommended_redesign_scope": {
+          "type": "string",
+          "enum": ["polish", "refinement", "redesign", "rethink"]
+        }
+      }
     }
   },
   "$defs": {
+    "AtlasNarrativeItem": {
+      "type": "object",
+      "required": ["title", "remediation"],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "description": "Required for synthesizer-derived rows; must match a finding in the same document. Optional for narrative_supplement prose."
+        },
+        "title": { "type": "string" },
+        "remediation": { "type": "string" }
+      },
+      "description": "Single row in atlas_narrative issue lists."
+    },
     "Finding": {
       "type": "object",
       "required": [
