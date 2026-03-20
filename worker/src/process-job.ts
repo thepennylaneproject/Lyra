@@ -36,6 +36,12 @@ function loadPrompts(): { core: string; auditAgent: string } {
   return { core, auditAgent };
 }
 
+const ACTIVE_FINDING_STATUSES = new Set([
+  "open",
+  "accepted",
+  "in_progress",
+]);
+
 function mergeFindings2(
   existing: Array<Record<string, unknown>>,
   incoming: Array<Record<string, unknown>>
@@ -46,9 +52,11 @@ function mergeFindings2(
     if (id) byId.set(id, { ...f });
   }
   let added = 0;
+  const incomingIds = new Set<string>();
   for (const f of incoming) {
     const id = String(f.finding_id ?? "");
     if (!id) continue;
+    incomingIds.add(id);
     if (!byId.has(id)) {
       byId.set(id, { ...f, status: f.status ?? "open" });
       added++;
@@ -63,6 +71,20 @@ function mergeFindings2(
         status: old.status ?? f.status ?? "open",
         history: old.history ?? f.history,
       });
+    }
+  }
+  // QA-001: Resolve stale active findings that the LLM no longer reports.
+  // Only do this when the re-audit actually produced findings; an empty
+  // incoming set more likely indicates an audit/LLM failure than every issue
+  // being fixed, so we leave existing findings untouched in that case.
+  if (existing.length > 0 && incoming.length > 0) {
+    for (const [id, f] of byId) {
+      if (
+        !incomingIds.has(id) &&
+        ACTIVE_FINDING_STATUSES.has(String(f.status ?? ""))
+      ) {
+        byId.set(id, { ...f, status: "fixed_verified" });
+      }
     }
   }
   return { merged: [...byId.values()], added };
