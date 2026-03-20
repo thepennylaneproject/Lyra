@@ -121,6 +121,12 @@ export async function POST(request: Request) {
             created_at: new Date().toISOString(),
             last_synced: new Date().toISOString(),
           };
+          // Persist mapping immediately after each successful issue creation
+          // so a partial failure doesn't cause duplicates on retry.
+          await setProjectSyncState(projectName, {
+            mappings,
+            last_sync: syncState.last_sync,
+          });
           created += 1;
         }
       }

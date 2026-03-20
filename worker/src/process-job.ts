@@ -122,10 +122,11 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       const existing = (prev?.findings ?? []) as Array<Record<string, unknown>>;
       const { merged, added } = mergeFindings2(existing, incoming);
       totalAdded += added;
+      // Spread prev to preserve all project fields (stack, repositoryUrl, etc.)
       await saveProject(pool, {
+        ...(prev ?? {}),
         name: app.projectName,
         findings: merged,
-        repositoryUrl: prev?.repositoryUrl ?? null,
         lastUpdated: new Date().toISOString(),
       });
       summaries.push(`${app.projectName}: +${added} findings`);

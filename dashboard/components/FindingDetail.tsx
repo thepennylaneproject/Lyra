@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Finding, FindingStatus } from "@/lib/types";
 import { Badge } from "./Badge";
 import { STATUS_GROUPS } from "@/lib/constants";
+import { isInQueuedSet } from "@/lib/finding-validation";
 
 const SEVERITY_BORDER: Record<string, string> = {
   blocker: "var(--ink-red)",
@@ -47,7 +48,7 @@ export function FindingDetail({
 }: FindingDetailProps) {
   const [queueing, setQueueing] = useState(false);
   const [queueMsg, setQueueMsg] = useState<string | null>(null);
-  const isQueued = queuedFindingIds?.has(finding.finding_id) ?? false;
+  const isQueued = isInQueuedSet(queuedFindingIds, projectName, finding.finding_id);
   const fix      = typeof finding.suggested_fix === "object" ? finding.suggested_fix : {};
   const stripe   = SEVERITY_BORDER[finding.severity ?? ""] ?? "var(--ink-border)";
 

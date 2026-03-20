@@ -36,6 +36,7 @@ export async function PUT(request: Request, { params }: Params) {
       name: existing.name,
       findings: Array.isArray(body.findings) ? body.findings : existing.findings,
       lastUpdated: new Date().toISOString(),
+      repositoryUrl: body.repositoryUrl ?? existing.repositoryUrl,
       stack: body.stack ?? existing.stack,
     };
     const project = await repo.update(updated);
