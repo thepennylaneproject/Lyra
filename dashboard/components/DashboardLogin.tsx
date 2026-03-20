@@ -76,22 +76,24 @@ export function DashboardLogin({ onSuccess }: { onSuccess: () => void }) {
           Sign in
         </h1>
         <p style={{ fontSize: "12px", color: "var(--ink-text-3)", marginBottom: "1rem", lineHeight: 1.5 }}>
-          Enter your API secret to unlock the dashboard.
+          Enter your dashboard access key to get started.
         </p>
-        <div style={{ fontSize: "11px", color: "var(--ink-text-4)", marginBottom: "1rem", lineHeight: 1.6 }}>
-          <div style={{ marginBottom: "0.5rem" }}>
-            <strong style={{ color: "var(--ink-text-2)" }}>Local dev:</strong>{" "}
-            <code style={{ fontSize: "10px" }}>DASHBOARD_API_SECRET</code> from <code style={{ fontSize: "10px" }}>dashboard/.env.local</code>
+        <details style={{ fontSize: "11px", color: "var(--ink-text-4)", marginBottom: "1rem", lineHeight: 1.6 }}>
+          <summary style={{ cursor: "pointer", marginBottom: "0.5rem", color: "var(--ink-text-3)" }}>
+            Where do I find my access key?
+          </summary>
+          <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "0.5px solid var(--ink-border-faint)" }}>
+            <div style={{ marginBottom: "0.5rem" }}>
+              <strong style={{ color: "var(--ink-text-2)" }}>Local:</strong> Check <code style={{ fontSize: "10px" }}>dashboard/.env.local</code>
+            </div>
+            <div style={{ marginBottom: "0.5rem" }}>
+              <strong style={{ color: "var(--ink-text-2)" }}>Production:</strong> Set in your hosting platform (Netlify, etc.)
+            </div>
+            <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginTop: "0.5rem" }}>
+              This is the same value used for API access and job enqueueing.
+            </div>
           </div>
-          <div style={{ marginBottom: "0.5rem" }}>
-            <strong style={{ color: "var(--ink-text-2)" }}>Production:</strong>{" "}
-            <code style={{ fontSize: "10px" }}>ORCHESTRATION_ENQUEUE_SECRET</code> from Netlify environment
-          </div>
-          <div>
-            <strong style={{ color: "var(--ink-text-2)" }}>CI/Workers:</strong> Use{" "}
-            <code style={{ fontSize: "10px" }}>Authorization: Bearer [same value]</code>
-          </div>
-        </div>
+        </details>
         <label
           htmlFor="dashboard-secret"
           style={{
@@ -104,7 +106,7 @@ export function DashboardLogin({ onSuccess }: { onSuccess: () => void }) {
             letterSpacing: "0.08em",
           }}
         >
-          API secret
+          Access key
         </label>
         <input
           id="dashboard-secret"

@@ -402,27 +402,36 @@ export function ProjectAuditHistory({ projectName, projectStatus }: ProjectAudit
             {dispatching === "synth" ? "…" : "Run synthesizer"}
           </button>
         </div>
-        <div style={{ marginTop: "0.45rem", display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center" }}>
-          <input
-            type="password"
-            placeholder="ORCHESTRATION_ENQUEUE_SECRET"
-            value={enqueueSecret}
-            onChange={(e) => persistSecret(e.target.value)}
-            style={{
-              fontSize: "10px",
-              fontFamily: "var(--font-mono)",
-              width: "260px",
-              maxWidth: "100%",
-            }}
-          />
-          {!canEnqueue && (
-            <span style={{ fontSize: "10px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
-              {(projectStatus ?? "active") !== "active"
-                ? "Activate the project before enqueueing audits"
-                : "Secret required to enqueue manual audits"}
-            </span>
-          )}
-        </div>
+        {!canEnqueue && (
+          <div style={{ marginTop: "0.45rem", fontSize: "10px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
+            {(projectStatus ?? "active") !== "active"
+              ? "Activate the project before enqueueing audits"
+              : "Access key required to enqueue audits"}
+          </div>
+        )}
+        <details style={{ marginTop: "0.45rem", fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+          <summary style={{ cursor: "pointer", marginBottom: "0.5rem" }}>
+            Advanced: override access key
+          </summary>
+          <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "0.5px solid var(--ink-border-faint)" }}>
+            <input
+              type="password"
+              placeholder="Access key (optional override)"
+              value={enqueueSecret}
+              onChange={(e) => persistSecret(e.target.value)}
+              style={{
+                fontSize: "10px",
+                fontFamily: "var(--font-mono)",
+                width: "260px",
+                maxWidth: "100%",
+                marginBottom: "0.5rem",
+              }}
+            />
+            <div style={{ fontSize: "9px", color: "var(--ink-text-4)" }}>
+              Usually not needed if you're logged in. Use this to bypass with a different key.
+            </div>
+          </div>
+        </details>
         {dispatchError && (
           <div style={{ marginTop: "0.45rem", fontSize: "10px", color: "var(--ink-red)", fontFamily: "var(--font-mono)" }}>
             {dispatchError}

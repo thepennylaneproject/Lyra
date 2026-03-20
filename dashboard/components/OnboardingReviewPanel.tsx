@@ -26,6 +26,11 @@ export function OnboardingReviewPanel({
   const isDirty =
     profileText !== initialProfileText || expectationsText !== initialExpectationsText;
 
+  // Check if both approvals exist
+  const profileApproved = project.profile?.active != null;
+  const expectationsApproved = project.expectations?.active != null;
+  const canActivate = profileApproved && expectationsApproved && saving === null;
+
   useEffect(() => {
     setProfileText(initialProfileText);
     setExpectationsText(initialExpectationsText);
@@ -136,6 +141,18 @@ export function OnboardingReviewPanel({
         </div>
       )}
 
+      <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)", marginBottom: "0.75rem" }}>
+        <div style={{ marginBottom: "0.5rem" }}>Prerequisites to activate:</div>
+        <div style={{ marginLeft: "0.5rem", lineHeight: 1.6 }}>
+          <div style={{ color: profileApproved ? "var(--ink-text-4)" : "var(--ink-amber)" }}>
+            {profileApproved ? "✓" : "○"} Profile approved
+          </div>
+          <div style={{ color: expectationsApproved ? "var(--ink-text-4)" : "var(--ink-amber)" }}>
+            {expectationsApproved ? "✓" : "○"} Expectations approved
+          </div>
+        </div>
+      </div>
+
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         <button
           type="button"
@@ -161,7 +178,8 @@ export function OnboardingReviewPanel({
         <button
           type="button"
           onClick={() => save({ activate: true }, "activate")}
-          disabled={saving !== null}
+          disabled={!canActivate}
+          title={!profileApproved ? "Approve profile first" : !expectationsApproved ? "Approve expectations first" : ""}
         >
           {saving === "activate" ? "…" : "Activate project"}
         </button>
