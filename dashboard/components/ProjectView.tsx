@@ -258,8 +258,20 @@ export function ProjectView({
       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
         {filtered.length === 0 && (
           <EmptyState
-            icon="✓"
-            title={filter === "active" ? "No active findings" : "No findings match"}
+            icon={
+              total === 0 ? "◆" : // No findings ever found
+              filter === "active" && resolved === total ? "✓" : // All resolved
+              "→" // Filtered to nothing
+            }
+            title={
+              total === 0
+                ? "No findings. Run an audit to discover issues."
+                : filter === "active" && resolved === total
+                ? "All findings resolved. Ready to deploy."
+                : filter === "active"
+                ? "No active findings"
+                : "No findings match this filter"
+            }
           />
         )}
         {filtered.map((f) => (

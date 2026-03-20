@@ -111,120 +111,144 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
         </button>
       </div>
 
-      {/* Name */}
-      <div style={{ marginBottom: "1rem" }}>
-        <label
-          style={{
-            display:      "block",
-            fontSize:     "9px",
-            fontFamily:   "var(--font-mono)",
-            fontWeight:   500,
-            color:        "var(--ink-text-4)",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            marginBottom: "0.375rem",
-          }}
-        >
-          Project name
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. relevnt"
-        />
-      </div>
-
-      <div style={{ marginBottom: "1rem" }}>
-        <label
-          style={{
-            display:      "block",
-            fontSize:     "9px",
-            fontFamily:   "var(--font-mono)",
-            fontWeight:   500,
-            color:        "var(--ink-text-4)",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            marginBottom: "0.375rem",
-          }}
-        >
-          Repository URL
-        </label>
-        <input
-          type="text"
-          value={repoUrl}
-          onChange={(e) => setRepoUrl(e.target.value)}
-          placeholder="https://github.com/owner/repo"
-        />
-      </div>
-
-      {/* Drop zone */}
-      <div style={{ marginBottom: "1rem" }}>
-        <label
-          style={{
-            display:      "block",
-            fontSize:     "9px",
-            fontFamily:   "var(--font-mono)",
-            fontWeight:   500,
-            color:        "var(--ink-text-4)",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            marginBottom: "0.375rem",
-          }}
-        >
-          open_findings.json (optional)
-        </label>
+      {/* Section 1: Project Identity (Required) */}
+      <div style={{ marginBottom: "1.5rem", paddingBottom: "1rem", borderBottom: "0.5px solid var(--ink-border-faint)" }}>
         <div
-          onClick={() => fileRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
           style={{
-            border:       `0.5px dashed ${dragging ? "var(--ink-border)" : "var(--ink-border-faint)"}`,
-            borderRadius: "var(--radius-md)",
-            padding:      "1.25rem",
-            textAlign:    "center",
-            cursor:       "pointer",
-            background:   dragging ? "var(--ink-bg-sunken)" : "transparent",
-            transition:   "background 0.12s ease, border-color 0.12s ease",
-          }}
-        >
-          <span style={{ fontSize: "11px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
-            {jsonText ? "file loaded — click to replace" : "drop file or click to browse, or leave blank"}
-          </span>
-        </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".json"
-          onChange={handleFile}
-          style={{ display: "none" }}
-        />
-      </div>
-
-      {/* Paste fallback */}
-      <div style={{ marginBottom: "1rem" }}>
-          <label
-          style={{
-            display:      "block",
-            fontSize:     "9px",
-            fontFamily:   "var(--font-mono)",
-            fontWeight:   500,
-            color:        "var(--ink-text-4)",
+            fontSize: "9px",
+            fontFamily: "var(--font-mono)",
+            fontWeight: 500,
+            color: "var(--ink-text)",
             letterSpacing: "0.1em",
             textTransform: "uppercase",
-            marginBottom: "0.375rem",
+            marginBottom: "0.75rem",
           }}
         >
-          Or paste JSON, or leave blank for an empty project
-        </label>
-        <textarea
-          value={jsonText}
-          onChange={(e) => setJsonText(e.target.value)}
-          rows={4}
-          placeholder='{"open_findings": [...]}'
-          style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
-        />
+          ① Project identity <span style={{ color: "var(--ink-red)" }}>required</span>
+        </div>
+
+        <div style={{ marginBottom: "0.75rem" }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: "9px",
+              fontFamily: "var(--font-mono)",
+              fontWeight: 500,
+              color: "var(--ink-text-4)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              marginBottom: "0.375rem",
+            }}
+          >
+            Project name or repository URL
+          </label>
+          <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.5rem" }}>
+            Enter at least one. Repository URL auto-derives the project name if blank.
+          </div>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Project name (e.g. relevnt)"
+            style={{ marginBottom: "0.5rem" }}
+          />
+          <input
+            type="text"
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            placeholder="Repository URL (https://github.com/owner/repo)"
+          />
+        </div>
+      </div>
+
+      {/* Section 2: Audit Findings (Optional) */}
+      <div style={{ marginBottom: "1.5rem" }}>
+        <div
+          style={{
+            fontSize: "9px",
+            fontFamily: "var(--font-mono)",
+            fontWeight: 500,
+            color: "var(--ink-text)",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            marginBottom: "0.75rem",
+          }}
+        >
+          ② Audit findings <span style={{ color: "var(--ink-text-4)" }}>optional</span>
+        </div>
+
+        <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.75rem" }}>
+          Choose one: load from file, paste JSON, or leave blank to start with no findings.
+        </div>
+
+        {/* File upload */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: "9px",
+              fontFamily: "var(--font-mono)",
+              fontWeight: 500,
+              color: "var(--ink-text-4)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              marginBottom: "0.375rem",
+            }}
+          >
+            Load from file
+          </label>
+          <div
+            onClick={() => fileRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            style={{
+              border: `0.5px dashed ${dragging ? "var(--ink-border)" : "var(--ink-border-faint)"}`,
+              borderRadius: "var(--radius-md)",
+              padding: "1.25rem",
+              textAlign: "center",
+              cursor: "pointer",
+              background: dragging ? "var(--ink-bg-sunken)" : "transparent",
+              transition: "background 0.12s ease, border-color 0.12s ease",
+            }}
+          >
+            <span style={{ fontSize: "11px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
+              {jsonText ? "✓ file loaded" : "drag & drop open_findings.json or click to browse"}
+            </span>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json"
+            onChange={handleFile}
+            style={{ display: "none" }}
+          />
+        </div>
+
+        {/* Paste alternative */}
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: "9px",
+              fontFamily: "var(--font-mono)",
+              fontWeight: 500,
+              color: "var(--ink-text-4)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              marginBottom: "0.375rem",
+            }}
+          >
+            Or paste JSON directly
+          </label>
+          <textarea
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            rows={4}
+            placeholder='{"open_findings": [...]}'
+            style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
+          />
+        </div>
       </div>
 
       {error && (

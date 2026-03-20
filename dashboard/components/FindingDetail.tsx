@@ -3,6 +3,18 @@ import type { Finding, FindingStatus } from "@/lib/types";
 import { Badge } from "./Badge";
 import { STATUS_GROUPS } from "@/lib/constants";
 
+const WORKFLOW_HINTS: Record<FindingStatus, string> = {
+  open: "Finding is new and unresolved. Start work or defer.",
+  accepted: "Finding is acknowledged and pending action.",
+  in_progress: "You're actively working on this fix.",
+  fixed_pending_verify: "Fix is implemented; awaiting verification.",
+  fixed_verified: "Fix has been verified and is complete.",
+  wont_fix: "You've decided not to fix this.",
+  deferred: "Fix postponed for later.",
+  duplicate: "This is a duplicate of another finding.",
+  converted_to_enhancement: "This has been converted to an enhancement request.",
+};
+
 const SEVERITY_BORDER: Record<string, string> = {
   blocker: "var(--ink-red)",
   major:   "var(--ink-amber)",
@@ -230,6 +242,25 @@ export function FindingDetail({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Status workflow hint */}
+      {finding.status && (
+        <div
+          style={{
+            fontSize: "12px",
+            color: "var(--ink-text-2)",
+            lineHeight: 1.5,
+            marginBottom: "1rem",
+            padding: "0.75rem 0.85rem",
+            background: "var(--ink-bg-sunken)",
+            borderRadius: "var(--radius-md)",
+            border: "0.5px solid var(--ink-border-faint)",
+          }}
+        >
+          <strong style={{ color: "var(--ink-text)" }}>Status:</strong>{" "}
+          {WORKFLOW_HINTS[finding.status] ?? "Unknown status"}
         </div>
       )}
 
