@@ -60,14 +60,25 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
     try {
       const res  = await apiFetch("/api/sync/audit", { method: "POST" });
       const data = await res.json();
-      setSyncMsg(data.message ?? (res.ok ? "Synced." : "Failed."));
-      if (res.ok) await fetchStatus();
+      if (res.ok) {
+        setSyncMsg("✓ Synced");
+        await fetchStatus();
+      } else {
+        setSyncMsg("✗ Sync failed");
+      }
     } catch {
-      setSyncMsg("Failed.");
+      setSyncMsg("✗ Sync failed");
     } finally {
       setSyncing(false);
     }
   };
+
+  useEffect(() => {
+    if (syncMsg) {
+      const timer = setTimeout(() => setSyncMsg(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [syncMsg]);
 
   const queueSize  = engineStatus?.queue_size ?? 0;
   const auditRuns  = engineStatus?.audit_run_count ?? 0;
@@ -221,7 +232,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
             <div
               style={{
                 fontSize:     "11px",
-                color:        "var(--ink-text-4)",
+                color:        syncMsg.includes("✓") ? "var(--ink-green)" : "var(--ink-red)",
                 marginBottom: "0.375rem",
                 fontFamily:   "var(--font-mono)",
               }}

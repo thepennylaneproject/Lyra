@@ -47,9 +47,19 @@ export function FindingDetail({
 }: FindingDetailProps) {
   const [queueing, setQueueing] = useState(false);
   const [queueMsg, setQueueMsg] = useState<string | null>(null);
+  const [actionInFlight, setActionInFlight] = useState<string | null>(null);
   const isQueued = queuedFindingIds?.has(finding.finding_id) ?? false;
   const fix      = typeof finding.suggested_fix === "object" ? finding.suggested_fix : {};
   const stripe   = SEVERITY_BORDER[finding.severity ?? ""] ?? "var(--ink-border)";
+
+  const handleAction = async (status: FindingStatus) => {
+    setActionInFlight(status);
+    try {
+      await onAction(finding.finding_id, status);
+    } finally {
+      setActionInFlight(null);
+    }
+  };
 
   return (
     <div
@@ -239,32 +249,36 @@ export function FindingDetail({
           <>
             <button
               type="button"
-              onClick={() => onAction(finding.finding_id, "in_progress")}
+              disabled={actionInFlight !== null}
+              onClick={() => handleAction("in_progress")}
             >
-              Start fix
+              {actionInFlight === "in_progress" ? "…" : "Start fix"}
             </button>
             <button
               type="button"
-              onClick={() => onAction(finding.finding_id, "deferred")}
+              disabled={actionInFlight !== null}
+              onClick={() => handleAction("deferred")}
             >
-              Defer
+              {actionInFlight === "deferred" ? "…" : "Defer"}
             </button>
           </>
         )}
         {finding.status === "in_progress" && (
           <button
             type="button"
-            onClick={() => onAction(finding.finding_id, "fixed_pending_verify")}
+            disabled={actionInFlight !== null}
+            onClick={() => handleAction("fixed_pending_verify")}
           >
-            Mark done
+            {actionInFlight === "fixed_pending_verify" ? "…" : "Mark done"}
           </button>
         )}
         {finding.status === "fixed_pending_verify" && (
           <button
             type="button"
-            onClick={() => onAction(finding.finding_id, "fixed_verified")}
+            disabled={actionInFlight !== null}
+            onClick={() => handleAction("fixed_verified")}
           >
-            Verify fix
+            {actionInFlight === "fixed_verified" ? "…" : "Verify fix"}
           </button>
         )}
 
@@ -278,9 +292,9 @@ export function FindingDetail({
                 setQueueMsg(null);
                 try {
                   await onQueueRepair(finding.finding_id, projectName);
-                  setQueueMsg("Queued.");
+                  setQueueMsg("✓ queued for repair");
                 } catch {
-                  setQueueMsg("Failed.");
+                  setQueueMsg("✗ failed to queue");
                 } finally {
                   setQueueing(false);
                 }
@@ -302,7 +316,13 @@ export function FindingDetail({
             </span>
           )}
           {queueMsg && !isQueued && (
-            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+            <span
+              style={{
+                fontSize: "11px",
+                fontFamily: "var(--font-mono)",
+                color: queueMsg.includes("✓") ? "var(--ink-green)" : "var(--ink-red)",
+              }}
+            >
               {queueMsg}
             </span>
           )}

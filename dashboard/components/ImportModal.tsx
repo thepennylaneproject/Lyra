@@ -9,11 +9,12 @@ interface ImportModalProps {
 }
 
 export function ImportModal({ onImport, onClose }: ImportModalProps) {
-  const [name,     setName]     = useState("");
-  const [repoUrl,  setRepoUrl]  = useState("");
-  const [jsonText, setJsonText] = useState("");
-  const [error,    setError]    = useState("");
-  const [dragging, setDragging] = useState(false);
+  const [name,      setName]      = useState("");
+  const [repoUrl,   setRepoUrl]   = useState("");
+  const [jsonText,  setJsonText]  = useState("");
+  const [error,     setError]     = useState("");
+  const [dragging,  setDragging]  = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function deriveNameFromRepoUrl(value: string): string {
@@ -52,6 +53,8 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
     const trimmedRepo = repoUrl.trim();
     const projectName = trimmedName || (trimmedRepo ? deriveNameFromRepoUrl(trimmedRepo) : "");
     if (!projectName) { setError("Project name or repository URL required"); return; }
+    setSubmitting(true);
+    setError("");
     try {
       if (!jsonText.trim()) {
         await onImport({
@@ -63,7 +66,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
       }
       const data = JSON.parse(jsonText);
       const findings = data.open_findings ?? data.findings ?? [];
-      if (!Array.isArray(findings)) { setError("No findings array found"); return; }
+      if (!Array.isArray(findings)) { setError("No findings array found"); setSubmitting(false); return; }
       await onImport({
         name: projectName,
         findings,
@@ -71,6 +74,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
+      setSubmitting(false);
     }
   }
 
@@ -229,8 +233,13 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
         </div>
       )}
 
-      <button type="button" onClick={handleSubmit} style={{ padding: "5px 16px" }}>
-        Onboard
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={submitting}
+        style={{ padding: "5px 16px" }}
+      >
+        {submitting ? "onboarding…" : "Onboard"}
       </button>
     </div>
   );
