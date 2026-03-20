@@ -4,6 +4,7 @@ import { getRepository } from "@/lib/repository-instance";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import type { Project, Finding } from "@/lib/types";
 import { apiErrorMessage } from "@/lib/api-error";
+import { normalizeProjectName } from "@/lib/project-identity";
 
 /**
  * GET  /api/sync/audit — preview what's available to import.
@@ -67,13 +68,16 @@ export async function POST(request: Request) {
     const groups = groupByProject(findings, fallbackProject);
     const repo = getRepository();
     const existingProjects = await repo.list();
-    const existingByName = new Map(existingProjects.map((project) => [project.name, project]));
+    const existingByName = new Map(
+      existingProjects.map((project) => [normalizeProjectName(project.name), project])
+    );
 
     let projectsUpdated = 0;
     let findingsImported = 0;
 
     for (const [projectName, projectFindings] of Object.entries(groups)) {
-      const existing = existingByName.get(projectName);
+      const normalizedProjectName = normalizeProjectName(projectName);
+      const existing = existingByName.get(normalizedProjectName);
       const now = new Date().toISOString();
 
       if (existing) {
@@ -112,7 +116,7 @@ export async function POST(request: Request) {
             findings: updatedFindings,
             lastUpdated: now,
           });
-          existingByName.set(projectName, {
+          existingByName.set(normalizedProjectName, {
             ...existing,
             findings: updatedFindings,
             lastUpdated: now,
@@ -124,9 +128,11 @@ export async function POST(request: Request) {
           name: projectName,
           findings: projectFindings,
           lastUpdated: now,
+          status: "active",
+          sourceType: "import",
         };
         await repo.create(project);
-        existingByName.set(projectName, project);
+        existingByName.set(normalizedProjectName, project);
         findingsImported += projectFindings.length;
         projectsUpdated++;
       }

@@ -61,7 +61,7 @@ export function FindingDetail({
   const [queueing, setQueueing] = useState(false);
   const [queueMsg, setQueueMsg] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState<string | null>(null);
-  const isQueued = queuedFindingIds?.has(finding.finding_id) ?? false;
+  const isQueued = isInQueuedSet(queuedFindingIds, projectName, finding.finding_id);
   const fix      = typeof finding.suggested_fix === "object" ? finding.suggested_fix : {};
   const stripe   = SEVERITY_BORDER[finding.severity ?? ""] ?? "var(--ink-border)";
 

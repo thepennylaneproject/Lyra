@@ -5,6 +5,12 @@
 import type { Project } from "./types";
 import type { ProjectsRepository } from "./repository";
 import { createPostgresPool, readDatabaseConfig } from "./postgres";
+import { applyProjectDefaults } from "./project-defaults";
+import { withNormalizedBacklog } from "./maintenance-backlog";
+import {
+  normalizeProjectName,
+  normalizeRepositoryUrl,
+} from "./project-identity";
 import {
   recordDurableEventBestEffort,
   recordProjectSnapshotBestEffort,
@@ -16,6 +22,50 @@ function pool() {
   return createPostgresPool();
 }
 
+async function findCanonicalProjectRow(
+  name: string,
+  repositoryUrl?: string | null
+): Promise<Record<string, unknown> | null> {
+  const p = pool();
+  const normalizedName = normalizeProjectName(name);
+  const normalizedRepo = normalizeRepositoryUrl(repositoryUrl);
+  const rows = await p.query(
+    `SELECT name, repository_url, project_json, updated_at
+       FROM ${TABLE}
+      WHERE lower(name) = $1
+         OR (
+           $2::text IS NOT NULL
+           AND repository_url IS NOT NULL
+           AND lower(
+             regexp_replace(
+               regexp_replace(repository_url, '\\.git$', '', 'i'),
+               '/+$',
+               ''
+             )
+           ) = $2
+         )
+      ORDER BY
+        CASE
+          WHEN name = $3 THEN 0
+          WHEN lower(name) = $1 THEN 1
+          WHEN $2::text IS NOT NULL
+            AND repository_url IS NOT NULL
+            AND lower(
+              regexp_replace(
+                regexp_replace(repository_url, '\\.git$', '', 'i'),
+                '/+$',
+                ''
+              )
+            ) = $2 THEN 2
+          ELSE 3
+        END,
+        updated_at DESC
+      LIMIT 1`,
+    [normalizedName, normalizedRepo, name]
+  );
+  return rows[0] ?? null;
+}
+
 function rowToProject(row: Record<string, unknown>): Project {
   const raw = row.project_json;
   const j =
@@ -23,8 +73,8 @@ function rowToProject(row: Record<string, unknown>): Project {
       ? (JSON.parse(raw) as Project)
       : (raw as Project);
   const name = String(row.name ?? j.name ?? "");
-  return {
-    ...j,
+  return withNormalizedBacklog({
+    ...applyProjectDefaults(j),
     name,
     findings: Array.isArray(j.findings) ? j.findings : [],
     repositoryUrl:
@@ -33,7 +83,7 @@ function rowToProject(row: Record<string, unknown>): Project {
       row.updated_at instanceof Date
         ? row.updated_at.toISOString()
         : String(row.updated_at ?? j.lastUpdated ?? ""),
-  };
+  });
 }
 
 export function hasSupabaseProjectsStore(): boolean {
@@ -51,18 +101,24 @@ export function createSupabaseRepository(): ProjectsRepository {
     },
 
     async getByName(name: string) {
-      const rows = await p.query(
-        `SELECT name, repository_url, project_json, updated_at FROM ${TABLE} WHERE name = $1`,
-        [name]
-      );
-      return rows[0] ? rowToProject(rows[0]) : null;
+      const row = await findCanonicalProjectRow(name);
+      return row ? rowToProject(row) : null;
     },
 
     async create(project: Project) {
+      const existing = await findCanonicalProjectRow(
+        project.name,
+        project.repositoryUrl
+      );
+      if (existing) {
+        throw new Error(`Project ${String(existing.name)} already exists`);
+      }
       const now = new Date().toISOString();
+      const repositoryUrl = normalizeRepositoryUrl(project.repositoryUrl) ?? null;
       const withMeta: Project = {
-        ...project,
+        ...withNormalizedBacklog(applyProjectDefaults(project)),
         lastUpdated: now,
+        repositoryUrl: repositoryUrl ?? undefined,
       };
       await p.query(
         `INSERT INTO ${TABLE} (name, repository_url, project_json, updated_at)
@@ -88,10 +144,20 @@ export function createSupabaseRepository(): ProjectsRepository {
     },
 
     async update(project: Project) {
+      const existing = await findCanonicalProjectRow(
+        project.name,
+        project.repositoryUrl
+      );
+      if (!existing) {
+        throw new Error(`Project ${project.name} not found`);
+      }
       const now = new Date().toISOString();
+      const repositoryUrl = normalizeRepositoryUrl(project.repositoryUrl) ?? null;
       const withMeta: Project = {
-        ...project,
+        ...withNormalizedBacklog(applyProjectDefaults(project)),
+        name: String(existing.name),
         lastUpdated: now,
+        repositoryUrl: repositoryUrl ?? undefined,
       };
       const result = await p.query(
         `UPDATE ${TABLE}
@@ -100,7 +166,7 @@ export function createSupabaseRepository(): ProjectsRepository {
          RETURNING name`,
         [
           withMeta.name,
-          withMeta.repositoryUrl ?? null,
+          repositoryUrl,
           JSON.stringify(withMeta),
         ]
       );
@@ -122,18 +188,22 @@ export function createSupabaseRepository(): ProjectsRepository {
     },
 
     async delete(name: string) {
+      const existing = await findCanonicalProjectRow(name);
+      if (!existing) {
+        throw new Error(`Project ${name} not found`);
+      }
       const result = await p.query(
         `DELETE FROM ${TABLE} WHERE name = $1 RETURNING name`,
-        [name]
+        [String(existing.name)]
       );
       if (result.length === 0) {
         throw new Error(`Project ${name} not found`);
       }
       await recordDurableEventBestEffort({
         event_type: "project_deleted",
-        project_name: name,
+        project_name: String(existing.name),
         source: "supabase_projects",
-        summary: `Deleted project ${name}`,
+        summary: `Deleted project ${String(existing.name)}`,
       });
     },
   };

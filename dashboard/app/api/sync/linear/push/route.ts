@@ -47,6 +47,7 @@ export async function POST(request: Request) {
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
+  const canonicalProjectName = project.name;
 
   const findings = project.findings ?? [];
   const dryRun = body.dryRun === true;
@@ -64,10 +65,10 @@ export async function POST(request: Request) {
     }
   }
 
-  const syncState = await getProjectSyncState(projectName);
+  const syncState = await getProjectSyncState(canonicalProjectName);
   const mappings = { ...syncState.mappings };
   const labelIds = getEnvLabelId() ? [getEnvLabelId()!] : undefined;
-  const projectId = getEnvProjectId(projectName) ?? undefined;
+  const projectId = getEnvProjectId(canonicalProjectName) ?? undefined;
 
   let created = 0;
   let updated = 0;
@@ -138,7 +139,7 @@ export async function POST(request: Request) {
           };
           // Persist mapping immediately after each successful issue creation
           // so a partial failure doesn't cause duplicates on retry.
-          await setProjectSyncState(projectName, {
+          await setProjectSyncState(canonicalProjectName, {
             mappings,
             last_sync: syncState.last_sync,
           });
@@ -150,7 +151,7 @@ export async function POST(request: Request) {
 
   // Only advance last_sync when the whole batch succeeded (ARCH-013)
   if (!dryRun) {
-    await setProjectSyncState(projectName, {
+    await setProjectSyncState(canonicalProjectName, {
       mappings,
       last_sync: failed === 0 ? new Date().toISOString() : syncState.last_sync,
     });

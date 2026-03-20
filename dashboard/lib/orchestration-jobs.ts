@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 export type LyraJobType =
   | "weekly_audit"
   | "onboard_project"
+  | "onboard_repository"
   | "re_audit_project"
   | "synthesize_project"
   | "audit_project";
@@ -19,6 +20,9 @@ export interface LyraAuditJobRow {
   job_type: string;
   project_name: string | null;
   repository_url: string | null;
+  manifest_revision: string | null;
+  checklist_id: string | null;
+  repo_ref: string | null;
   status: LyraJobStatus;
   payload: Record<string, unknown>;
   error: string | null;
@@ -35,6 +39,11 @@ export interface LyraAuditRunRow {
   status: string;
   summary: string | null;
   findings_added: number;
+  manifest_revision: string | null;
+  checklist_id: string | null;
+  coverage_complete: boolean | null;
+  completion_confidence: string | null;
+  exhaustiveness: string | null;
   payload: Record<string, unknown>;
   created_at: string;
 }
@@ -49,6 +58,10 @@ function rowJob(r: Record<string, unknown>): LyraAuditJobRow {
     job_type: String(r.job_type),
     project_name: r.project_name != null ? String(r.project_name) : null,
     repository_url: r.repository_url != null ? String(r.repository_url) : null,
+    manifest_revision:
+      r.manifest_revision != null ? String(r.manifest_revision) : null,
+    checklist_id: r.checklist_id != null ? String(r.checklist_id) : null,
+    repo_ref: r.repo_ref != null ? String(r.repo_ref) : null,
     status: r.status as LyraJobStatus,
     payload:
       typeof r.payload === "object" && r.payload !== null
@@ -83,6 +96,14 @@ function rowRun(r: Record<string, unknown>): LyraAuditRunRow {
     status: String(r.status),
     summary: r.summary != null ? String(r.summary) : null,
     findings_added: Number(r.findings_added ?? 0),
+    manifest_revision:
+      r.manifest_revision != null ? String(r.manifest_revision) : null,
+    checklist_id: r.checklist_id != null ? String(r.checklist_id) : null,
+    coverage_complete:
+      typeof r.coverage_complete === "boolean" ? r.coverage_complete : null,
+    completion_confidence:
+      r.completion_confidence != null ? String(r.completion_confidence) : null,
+    exhaustiveness: r.exhaustiveness != null ? String(r.exhaustiveness) : null,
     payload:
       typeof r.payload === "object" && r.payload !== null
         ? (r.payload as Record<string, unknown>)
@@ -103,20 +124,36 @@ export async function insertAuditJob(
   opts: {
     project_name?: string | null;
     repository_url?: string | null;
+    manifest_revision?: string | null;
+    checklist_id?: string | null;
+    repo_ref?: string | null;
     payload?: Record<string, unknown>;
   } = {}
 ): Promise<LyraAuditJobRow> {
   const id = randomUUID();
   const p = pool();
   const rows = await p.query(
-    `INSERT INTO lyra_audit_jobs (id, job_type, project_name, repository_url, status, payload)
-     VALUES ($1, $2, $3, $4, 'queued', $5::jsonb)
+    `INSERT INTO lyra_audit_jobs (
+       id,
+       job_type,
+       project_name,
+       repository_url,
+       manifest_revision,
+       checklist_id,
+       repo_ref,
+       status,
+       payload
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', $8::jsonb)
      RETURNING *`,
     [
       id,
       jobType,
       opts.project_name ?? null,
       opts.repository_url ?? null,
+      opts.manifest_revision ?? null,
+      opts.checklist_id ?? null,
+      opts.repo_ref ?? null,
       JSON.stringify(opts.payload ?? {}),
     ]
   );

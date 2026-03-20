@@ -9,6 +9,7 @@ interface ProjectCardProps {
 
 export function ProjectCard({ project, onClick }: ProjectCardProps) {
   const findings  = project.findings ?? [];
+  const backlog = project.maintenanceBacklog ?? [];
   const active    = findings.filter((f) => STATUS_GROUPS.active.includes(f.status));
   const pending   = findings.filter((f) => STATUS_GROUPS.pending.includes(f.status));
   const resolved  = findings.filter((f) => STATUS_GROUPS.resolved.includes(f.status));
@@ -63,6 +64,11 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
         {project.repositoryUrl && (
           <span style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
             repo
+          </span>
+        )}
+        {(project.status ?? "active") === "draft" && (
+          <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-blue)" }}>
+            draft
           </span>
         )}
         {canShip && (
@@ -125,6 +131,18 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
             <span>{active.length} active</span>
             <span>{resolved.length}/{findings.length} resolved</span>
           </div>
+          {backlog.length > 0 && (
+            <div
+              style={{
+                marginTop: "0.35rem",
+                fontSize: "10px",
+                fontFamily: "var(--font-mono)",
+                color: "var(--ink-text-4)",
+              }}
+            >
+              {backlog.length} backlog item{backlog.length === 1 ? "" : "s"}
+            </div>
+          )}
         </>
       )}
     </div>

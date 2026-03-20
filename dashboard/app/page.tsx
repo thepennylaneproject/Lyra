@@ -168,6 +168,25 @@ export default function Home() {
     setShowImport(false);
   }, [fetchProjects]);
 
+  const handleOnboardRepository = useCallback(async (input: {
+    name?: string;
+    repository_url?: string;
+    local_path?: string;
+    default_branch?: string;
+  }) => {
+    const res = await apiFetch("/api/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.error ?? "Failed to onboard repository");
+    }
+    await fetchProjects();
+    setShowImport(false);
+  }, [fetchProjects]);
+
   const handleRemove = useCallback(async (name: string) => {
     if (!confirm(`Remove ${name}?`)) return;
     setRemoveError(null);
@@ -255,6 +274,7 @@ export default function Home() {
 
   // Compute portfolio totals
   const totalFindings = projects.reduce((s, p) => s + (p.findings?.length ?? 0), 0);
+  const totalBacklog = projects.reduce((s, p) => s + (p.maintenanceBacklog?.length ?? 0), 0);
   const totalBlockers = projects.reduce(
     (s, p) => s + (p.findings ?? []).filter((f) => f.severity === "blocker" && STATUS_GROUPS.active.includes(f.status)).length,
     0
@@ -275,14 +295,20 @@ export default function Home() {
   }).length;
 
   // Compute next action across all projects
-  type NextAction = { _project: string; title?: string; finding_id?: string; severity?: string; priority?: string };
+  type NextAction = {
+    _project: string;
+    title?: string;
+    finding_id?: string;
+    severity?: string;
+    priority?: string;
+  };
   let nextAction: NextAction | null = null;
   for (const p of projects) {
-    const sorted = sortFindings(
-      (p.findings ?? []).filter((f) => STATUS_GROUPS.active.includes(f.status))
+    const backlog = [...(p.maintenanceBacklog ?? [])].filter(
+      (item) => !["done", "deferred"].includes(item.canonical_status)
     );
-    if (sorted.length > 0) {
-      const first = sorted[0];
+    if (backlog.length > 0) {
+      const first = backlog[0];
       const pa    = PRIORITY_ORDER[first.priority ?? ""] ?? 9;
       const sa    = SEVERITY_ORDER[first.severity  ?? ""] ?? 9;
       if (
@@ -290,8 +316,14 @@ export default function Home() {
         (PRIORITY_ORDER[nextAction.priority ?? ""] ?? 9) > pa ||
         ((PRIORITY_ORDER[nextAction.priority ?? ""] ?? 9) === pa &&
           (SEVERITY_ORDER[nextAction.severity ?? ""] ?? 9) > sa)
-      ) {
-        nextAction = { ...first, _project: p.name };
+        ) {
+        nextAction = {
+          title: first.title,
+          finding_id: first.finding_ids[0],
+          severity: first.severity,
+          priority: first.priority,
+          _project: p.name,
+        };
       }
     }
   }
@@ -329,9 +361,13 @@ export default function Home() {
   return (
     <Shell activeView={activeView} onNavigate={handleNavigate}>
       {/* Import modal */}
-      {showImport && (
-        <ImportModal onImport={handleImport} onClose={() => setShowImport(false)} />
-      )}
+          {showImport && (
+            <ImportModal
+              onImport={handleImport}
+              onOnboardRepository={handleOnboardRepository}
+              onClose={() => setShowImport(false)}
+            />
+          )}
 
       {(queueError || removeError) && (
         <div
@@ -434,6 +470,7 @@ export default function Home() {
         >
           <MetricCard label="Projects"  value={projects.length} sub={`${shippable} shippable`} />
           <MetricCard label="Findings"  value={totalFindings} />
+          <MetricCard label="Backlog"   value={totalBacklog} />
           <MetricCard label="Active"    value={totalActive}   accent={totalActive   > 0 ? "var(--ink-amber)" : undefined} />
           <MetricCard label="Resolved"  value={totalResolved} accent={totalResolved > 0 ? "var(--ink-green)" : undefined} />
           <MetricCard label="Blockers"  value={totalBlockers} accent={totalBlockers > 0 ? "var(--ink-red)"   : undefined} />

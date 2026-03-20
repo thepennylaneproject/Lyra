@@ -37,8 +37,20 @@ export async function PUT(request: Request, { params }: Params) {
       findings: Array.isArray(body.findings) ? body.findings : existing.findings,
       lastUpdated: new Date().toISOString(),
       repositoryUrl: body.repositoryUrl ?? existing.repositoryUrl,
+      status: body.status ?? existing.status,
+      sourceType: body.sourceType ?? existing.sourceType,
+      sourceRef: body.sourceRef ?? existing.sourceRef,
+      repoAccess: body.repoAccess ?? existing.repoAccess,
       stack: body.stack ?? existing.stack,
-      repositoryUrl: body.repositoryUrl ?? existing.repositoryUrl,
+      auditConfig: body.auditConfig ?? existing.auditConfig,
+      profile: body.profile ?? existing.profile,
+      expectations: body.expectations ?? existing.expectations,
+      onboardingState: body.onboardingState ?? existing.onboardingState,
+      decisionHistory: body.decisionHistory ?? existing.decisionHistory,
+      profileSummary: body.profileSummary ?? existing.profileSummary,
+      manifest: body.manifest ?? existing.manifest,
+      maintenanceBacklog: body.maintenanceBacklog ?? existing.maintenanceBacklog,
+      maintenanceTasks: body.maintenanceTasks ?? existing.maintenanceTasks,
     };
     const project = await repo.update(updated);
     return NextResponse.json(project);

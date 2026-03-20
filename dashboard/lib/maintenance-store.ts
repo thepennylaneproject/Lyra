@@ -1,0 +1,370 @@
+import { createPostgresPool } from "./postgres";
+import type {
+  MaintenanceBacklogItem,
+  MaintenanceTask,
+  ProjectManifest,
+  RepairJob,
+} from "./types";
+
+function pool() {
+  return createPostgresPool();
+}
+
+function asJsonObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export async function getLatestManifestForProject(
+  projectName: string
+): Promise<ProjectManifest | null> {
+  const rows = await pool().query(
+    `SELECT manifest
+       FROM lyra_project_manifests
+      WHERE lower(trim(project_name)) = lower(trim($1))
+      ORDER BY generated_at DESC
+      LIMIT 1`,
+    [projectName]
+  );
+  const manifest = rows[0]?.manifest;
+  return manifest ? (manifest as ProjectManifest) : null;
+}
+
+export async function listRepairJobsForProject(
+  projectName: string,
+  limit = 50
+): Promise<RepairJob[]> {
+  const rows = await pool().query(
+    `SELECT *
+       FROM lyra_repair_jobs
+      WHERE lower(trim(project_name)) = lower(trim($1))
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [projectName, limit]
+  );
+  return rows.map((row) => {
+    const repairPolicy = asJsonObject(row.repair_policy);
+    const payload = asJsonObject(row.payload);
+    return {
+      id: String(row.id),
+      finding_id: String(row.finding_id),
+      project_name: String(row.project_name),
+      queued_at:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+      status: String(row.status) as RepairJob["status"],
+      patch_applied:
+        typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
+      completed_at:
+        row.finished_at instanceof Date
+          ? row.finished_at.toISOString()
+          : row.finished_at != null
+            ? String(row.finished_at)
+            : undefined,
+      error: row.error != null ? String(row.error) : undefined,
+      targeted_files: Array.isArray(row.targeted_files)
+        ? (row.targeted_files as string[])
+        : [],
+      verification_commands: Array.isArray(row.verification_commands)
+        ? (row.verification_commands as string[])
+        : [],
+      rollback_notes:
+        row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+      repair_policy: {
+        ...repairPolicy,
+        ...asJsonObject(payload.repair_policy),
+      },
+      maintenance_task_id:
+        row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
+      backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
+      provenance: asJsonObject(row.provenance),
+    };
+  });
+}
+
+export async function listRecentRepairJobs(limit = 50): Promise<RepairJob[]> {
+  const rows = await pool().query(
+    `SELECT *
+       FROM lyra_repair_jobs
+      ORDER BY created_at DESC
+      LIMIT $1`,
+    [limit]
+  );
+  return rows.map((row) => ({
+    id: String(row.id),
+    finding_id: String(row.finding_id),
+    project_name: String(row.project_name),
+    queued_at:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at),
+    status: String(row.status) as RepairJob["status"],
+    patch_applied:
+      typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
+    completed_at:
+      row.finished_at instanceof Date
+        ? row.finished_at.toISOString()
+        : row.finished_at != null
+          ? String(row.finished_at)
+          : undefined,
+    error: row.error != null ? String(row.error) : undefined,
+    targeted_files: Array.isArray(row.targeted_files)
+      ? (row.targeted_files as string[])
+      : [],
+    verification_commands: Array.isArray(row.verification_commands)
+      ? (row.verification_commands as string[])
+      : [],
+    rollback_notes:
+      row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+    repair_policy: asJsonObject(row.repair_policy),
+    maintenance_task_id:
+      row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
+    backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
+    provenance: asJsonObject(row.provenance),
+  }));
+}
+
+export async function insertRepairJobRecord(args: {
+  project_name: string;
+  finding_id: string;
+  repair_policy?: Record<string, unknown>;
+  targeted_files?: string[];
+  verification_commands?: string[];
+  rollback_notes?: string;
+  maintenance_task_id?: string;
+  backlog_id?: string;
+  provenance?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+}): Promise<RepairJob> {
+  const rows = await pool().query(
+    `INSERT INTO lyra_repair_jobs (
+       project_name,
+       finding_id,
+       status,
+       repair_policy,
+       targeted_files,
+       verification_commands,
+       rollback_notes,
+       maintenance_task_id,
+       backlog_id,
+       provenance,
+       payload
+     )
+     VALUES ($1, $2, 'queued', $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb)
+     RETURNING *`,
+    [
+      args.project_name,
+      args.finding_id,
+      JSON.stringify(args.repair_policy ?? {}),
+      JSON.stringify(args.targeted_files ?? []),
+      JSON.stringify(args.verification_commands ?? []),
+      args.rollback_notes ?? null,
+      args.maintenance_task_id ?? null,
+      args.backlog_id ?? null,
+      JSON.stringify(args.provenance ?? {}),
+      JSON.stringify(args.payload ?? {}),
+    ]
+  );
+  const row = rows[0] ?? {};
+  return {
+    id: row.id != null ? String(row.id) : undefined,
+    finding_id: String(row.finding_id ?? args.finding_id),
+    project_name: String(row.project_name ?? args.project_name),
+    queued_at:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at ?? new Date().toISOString()),
+    status: String(row.status ?? "queued") as RepairJob["status"],
+    targeted_files: Array.isArray(row.targeted_files)
+      ? (row.targeted_files as string[])
+      : args.targeted_files ?? [],
+    verification_commands: Array.isArray(row.verification_commands)
+      ? (row.verification_commands as string[])
+      : args.verification_commands ?? [],
+    rollback_notes:
+      row.rollback_notes != null
+        ? String(row.rollback_notes)
+        : args.rollback_notes,
+    repair_policy: args.repair_policy,
+    maintenance_task_id:
+      row.maintenance_task_id != null ? String(row.maintenance_task_id) : args.maintenance_task_id,
+    backlog_id: row.backlog_id != null ? String(row.backlog_id) : args.backlog_id,
+    provenance: asJsonObject(row.provenance),
+  };
+}
+
+function rowToBacklog(row: Record<string, unknown>): MaintenanceBacklogItem {
+  return {
+    id: String(row.id),
+    project_name: String(row.project_name),
+    title: String(row.title),
+    summary: row.summary != null ? String(row.summary) : undefined,
+    canonical_status: String(row.canonical_status) as MaintenanceBacklogItem["canonical_status"],
+    source_type: String(row.source_type) as MaintenanceBacklogItem["source_type"],
+    priority: String(row.priority) as MaintenanceBacklogItem["priority"],
+    severity: String(row.severity) as MaintenanceBacklogItem["severity"],
+    risk_class: String(row.risk_class) as MaintenanceBacklogItem["risk_class"],
+    next_action: String(row.next_action) as MaintenanceBacklogItem["next_action"],
+    finding_ids: Array.isArray(row.finding_ids) ? (row.finding_ids as string[]) : [],
+    dedupe_keys: Array.isArray(row.dedupe_keys) ? (row.dedupe_keys as string[]) : [],
+    duplicate_of: row.duplicate_of != null ? String(row.duplicate_of) : undefined,
+    blocked_reason: row.blocked_reason != null ? String(row.blocked_reason) : undefined,
+    provenance: asJsonObject(row.provenance),
+    created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
+    updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at ?? ""),
+  };
+}
+
+function rowToTask(row: Record<string, unknown>): MaintenanceTask {
+  return {
+    id: String(row.id),
+    project_name: String(row.project_name),
+    backlog_id: String(row.backlog_id),
+    title: String(row.title),
+    intended_outcome: String(row.intended_outcome),
+    status: String(row.status) as MaintenanceTask["status"],
+    target_domains: Array.isArray(row.target_domains) ? (row.target_domains as string[]) : [],
+    target_files: Array.isArray(row.target_files) ? (row.target_files as string[]) : [],
+    risk_class: String(row.risk_class) as MaintenanceTask["risk_class"],
+    verification_profile:
+      row.verification_profile != null
+        ? String(row.verification_profile) as MaintenanceTask["verification_profile"]
+        : undefined,
+    verification_commands: Array.isArray(row.verification_commands)
+      ? (row.verification_commands as string[])
+      : [],
+    rollback_notes: row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+    notes: row.notes != null ? String(row.notes) : undefined,
+    provenance: asJsonObject(row.provenance),
+    created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
+    updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at ?? ""),
+  };
+}
+
+export async function listMaintenanceBacklogForProject(
+  projectName: string,
+  limit = 100
+): Promise<MaintenanceBacklogItem[]> {
+  const rows = await pool().query(
+    `SELECT *
+       FROM lyra_maintenance_backlog
+      WHERE lower(trim(project_name)) = lower(trim($1))
+      ORDER BY
+        CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END,
+        updated_at DESC
+      LIMIT $2`,
+    [projectName, limit]
+  );
+  return rows.map(rowToBacklog);
+}
+
+export async function listMaintenanceTasksForProject(
+  projectName: string,
+  limit = 100
+): Promise<MaintenanceTask[]> {
+  const rows = await pool().query(
+    `SELECT *
+       FROM lyra_maintenance_tasks
+      WHERE lower(trim(project_name)) = lower(trim($1))
+      ORDER BY updated_at DESC
+      LIMIT $2`,
+    [projectName, limit]
+  );
+  return rows.map(rowToTask);
+}
+
+export async function upsertMaintenanceBacklogItems(
+  projectName: string,
+  items: MaintenanceBacklogItem[]
+): Promise<void> {
+  for (const item of items) {
+    await pool().query(
+      `INSERT INTO lyra_maintenance_backlog (
+         id, project_name, title, summary, canonical_status, source_type,
+         priority, severity, risk_class, next_action, finding_ids, dedupe_keys,
+         duplicate_of, blocked_reason, provenance, created_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15::jsonb, COALESCE($16::timestamptz, now()), now())
+       ON CONFLICT (id) DO UPDATE SET
+         title = EXCLUDED.title,
+         summary = EXCLUDED.summary,
+         canonical_status = EXCLUDED.canonical_status,
+         source_type = EXCLUDED.source_type,
+         priority = EXCLUDED.priority,
+         severity = EXCLUDED.severity,
+         risk_class = EXCLUDED.risk_class,
+         next_action = EXCLUDED.next_action,
+         finding_ids = EXCLUDED.finding_ids,
+         dedupe_keys = EXCLUDED.dedupe_keys,
+         duplicate_of = EXCLUDED.duplicate_of,
+         blocked_reason = EXCLUDED.blocked_reason,
+         provenance = EXCLUDED.provenance,
+         updated_at = now()`,
+      [
+        item.id,
+        projectName,
+        item.title,
+        item.summary ?? null,
+        item.canonical_status,
+        item.source_type,
+        item.priority,
+        item.severity,
+        item.risk_class,
+        item.next_action,
+        JSON.stringify(item.finding_ids ?? []),
+        JSON.stringify(item.dedupe_keys ?? []),
+        item.duplicate_of ?? null,
+        item.blocked_reason ?? null,
+        JSON.stringify(item.provenance ?? {}),
+        item.created_at ?? null,
+      ]
+    );
+  }
+}
+
+export async function createMaintenanceTask(
+  task: Omit<MaintenanceTask, "id" | "created_at" | "updated_at">
+): Promise<MaintenanceTask> {
+  const rows = await pool().query(
+    `INSERT INTO lyra_maintenance_tasks (
+       project_name, backlog_id, title, intended_outcome, status,
+       target_domains, target_files, risk_class, verification_profile,
+       verification_commands, rollback_notes, notes, provenance
+     )
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb, $11, $12, $13::jsonb)
+     RETURNING *`,
+    [
+      task.project_name,
+      task.backlog_id,
+      task.title,
+      task.intended_outcome,
+      task.status,
+      JSON.stringify(task.target_domains ?? []),
+      JSON.stringify(task.target_files ?? []),
+      task.risk_class,
+      task.verification_profile ?? null,
+      JSON.stringify(task.verification_commands ?? []),
+      task.rollback_notes ?? null,
+      task.notes ?? null,
+      JSON.stringify(task.provenance ?? {}),
+    ]
+  );
+  return rowToTask(rows[0]);
+}
+
+export async function updateMaintenanceBacklogStatus(
+  id: string,
+  status: string,
+  nextAction: string
+): Promise<void> {
+  await pool().query(
+    `UPDATE lyra_maintenance_backlog
+        SET canonical_status = $2,
+            next_action = $3,
+            updated_at = now()
+      WHERE id = $1`,
+    [id, status, nextAction]
+  );
+}

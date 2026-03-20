@@ -2,6 +2,63 @@ import pg from "pg";
 
 const { Pool } = pg;
 
+function normalizeProjectName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeRepositoryUrl(value?: string | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed
+    .replace(/\.git$/i, "")
+    .replace(/\/+$/g, "")
+    .toLowerCase();
+}
+
+async function resolveCanonicalProjectIdentity(
+  pool: pg.Pool,
+  name: string,
+  repositoryUrl?: string | null
+): Promise<{ name: string; repository_url: string | null } | null> {
+  const normalizedName = normalizeProjectName(name);
+  const normalizedRepo = normalizeRepositoryUrl(repositoryUrl);
+  const result = await pool.query(
+    `SELECT name, repository_url
+       FROM lyra_projects
+      WHERE lower(name) = $1
+         OR (
+           $2::text IS NOT NULL
+           AND repository_url IS NOT NULL
+           AND lower(
+             regexp_replace(
+               regexp_replace(repository_url, '\\.git$', '', 'i'),
+               '/+$',
+               ''
+             )
+           ) = $2
+         )
+      ORDER BY
+        CASE
+          WHEN name = $3 THEN 0
+          WHEN lower(name) = $1 THEN 1
+          WHEN $2::text IS NOT NULL
+            AND repository_url IS NOT NULL
+            AND lower(
+              regexp_replace(
+                regexp_replace(repository_url, '\\.git$', '', 'i'),
+                '/+$',
+                ''
+              )
+            ) = $2 THEN 2
+          ELSE 3
+        END,
+        name ASC
+      LIMIT 1`,
+    [normalizedName, normalizedRepo, name]
+  );
+  return result.rows[0] ?? null;
+}
+
 export function createPool(): pg.Pool {
   const url =
     process.env.DATABASE_URL?.trim() ||
@@ -26,6 +83,9 @@ export interface JobRow {
   project_name: string | null;
   repository_url: string | null;
   status: string;
+  manifest_revision?: string | null;
+  checklist_id?: string | null;
+  repo_ref?: string | null;
   payload: Record<string, unknown>;
 }
 
@@ -37,7 +97,7 @@ export async function claimJob(
     `UPDATE lyra_audit_jobs
      SET status = 'running', started_at = COALESCE(started_at, now())
      WHERE id = $1 AND status = 'queued'
-     RETURNING id, job_type, project_name, repository_url, status, payload`,
+     RETURNING id, job_type, project_name, repository_url, status, manifest_revision, checklist_id, repo_ref, payload`,
     [jobId]
   );
   if (r.rows.length === 0) return null;
@@ -48,6 +108,9 @@ export async function claimJob(
     project_name: row.project_name,
     repository_url: row.repository_url,
     status: row.status,
+    manifest_revision: row.manifest_revision,
+    checklist_id: row.checklist_id,
+    repo_ref: row.repo_ref,
     payload:
       typeof row.payload === "object" && row.payload ? row.payload : {},
   };
@@ -62,6 +125,11 @@ export async function completeJob(
     project_name: string | null;
     summary: string;
     findings_added: number;
+    manifest_revision?: string | null;
+    checklist_id?: string | null;
+    coverage_complete?: boolean | null;
+    completion_confidence?: string | null;
+    exhaustiveness?: string | null;
     payload?: Record<string, unknown>;
   }
 ): Promise<void> {
@@ -74,8 +142,21 @@ export async function completeJob(
       [jobId, status, error]
     );
     await client.query(
-      `INSERT INTO lyra_audit_runs (job_id, job_type, project_name, status, summary, findings_added, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      `INSERT INTO lyra_audit_runs (
+         job_id,
+         job_type,
+         project_name,
+         status,
+         summary,
+         findings_added,
+         manifest_revision,
+         checklist_id,
+         coverage_complete,
+         completion_confidence,
+         exhaustiveness,
+         payload
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)`,
       [
         jobId,
         run.job_type,
@@ -83,6 +164,11 @@ export async function completeJob(
         status,
         run.summary,
         run.findings_added,
+        run.manifest_revision ?? null,
+        run.checklist_id ?? null,
+        run.coverage_complete ?? null,
+        run.completion_confidence ?? null,
+        run.exhaustiveness ?? null,
         JSON.stringify(run.payload ?? {}),
       ]
     );
@@ -99,9 +185,11 @@ export async function loadProject(
   pool: pg.Pool,
   name: string
 ): Promise<Record<string, unknown> | null> {
+  const identity = await resolveCanonicalProjectIdentity(pool, name);
+  const canonicalName = identity?.name ?? name;
   const r = await pool.query(
     `SELECT project_json FROM lyra_projects WHERE name = $1`,
-    [name]
+    [canonicalName]
   );
   if (r.rows.length === 0) return null;
   const j = r.rows[0].project_json;
@@ -116,7 +204,9 @@ export async function loadProject(
   // Return the full project object to preserve stack and any future fields.
   return {
     ...p,
-    name: (p.name as string) || name,
+    name: (p.name as string) || canonicalName,
+    repositoryUrl:
+      (p.repositoryUrl as string | undefined) ?? identity?.repository_url ?? undefined,
     findings: Array.isArray(p.findings) ? p.findings : [],
   };
 }
@@ -126,9 +216,20 @@ export async function saveProject(
   project: Record<string, unknown> & { name: string; findings: unknown[] }
 ): Promise<void> {
   // repositoryUrl goes into the dedicated column; body goes into project_json.
-  const repositoryUrl = (project.repositoryUrl as string | null | undefined) ?? null;
+  const canonical = await resolveCanonicalProjectIdentity(
+    pool,
+    project.name,
+    (project.repositoryUrl as string | null | undefined) ?? null
+  );
+  const canonicalName = canonical?.name ?? project.name;
+  const repositoryUrl =
+    normalizeRepositoryUrl(
+      (project.repositoryUrl as string | null | undefined) ?? canonical?.repository_url ?? null
+    ) ?? null;
   const body = {
     ...project,
+    name: canonicalName,
+    repositoryUrl: repositoryUrl ?? undefined,
     lastUpdated: (project.lastUpdated as string | undefined) ?? new Date().toISOString(),
   };
   await pool.query(
@@ -138,15 +239,15 @@ export async function saveProject(
        repository_url = COALESCE(EXCLUDED.repository_url, lyra_projects.repository_url),
        project_json = EXCLUDED.project_json,
        updated_at = now()`,
-    [project.name, repositoryUrl, JSON.stringify(body)]
+    [canonicalName, repositoryUrl, JSON.stringify(body)]
   );
 }
 
 export async function listAllProjects(
   pool: pg.Pool
-): Promise<Array<{ name: string; findings: unknown[] }>> {
+): Promise<Array<Record<string, unknown> & { name: string; findings: unknown[] }>> {
   const r = await pool.query(`SELECT project_json FROM lyra_projects`);
-  const out: Array<{ name: string; findings: unknown[] }> = [];
+  const out: Array<Record<string, unknown> & { name: string; findings: unknown[] }> = [];
   for (const row of r.rows) {
     let j: Record<string, unknown>;
     try {
@@ -160,9 +261,249 @@ export async function listAllProjects(
     }
     if (!j || typeof j !== "object") continue;
     out.push({
+      ...j,
       name: (j.name != null && String(j.name)) || "unknown",
       findings: Array.isArray(j.findings) ? j.findings : [],
     });
   }
   return out;
+}
+
+export async function saveProjectManifest(
+  pool: pg.Pool,
+  args: {
+    projectName: string;
+    repoRevision: string;
+    sourceRoot: string;
+    checklistId?: string;
+    exhaustiveness?: string;
+    manifest: Record<string, unknown>;
+  }
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO lyra_project_manifests (
+       project_name,
+       repo_revision,
+       source_root,
+       checklist_id,
+       exhaustiveness,
+       manifest,
+       generated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
+     ON CONFLICT (project_name, repo_revision) DO UPDATE SET
+       source_root = EXCLUDED.source_root,
+       checklist_id = EXCLUDED.checklist_id,
+       exhaustiveness = EXCLUDED.exhaustiveness,
+       manifest = EXCLUDED.manifest,
+       generated_at = now()`,
+    [
+      args.projectName,
+      args.repoRevision,
+      args.sourceRoot,
+      args.checklistId ?? null,
+      args.exhaustiveness ?? "exhaustive",
+      JSON.stringify(args.manifest),
+    ]
+  );
+}
+
+export async function loadLatestProjectManifest(
+  pool: pg.Pool,
+  projectName: string
+): Promise<Record<string, unknown> | null> {
+  const result = await pool.query(
+    `SELECT manifest
+       FROM lyra_project_manifests
+      WHERE lower(trim(project_name)) = lower(trim($1))
+      ORDER BY generated_at DESC
+      LIMIT 1`,
+    [projectName]
+  );
+  return (result.rows[0]?.manifest as Record<string, unknown> | undefined) ?? null;
+}
+
+export async function insertRepairJob(
+  pool: pg.Pool,
+  args: {
+    projectName: string;
+    findingId: string;
+    repairPolicy?: Record<string, unknown>;
+    targetedFiles?: string[];
+    verificationCommands?: string[];
+    rollbackNotes?: string | null;
+    payload?: Record<string, unknown>;
+  }
+): Promise<Record<string, unknown>> {
+  const result = await pool.query(
+    `INSERT INTO lyra_repair_jobs (
+       project_name,
+       finding_id,
+       status,
+       repair_policy,
+       targeted_files,
+       verification_commands,
+       rollback_notes,
+       payload
+     )
+     VALUES ($1, $2, 'queued', $3::jsonb, $4::jsonb, $5::jsonb, $6, $7::jsonb)
+     RETURNING *`,
+    [
+      args.projectName,
+      args.findingId,
+      JSON.stringify(args.repairPolicy ?? {}),
+      JSON.stringify(args.targetedFiles ?? []),
+      JSON.stringify(args.verificationCommands ?? []),
+      args.rollbackNotes ?? null,
+      JSON.stringify(args.payload ?? {}),
+    ]
+  );
+  return (result.rows[0] as Record<string, unknown> | undefined) ?? {};
+}
+
+function inferBacklogRiskClass(
+  finding: Record<string, unknown>
+): "low" | "medium" | "high" | "critical" {
+  const repairPolicy =
+    typeof finding.repair_policy === "object" && finding.repair_policy
+      ? (finding.repair_policy as Record<string, unknown>)
+      : {};
+  const riskClass = repairPolicy.risk_class;
+  if (
+    riskClass === "low" ||
+    riskClass === "medium" ||
+    riskClass === "high" ||
+    riskClass === "critical"
+  ) {
+    return riskClass;
+  }
+  const severity = String(finding.severity ?? "minor").toLowerCase();
+  if (severity === "blocker") return "critical";
+  if (severity === "major") return "high";
+  if (severity === "minor") return "medium";
+  return "low";
+}
+
+function inferBacklogNextAction(finding: Record<string, unknown>): string {
+  const status = String(finding.status ?? "open");
+  const repairPolicy =
+    typeof finding.repair_policy === "object" && finding.repair_policy
+      ? (finding.repair_policy as Record<string, unknown>)
+      : {};
+  if (status === "fixed_pending_verify") return "verify";
+  if (status === "deferred") return "defer";
+  if (repairPolicy.approval_required === true) return "plan_task";
+  if (repairPolicy.autofix_eligibility === "eligible") return "queue_repair";
+  return "plan_task";
+}
+
+function inferBacklogStatus(finding: Record<string, unknown>): string {
+  const status = String(finding.status ?? "open");
+  if (status === "in_progress") return "in_progress";
+  if (status === "fixed_pending_verify") return "blocked";
+  if (
+    status === "fixed_verified" ||
+    status === "wont_fix" ||
+    status === "deferred" ||
+    status === "duplicate" ||
+    status === "converted_to_enhancement"
+  ) {
+    return "done";
+  }
+  return "open";
+}
+
+export async function upsertMaintenanceBacklogFromFindings(
+  pool: pg.Pool,
+  projectName: string,
+  findings: Array<Record<string, unknown>>
+): Promise<void> {
+  for (const finding of findings) {
+    const findingId = String(finding.finding_id ?? "").trim();
+    const title = String(finding.title ?? "").trim();
+    if (!findingId || !title) continue;
+    await pool.query(
+      `INSERT INTO lyra_maintenance_backlog (
+         id,
+         project_name,
+         title,
+         summary,
+         canonical_status,
+         source_type,
+         priority,
+         severity,
+         risk_class,
+         next_action,
+         finding_ids,
+         dedupe_keys,
+         duplicate_of,
+         blocked_reason,
+         provenance,
+         created_at,
+         updated_at
+       )
+       VALUES (
+         $1,
+         $2,
+         $3,
+         $4,
+         $5,
+         'finding',
+         $6,
+         $7,
+         $8,
+         $9,
+         $10::jsonb,
+         $11::jsonb,
+         $12,
+         $13,
+         $14::jsonb,
+         COALESCE($15::timestamptz, now()),
+         now()
+       )
+       ON CONFLICT (id) DO UPDATE SET
+         title = EXCLUDED.title,
+         summary = EXCLUDED.summary,
+         canonical_status = EXCLUDED.canonical_status,
+         priority = EXCLUDED.priority,
+         severity = EXCLUDED.severity,
+         risk_class = EXCLUDED.risk_class,
+         next_action = EXCLUDED.next_action,
+         finding_ids = EXCLUDED.finding_ids,
+         dedupe_keys = EXCLUDED.dedupe_keys,
+         duplicate_of = EXCLUDED.duplicate_of,
+         blocked_reason = EXCLUDED.blocked_reason,
+         provenance = EXCLUDED.provenance,
+         updated_at = now()`,
+      [
+        `backlog-${projectName}-${findingId}`,
+        projectName,
+        title,
+        typeof finding.description === "string" ? finding.description : null,
+        inferBacklogStatus(finding),
+        String(finding.priority ?? "P2"),
+        String(finding.severity ?? "minor"),
+        inferBacklogRiskClass(finding),
+        inferBacklogNextAction(finding),
+        JSON.stringify([findingId]),
+        JSON.stringify([
+          `finding:${findingId}`,
+          `title:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        ]),
+        typeof finding.duplicate_of === "string" ? finding.duplicate_of : null,
+        String(finding.status ?? "") === "fixed_pending_verify"
+          ? "Waiting for verification."
+          : null,
+        JSON.stringify({
+          manifest_revision:
+            typeof finding.last_seen_revision === "string"
+              ? finding.last_seen_revision
+              : undefined,
+          finding_id: findingId,
+          source_type: "finding",
+        }),
+        typeof finding.first_seen_at === "string" ? finding.first_seen_at : null,
+      ]
+    );
+  }
 }

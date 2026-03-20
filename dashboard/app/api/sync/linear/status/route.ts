@@ -20,9 +20,10 @@ export async function GET(request: Request) {
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
+  const canonicalProjectName = project.name;
 
   const findings = project.findings ?? [];
-  const syncState = await getProjectSyncState(projectName);
+  const syncState = await getProjectSyncState(canonicalProjectName);
   const mappings = syncState.mappings;
   const syncedIds = new Set(Object.keys(mappings));
   const findingIds = new Set(findings.map((f) => f.finding_id));

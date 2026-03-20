@@ -32,7 +32,19 @@ export async function POST(request: Request) {
       findings: Array.isArray(body.findings) ? body.findings : [],
       lastUpdated: new Date().toISOString(),
       repositoryUrl: typeof body.repositoryUrl === "string" ? body.repositoryUrl.trim() || undefined : undefined,
+      status: body.status ?? "active",
+      sourceType: body.sourceType ?? "import",
+      sourceRef: body.sourceRef,
       stack: body.stack,
+      auditConfig: body.auditConfig,
+      profile: body.profile,
+      expectations: body.expectations,
+      onboardingState: body.onboardingState,
+      decisionHistory: body.decisionHistory,
+      profileSummary: body.profileSummary,
+      manifest: body.manifest,
+      maintenanceBacklog: body.maintenanceBacklog,
+      maintenanceTasks: body.maintenanceTasks,
     };
     const created = await repo.create(project);
     return NextResponse.json(created);

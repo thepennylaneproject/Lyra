@@ -7,6 +7,9 @@ import { readFile, writeFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import type { Project } from "./types";
 import type { ProjectsRepository } from "./repository";
+import { normalizeProjectName, projectMatchesIdentity } from "./project-identity";
+import { applyProjectDefaults } from "./project-defaults";
+import { withNormalizedBacklog } from "./maintenance-backlog";
 
 const FILENAME = "projects.json";
 
@@ -30,7 +33,9 @@ async function loadAll(): Promise<Project[]> {
   try {
     const raw = await readFile(filePath, "utf-8");
     const data = JSON.parse(raw);
-    return Array.isArray(data.projects) ? data.projects : [];
+    return Array.isArray(data.projects)
+      ? data.projects.map((project: Project) => withNormalizedBacklog(applyProjectDefaults(project)))
+      : [];
   } catch (e: unknown) {
     if (e && typeof e === "object" && "code" in e && e.code === "ENOENT") {
       return [];
@@ -57,16 +62,26 @@ export function createJsonRepository(): ProjectsRepository {
 
     async getByName(name: string) {
       const projects = await loadAll();
-      return projects.find((p) => p.name === name) ?? null;
+      return (
+        projects.find((p) => p.name === name) ??
+        projects.find((p) => normalizeProjectName(p.name) === normalizeProjectName(name)) ??
+        null
+      );
     },
 
     async create(project: Project) {
       const projects = await loadAll();
-      if (projects.some((p) => p.name === project.name)) {
-        throw new Error(`Project ${project.name} already exists`);
+      const existing = projects.find((p) =>
+        projectMatchesIdentity(p, {
+          name: project.name,
+          repositoryUrl: project.repositoryUrl,
+        })
+      );
+      if (existing) {
+        throw new Error(`Project ${existing.name} already exists`);
       }
       const withMeta = {
-        ...project,
+        ...withNormalizedBacklog(applyProjectDefaults(project)),
         lastUpdated: new Date().toISOString(),
       };
       projects.push(withMeta);
@@ -76,12 +91,18 @@ export function createJsonRepository(): ProjectsRepository {
 
     async update(project: Project) {
       const projects = await loadAll();
-      const index = projects.findIndex((p) => p.name === project.name);
+      const index = projects.findIndex((p) =>
+        projectMatchesIdentity(p, {
+          name: project.name,
+          repositoryUrl: project.repositoryUrl,
+        })
+      );
       if (index === -1) {
         throw new Error(`Project ${project.name} not found`);
       }
       const withMeta = {
-        ...project,
+        ...withNormalizedBacklog(applyProjectDefaults(project)),
+        name: projects[index].name,
         lastUpdated: new Date().toISOString(),
       };
       projects[index] = withMeta;
@@ -91,7 +112,9 @@ export function createJsonRepository(): ProjectsRepository {
 
     async delete(name: string) {
       const projects = await loadAll();
-      const filtered = projects.filter((p) => p.name !== name);
+      const filtered = projects.filter(
+        (p) => normalizeProjectName(p.name) !== normalizeProjectName(name)
+      );
       if (filtered.length === projects.length) {
         throw new Error(`Project ${name} not found`);
       }

@@ -132,12 +132,23 @@ export function readDatabaseConfig(): DatabaseConfig {
   };
 }
 
+/** Supabase pooler (session mode, port 5432) caps total clients at pool_size — one shared pool avoids exhausting it. */
+function resolvePoolMax(): number {
+  const raw = process.env.PG_POOL_MAX ?? process.env.LYRA_PG_POOL_MAX ?? "5";
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return 5;
+  return Math.min(n, 30);
+}
+
 export class PostgresPool {
   private readonly pool: Pool;
 
   constructor(settings: DatabaseSettings) {
     const config: PoolConfig = {
       connectionString: settings.connectionString,
+      max: resolvePoolMax(),
+      idleTimeoutMillis: 20_000,
+      connectionTimeoutMillis: 15_000,
       ssl: settings.ssl
         ? {
             rejectUnauthorized: settings.rejectUnauthorized,
@@ -153,13 +164,21 @@ export class PostgresPool {
   }
 }
 
+let sharedPostgresPool: PostgresPool | null = null;
+
+/**
+ * Returns one process-wide pool. Callers must not create ad-hoc pools — Supabase session pooler
+ * limits total connections; multiple `new Pool()` instances each default to max≈10 and exhaust the cap.
+ */
 export function createPostgresPool(): PostgresPool {
+  if (sharedPostgresPool) return sharedPostgresPool;
   const rawUrl = readFirstDefinedEnv(["DATABASE_URL", "LYRA_DATABASE_URL", "LYRA_SUPABASE_URL"]);
   if (!rawUrl) {
     throw new Error("DATABASE_URL is required");
   }
   const settings = parseDatabaseUrl(rawUrl);
-  return new PostgresPool(settings);
+  sharedPostgresPool = new PostgresPool(settings);
+  return sharedPostgresPool;
 }
 
 export function generateUuid(): string {

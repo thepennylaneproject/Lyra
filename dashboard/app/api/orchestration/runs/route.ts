@@ -4,6 +4,10 @@ import {
   listAuditJobsForProject,
   listAuditRunsForProject,
 } from "@/lib/orchestration-jobs";
+import {
+  getLatestManifestForProject,
+  listRepairJobsForProject,
+} from "@/lib/maintenance-store";
 import { apiErrorMessage } from "@/lib/api-error";
 
 function enqueueSecret(): string {
@@ -31,23 +35,26 @@ export async function GET(request: Request) {
   if (!jobsStoreConfigured()) {
     return NextResponse.json({
       configured: false,
-      enqueue_auth_optional: false,
+      enqueue_auth_optional: true,
       runs: [],
       jobs: [],
     });
   }
 
   try {
-    const [runs, jobs] = await Promise.all([
+    const [runs, jobs, manifest, repairJobs] = await Promise.all([
       listAuditRunsForProject(project, 30),
       listAuditJobsForProject(project, 20),
+      getLatestManifestForProject(project),
+      listRepairJobsForProject(project, 20),
     ]);
     return NextResponse.json({
       configured: true,
-      enqueue_auth_optional:
-        process.env.NODE_ENV === "development" && !enqueueSecret(),
+      enqueue_auth_optional: true,
       runs,
       jobs,
+      manifest,
+      repair_jobs: repairJobs,
     });
   } catch (e) {
     console.error("GET /api/orchestration/runs", e);

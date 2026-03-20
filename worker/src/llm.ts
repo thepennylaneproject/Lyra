@@ -12,10 +12,24 @@ export interface FindingOut {
     start_line?: number;
     summary?: string;
   }>;
+  duplicate_of?: string;
+}
+
+export interface CoverageOut {
+  coverage_complete?: boolean;
+  confidence?: "low" | "medium" | "high";
+  checklist_id?: string;
+  known_findings_referenced?: string[];
+  files_reviewed?: string[];
+  modules_reviewed?: string[];
+  checklist_passed?: number;
+  checklist_total?: number;
+  incomplete_reason?: string;
 }
 
 export interface AuditLlmResult {
   findings: FindingOut[];
+  coverage: CoverageOut;
   model: string;
   raw_response: string;
 }
@@ -26,12 +40,26 @@ export async function auditWithLlm(
   expectations: string,
   codeContext: string,
   appName: string,
-  visualOnly: boolean
+  visualOnly: boolean,
+  auditKind?: string,
+  extras?: {
+    scopeLabel?: string;
+    filesInScope?: string[];
+    knownFindingIds?: string[];
+    checklistId?: string;
+    manifestRevision?: string;
+  }
 ): Promise<AuditLlmResult> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) {
     console.warn("[lyra-worker] OPENAI_API_KEY not set; skipping LLM audit");
     return {
+      coverage: {
+        coverage_complete: false,
+        confidence: "low",
+        checklist_id: extras?.checklistId,
+        incomplete_reason: "OPENAI_API_KEY not configured",
+      },
       model: "none",
       raw_response: "OPENAI_API_KEY not configured",
       findings: [
@@ -52,14 +80,24 @@ export async function auditWithLlm(
   const model = process.env.LYRA_AUDIT_MODEL?.trim() || "gpt-4o-mini";
   const user = `App name: ${appName}
 ${visualOnly ? "Focus on visual/UI/UX expectations only.\n" : ""}
+${auditKind ? `Primary audit kind: ${auditKind}\n` : ""}
+${extras?.manifestRevision ? `Manifest revision: ${extras.manifestRevision}\n` : ""}
+${extras?.scopeLabel ? `Audit scope: ${extras.scopeLabel}\n` : ""}
+${extras?.checklistId ? `Checklist: ${extras.checklistId}\n` : ""}
+
+## Scope files
+${(extras?.filesInScope ?? []).length > 0 ? extras?.filesInScope?.join("\n") : "(scope file list unavailable)"}
+
+## Already-known findings
+${(extras?.knownFindingIds ?? []).length > 0 ? extras?.knownFindingIds?.join("\n") : "(none provided)"}
 
 ## Expectations document
 ${expectations}
 
-## Mirror context (intelligence report + sampled files)
+## Repository context
 ${codeContext}
 
-Return JSON: { "findings": [ ... ] } per audit-agent output contract.`;
+Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output contract.`;
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -88,11 +126,17 @@ Return JSON: { "findings": [ ... ] } per audit-agent output contract.`;
     choices?: Array<{ message?: { content?: string } }>;
   };
   const raw = data.choices?.[0]?.message?.content ?? "{}";
-  let parsed: { findings?: FindingOut[] };
+  let parsed: { findings?: FindingOut[]; coverage?: CoverageOut };
   try {
-    parsed = JSON.parse(raw) as { findings?: FindingOut[] };
+    parsed = JSON.parse(raw) as { findings?: FindingOut[]; coverage?: CoverageOut };
   } catch {
     return {
+      coverage: {
+        coverage_complete: false,
+        confidence: "low",
+        checklist_id: extras?.checklistId,
+        incomplete_reason: "LLM returned non-JSON",
+      },
       model,
       raw_response: raw,
       findings: [
@@ -109,9 +153,36 @@ Return JSON: { "findings": [ ... ] } per audit-agent output contract.`;
     };
   }
   const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
+  const coverage = parsed.coverage ?? {};
   return {
     model,
     raw_response: raw,
+    coverage: {
+      coverage_complete: Boolean(coverage.coverage_complete),
+      confidence: coverage.confidence ?? "medium",
+      checklist_id: coverage.checklist_id ?? extras?.checklistId,
+      known_findings_referenced: Array.isArray(coverage.known_findings_referenced)
+        ? coverage.known_findings_referenced
+        : [],
+      files_reviewed: Array.isArray(coverage.files_reviewed)
+        ? coverage.files_reviewed
+        : [],
+      modules_reviewed: Array.isArray(coverage.modules_reviewed)
+        ? coverage.modules_reviewed
+        : [],
+      checklist_passed:
+        typeof coverage.checklist_passed === "number"
+          ? coverage.checklist_passed
+          : undefined,
+      checklist_total:
+        typeof coverage.checklist_total === "number"
+          ? coverage.checklist_total
+          : undefined,
+      incomplete_reason:
+        typeof coverage.incomplete_reason === "string"
+          ? coverage.incomplete_reason
+          : undefined,
+    },
     findings: findings.map((f, i) => ({
       finding_id: f.finding_id || `${appName}-finding-${i}`,
       title: f.title || "Untitled",
@@ -122,6 +193,7 @@ Return JSON: { "findings": [ ... ] } per audit-agent output contract.`;
       status: "open",
       category: f.category,
       proof_hooks: f.proof_hooks,
+      duplicate_of: f.duplicate_of,
     })),
   };
 }

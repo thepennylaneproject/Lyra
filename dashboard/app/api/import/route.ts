@@ -3,6 +3,11 @@ import { getRepository } from "@/lib/repository-instance";
 import { parseOpenFindingsPayload } from "@/lib/repository";
 import type { Project, Finding } from "@/lib/types";
 import { apiErrorMessage } from "@/lib/api-error";
+import { normalizeMaintenanceBacklog } from "@/lib/maintenance-backlog";
+import {
+  upsertMaintenanceBacklogItems,
+} from "@/lib/maintenance-store";
+import { hasSupabaseProjectsStore } from "@/lib/store-supabase";
 
 export async function POST(request: Request) {
   try {
@@ -60,21 +65,45 @@ export async function POST(request: Request) {
     }
 
     const project: Project = {
-      name: projectName,
-      findings: mergedFindings,
+      name: existing?.name ?? projectName,
+      findings,
       lastUpdated: new Date().toISOString(),
       repositoryUrl:
         typeof body.repositoryUrl === "string"
           ? body.repositoryUrl.trim() || undefined
           : existing?.repositoryUrl,
       stack: existing?.stack,
+      status: existing?.status ?? "active",
+      sourceType: existing?.sourceType ?? "import",
+      sourceRef: existing?.sourceRef,
+      auditConfig: existing?.auditConfig,
+      profile: existing?.profile,
+      expectations: existing?.expectations,
+      onboardingState: existing?.onboardingState,
+      decisionHistory: existing?.decisionHistory,
+      profileSummary: existing?.profileSummary,
+      manifest: existing?.manifest,
+      maintenanceBacklog: existing?.maintenanceBacklog,
+      maintenanceTasks: existing?.maintenanceTasks,
     };
 
     if (existing) {
       await repo.update(project);
+      if (hasSupabaseProjectsStore()) {
+        await upsertMaintenanceBacklogItems(
+          project.name,
+          normalizeMaintenanceBacklog(project.name, project.findings)
+        );
+      }
       return NextResponse.json({ project, created: false, mode, added, removed, skipped });
     }
     await repo.create(project);
+    if (hasSupabaseProjectsStore()) {
+      await upsertMaintenanceBacklogItems(
+        project.name,
+        normalizeMaintenanceBacklog(project.name, project.findings)
+      );
+    }
     return NextResponse.json({ project, created: true, mode, added, removed: 0, skipped: 0 });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

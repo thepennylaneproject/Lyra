@@ -167,6 +167,13 @@ export async function getTeamStates(): Promise<Record<string, string>> {
   return Object.fromEntries(nodes.map((s) => [s.name, s.id]));
 }
 
+function isLinearLabelIdsAccessError(message: string): boolean {
+  return (
+    /labelIds/i.test(message) &&
+    (/validateAccess/i.test(message) || /entity not found/i.test(message))
+  );
+}
+
 export async function createIssue(params: {
   title: string;
   description: string;
@@ -177,51 +184,67 @@ export async function createIssue(params: {
 }): Promise<{ id: string; identifier?: string; url?: string } | null> {
   const teamId = await resolveLinearTeamId();
 
-  const variables: Record<string, unknown> = {
-    teamId,
-    title: params.title,
-    description: params.description,
-    priority: params.priority,
-  };
-  if (params.stateId) variables.stateId = params.stateId;
-  if (params.labelIds?.length) variables.labelIds = params.labelIds;
-  if (params.projectId) variables.projectId = params.projectId;
+  const runCreate = async (labelIds?: string[]) => {
+    const variables: Record<string, unknown> = {
+      teamId,
+      title: params.title,
+      description: params.description,
+      priority: params.priority,
+    };
+    if (params.stateId) variables.stateId = params.stateId;
+    if (labelIds?.length) variables.labelIds = labelIds;
+    if (params.projectId) variables.projectId = params.projectId;
 
-  const result = (await gql(
-    `mutation($teamId: String!, $title: String!, $description: String!,
-             $priority: Int, $stateId: String, $labelIds: [String!],
-             $projectId: String) {
-      issueCreate(input: {
-        teamId: $teamId
-        title: $title
-        description: $description
-        priority: $priority
-        stateId: $stateId
-        labelIds: $labelIds
-        projectId: $projectId
-      }) {
-        success
-        issue { id identifier url }
-      }
-    }`,
-    variables
-  )) as {
-    data?: {
-      issueCreate?: {
-        success?: boolean;
-        issue?: { id: string; identifier?: string; url?: string };
+    const result = (await gql(
+      `mutation($teamId: String!, $title: String!, $description: String!,
+               $priority: Int, $stateId: String, $labelIds: [String!],
+               $projectId: String) {
+        issueCreate(input: {
+          teamId: $teamId
+          title: $title
+          description: $description
+          priority: $priority
+          stateId: $stateId
+          labelIds: $labelIds
+          projectId: $projectId
+        }) {
+          success
+          issue { id identifier url }
+        }
+      }`,
+      variables
+    )) as {
+      data?: {
+        issueCreate?: {
+          success?: boolean;
+          issue?: { id: string; identifier?: string; url?: string };
+        };
       };
     };
+
+    const issueCreate = result.data?.issueCreate;
+    if (issueCreate?.success && issueCreate.issue) return issueCreate.issue;
+    if (issueCreate && !issueCreate.success) {
+      throw new Error(
+        "Linear issueCreate returned success=false (check team permissions, label/project IDs, and title length)."
+      );
+    }
+    return null;
   };
 
-  const issueCreate = result.data?.issueCreate;
-  if (issueCreate?.success && issueCreate.issue) return issueCreate.issue;
-  if (issueCreate && !issueCreate.success) {
-    throw new Error(
-      "Linear issueCreate returned success=false (check team permissions, label/project IDs, and title length)."
-    );
+  try {
+    return await runCreate(params.labelIds);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (params.labelIds?.length && isLinearLabelIdsAccessError(msg)) {
+      console.warn(
+        "[linear] LINEAR_LABEL_ID rejected by Linear (wrong workspace, deleted label, or no access). Creating issue without labels. Fix or remove LINEAR_LABEL_ID.",
+        msg
+      );
+      return runCreate(undefined);
+    }
+    throw e;
   }
-  return null;
 }
 
 export async function updateIssueState(issueId: string, stateId: string): Promise<boolean> {

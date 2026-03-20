@@ -37,8 +37,9 @@ export async function POST(request: Request) {
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
+  const canonicalProjectName = project.name;
 
-  const syncState = await getProjectSyncState(projectName);
+  const syncState = await getProjectSyncState(canonicalProjectName);
   const mappings = syncState.mappings;
   if (Object.keys(mappings).length === 0) {
     return NextResponse.json({
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
     lastUpdated: new Date().toISOString(),
   });
   // Only advance last_sync when the whole batch succeeded (ARCH-013)
-  await setProjectSyncState(projectName, {
+  await setProjectSyncState(canonicalProjectName, {
     mappings,
     last_sync: failed === 0 ? new Date().toISOString() : syncState.last_sync,
   });

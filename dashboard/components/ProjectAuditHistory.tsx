@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api-fetch";
 import { LYRA_ENQUEUE_SECRET_STORAGE_KEY } from "@/lib/auth-constants";
+import type { AuditKind, ProjectManifest, RepairJob, ScopeType } from "@/lib/types";
 import type {
   LyraAuditJobRow,
   LyraAuditRunRow,
@@ -10,6 +11,7 @@ import type {
 
 interface ProjectAuditHistoryProps {
   projectName: string;
+  projectStatus?: string;
 }
 
 function deltaVsPrior(
@@ -27,26 +29,34 @@ function formatAuditLabel(
   jobType: string,
   payload?: Record<string, unknown>
 ): string {
-  if (jobType === "onboard_project") return "Onboard project audit";
+  if (jobType === "onboard_project" || jobType === "onboard_repository") return "Onboard project audit";
   if (jobType === "re_audit_project") return "Full re-audit";
   if (jobType === "synthesize_project") return "Synthesizer";
   if (jobType === "weekly_audit") return "Weekly portfolio audit";
   if (jobType === "audit_project") {
     if (payload && payload.visual_only === true) return "Visual audit";
+    if (payload && typeof payload.audit_kind === "string") return `${payload.audit_kind} audit`;
     return "Project audit";
   }
   return jobType;
 }
 
-export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
+export function ProjectAuditHistory({ projectName, projectStatus }: ProjectAuditHistoryProps) {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [runs, setRuns] = useState<LyraAuditRunRow[]>([]);
   const [jobs, setJobs] = useState<LyraAuditJobRow[]>([]);
+  const [manifest, setManifest] = useState<ProjectManifest | null>(null);
+  const [repairJobs, setRepairJobs] = useState<RepairJob[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [enqueueSecret, setEnqueueSecret] = useState<string>("");
   const [enqueueAuthOptional, setEnqueueAuthOptional] = useState(false);
   const [dispatching, setDispatching] = useState<string | null>(null);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [auditKind, setAuditKind] = useState<AuditKind>("full");
+  const [scopeType, setScopeType] = useState<ScopeType>("project");
+  const [scopePaths, setScopePaths] = useState("");
+  const [baseRef, setBaseRef] = useState("");
+  const [headRef, setHeadRef] = useState("");
 
   useEffect(() => {
     try {
@@ -79,6 +89,8 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
         configured?: boolean;
         runs?: LyraAuditRunRow[];
         jobs?: LyraAuditJobRow[];
+        manifest?: ProjectManifest | null;
+        repair_jobs?: RepairJob[];
         enqueue_auth_optional?: boolean;
       };
       if (!res.ok) {
@@ -91,6 +103,8 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
       setConfigured(Boolean(data.configured));
       setRuns(Array.isArray(data.runs) ? data.runs : []);
       setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+      setManifest(data.manifest ?? null);
+      setRepairJobs(Array.isArray(data.repair_jobs) ? data.repair_jobs : []);
       setEnqueueAuthOptional(Boolean(data.enqueue_auth_optional));
     } catch {
       setLoadError("Network error");
@@ -152,6 +166,7 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
   const hasAny = runs.length > 0 || jobs.length > 0;
   const canEnqueue =
     configured === true &&
+    (projectStatus ?? "active") === "active" &&
     (enqueueAuthOptional || enqueueSecret.trim().length > 0);
 
   const authHeaders = (): HeadersInit => {
@@ -184,6 +199,16 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
       setDispatching(null);
     }
   };
+
+  const scopedPayload = (): Record<string, unknown> => ({
+    audit_kind: auditKind,
+    scope_type: scopeType,
+    scope_paths: scopePaths.split(",").map((value) => value.trim()).filter(Boolean),
+    base_ref: baseRef.trim() || undefined,
+    head_ref: headRef.trim() || undefined,
+    manifest_revision: manifest?.revision,
+    checklist_id: manifest?.checklist_id ?? "lyra-bounded-audit-v1",
+  });
 
   const newest = runs[0];
   const second = runs[1];
@@ -222,9 +247,79 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
           marginBottom: "0.75rem",
         }}
       >
-        Automated audits sample the mirror under <code>the_penny_lane_project/</code> — intelligence{" "}
-        <code>*report*.md</code> excerpt plus up to <strong>12</strong> text files (~6k chars each), not a full
-        repo. Interpret severity accordingly.
+        Audits now run against explicit repo scope with manifest-backed coverage. Use project or domain scope for broad
+        passes, and file or diff scope for tight re-audits.
+      </div>
+      {manifest && (
+        <div
+          style={{
+            marginBottom: "0.75rem",
+            padding: "0.55rem 0.65rem",
+            borderRadius: "var(--radius-md)",
+            border: "0.5px solid var(--ink-border-faint)",
+            background: "var(--ink-bg-sunken)",
+            fontSize: "10px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-text-4)",
+            lineHeight: 1.45,
+          }}
+        >
+          manifest: {manifest.modules.length} modules across {manifest.domains.length} domains
+          {manifest.revision ? ` · ${manifest.revision.slice(0, 8)}` : ""}
+          {manifest.entrypoints?.length ? ` · ${manifest.entrypoints.length} entrypoints` : ""}
+          {repairJobs.length > 0 ? ` · ${repairJobs.length} repair jobs` : ""}
+        </div>
+      )}
+      <div
+        style={{
+          marginBottom: "0.75rem",
+          padding: "0.55rem 0.65rem",
+          borderRadius: "var(--radius-md)",
+          border: "0.5px solid var(--ink-border-faint)",
+          background: "var(--ink-bg-sunken)",
+        }}
+      >
+        <div
+          style={{
+            fontSize: "9px",
+            fontFamily: "var(--font-mono)",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: "var(--ink-text-4)",
+            marginBottom: "0.4rem",
+          }}
+        >
+          Scoped controls
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "0.45rem" }}>
+          <select value={auditKind} onChange={(e) => setAuditKind(e.target.value as AuditKind)}>
+            <option value="full">Full</option>
+            <option value="logic">Logic</option>
+            <option value="security">Security</option>
+            <option value="performance">Performance</option>
+            <option value="ux">UX</option>
+            <option value="visual">Visual</option>
+            <option value="data">Data</option>
+            <option value="deploy">Deploy</option>
+            <option value="synthesize">Synthesize</option>
+          </select>
+          <select value={scopeType} onChange={(e) => setScopeType(e.target.value as ScopeType)}>
+            <option value="project">Project</option>
+            <option value="domain">Domain</option>
+            <option value="directory">Directory</option>
+            <option value="file">File</option>
+            <option value="selection">Selection</option>
+            <option value="diff">Diff</option>
+          </select>
+          <input
+            type="text"
+            value={scopePaths}
+            onChange={(e) => setScopePaths(e.target.value)}
+            placeholder={scopeType === "domain" ? "domains (comma-separated)" : "scope paths (comma-separated)"}
+          />
+          <input type="text" value={baseRef} onChange={(e) => setBaseRef(e.target.value)} placeholder="base ref" />
+          <input type="text" value={headRef} onChange={(e) => setHeadRef(e.target.value)} placeholder="head ref" />
+        </div>
       </div>
       <div
         style={{
@@ -267,7 +362,11 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
               enqueueAudit("visual", {
                 job_type: "audit_project",
                 project_name: projectName,
-                payload: { visual_only: true },
+                payload: {
+                  ...scopedPayload(),
+                  visual_only: true,
+                  audit_kind: auditKind === "full" ? "visual" : auditKind,
+                },
               })
             }
             disabled={!canEnqueue || dispatching === "visual"}
@@ -279,14 +378,15 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
             type="button"
             onClick={() =>
               enqueueAudit("full", {
-                job_type: "re_audit_project",
+                job_type: auditKind === "synthesize" ? "synthesize_project" : "re_audit_project",
                 project_name: projectName,
+                payload: scopedPayload(),
               })
             }
             disabled={!canEnqueue || dispatching === "full"}
             style={{ fontSize: "10px", fontFamily: "var(--font-mono)", padding: "3px 8px" }}
           >
-            {dispatching === "full" ? "…" : "Run full re-audit"}
+            {dispatching === "full" ? "…" : auditKind === "synthesize" ? "Run synthesizer" : "Run scoped audit"}
           </button>
           <button
             type="button"
@@ -317,7 +417,9 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
           />
           {!canEnqueue && (
             <span style={{ fontSize: "10px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
-              Secret required to enqueue manual audits
+              {(projectStatus ?? "active") !== "active"
+                ? "Activate the project before enqueueing audits"
+                : "Secret required to enqueue manual audits"}
             </span>
           )}
         </div>
@@ -378,6 +480,17 @@ export function ProjectAuditHistory({ projectName }: ProjectAuditHistoryProps) {
                   {r.created_at.slice(0, 19).replace("T", " ")}
                 </span>{" "}
                 <strong>{formatAuditLabel(r.job_type, r.payload)}</strong> · {r.status} · +{r.findings_added} findings
+                {r.coverage_complete != null && (
+                  <span style={{ color: "var(--ink-text-3)" }}>
+                    {" "}· {r.coverage_complete ? "coverage complete" : "coverage partial"}
+                  </span>
+                )}
+                {r.completion_confidence && (
+                  <span style={{ color: "var(--ink-text-3)" }}> · {r.completion_confidence} confidence</span>
+                )}
+                {r.exhaustiveness && (
+                  <span style={{ color: "var(--ink-text-3)" }}> · {r.exhaustiveness}</span>
+                )}
                 {delta && (
                   <span style={{ color: "var(--ink-text-3)" }}> · {delta}</span>
                 )}

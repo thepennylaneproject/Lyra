@@ -5,17 +5,42 @@ import type { Project } from "@/lib/types";
 
 interface ImportModalProps {
   onImport: (project: Project) => Promise<void>;
+  onOnboardRepository: (input: {
+    name?: string;
+    repository_url?: string;
+    local_path?: string;
+    default_branch?: string;
+  }) => Promise<void>;
   onClose:  () => void;
 }
 
-export function ImportModal({ onImport, onClose }: ImportModalProps) {
+export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportModalProps) {
   const [name,      setName]      = useState("");
   const [repoUrl,   setRepoUrl]   = useState("");
+  const [localPath, setLocalPath] = useState("");
+  const [defaultBranch, setDefaultBranch] = useState("");
   const [jsonText,  setJsonText]  = useState("");
   const [error,     setError]     = useState("");
   const [dragging,  setDragging]  = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Warn on close if there is unsaved input
+  const isDirty =
+    name.trim().length > 0 ||
+    repoUrl.trim().length > 0 ||
+    localPath.trim().length > 0 ||
+    defaultBranch.trim().length > 0 ||
+    jsonText.trim().length > 0;
+
+  const handleClose = () => {
+    if (isDirty && !submitting) {
+      if (!confirm("Discard unsaved form input?")) {
+        return;
+      }
+    }
+    onClose();
+  };
 
   function deriveNameFromRepoUrl(value: string): string {
     try {
@@ -51,20 +76,36 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
   async function handleSubmit() {
     const trimmedName = name.trim();
     const trimmedRepo = repoUrl.trim();
+    const trimmedPath = localPath.trim();
+    const trimmedJson = jsonText.trim();
     const projectName = trimmedName || (trimmedRepo ? deriveNameFromRepoUrl(trimmedRepo) : "");
-    if (!projectName) { setError("Project name or repository URL required"); return; }
+
+    // Require either: (repo or local path) OR (json findings)
+    if (!trimmedRepo && !trimmedPath && !trimmedJson) {
+      setError("Provide a repository URL, local path, or JSON findings");
+      return;
+    }
+
+    // If onboarding from repo/path, must have at least one
+    if ((trimmedRepo || trimmedPath) && !projectName) {
+      setError("Project name is required or will be derived from repository URL");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     try {
-      if (!jsonText.trim()) {
-        await onImport({
-          name: projectName,
-          findings: [],
-          repositoryUrl: trimmedRepo || undefined,
+      if (trimmedRepo || trimmedPath) {
+        await onOnboardRepository({
+          name: projectName || undefined,
+          repository_url: trimmedRepo || undefined,
+          local_path: trimmedPath || undefined,
+          default_branch: defaultBranch.trim() || undefined,
         });
         return;
       }
-      const data = JSON.parse(jsonText);
+      // Legacy JSON import path
+      const data = JSON.parse(trimmedJson);
       const findings = data.open_findings ?? data.findings ?? [];
       if (!Array.isArray(findings)) { setError("No findings array found"); setSubmitting(false); return; }
       await onImport({
@@ -103,7 +144,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
         </span>
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
           style={{ border: "none", background: "transparent", padding: "0 4px", fontSize: "16px", color: "var(--ink-text-4)" }}
           aria-label="Close"
         >
@@ -140,10 +181,10 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
               marginBottom: "0.375rem",
             }}
           >
-            Project name or repository URL
+            Repository URL or local path
           </label>
           <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.5rem" }}>
-            Enter at least one. Repository URL auto-derives the project name if blank.
+            Provide a repository URL or local path to generate draft onboarding artifacts. Repository URL auto-derives the project name if blank. Project name is optional.
           </div>
           <input
             type="text"
@@ -157,6 +198,20 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             placeholder="Repository URL (https://github.com/owner/repo)"
+            style={{ marginBottom: "0.5rem" }}
+          />
+          <input
+            type="text"
+            value={localPath}
+            onChange={(e) => setLocalPath(e.target.value)}
+            placeholder="Local path (/Users/you/project)"
+            style={{ marginBottom: "0.5rem" }}
+          />
+          <input
+            type="text"
+            value={defaultBranch}
+            onChange={(e) => setDefaultBranch(e.target.value)}
+            placeholder="Default branch (optional)"
           />
         </div>
       </div>
@@ -178,7 +233,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
         </div>
 
         <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.75rem" }}>
-          Choose one: load from file, paste JSON, or leave blank to start with no findings.
+          Legacy mode only. If you provide a repository URL or local path above, Lyra will generate draft onboarding artifacts instead of importing findings JSON.
         </div>
 
         {/* File upload */}
@@ -263,7 +318,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
         disabled={submitting}
         style={{ padding: "5px 16px" }}
       >
-        {submitting ? "onboarding…" : "Onboard"}
+        {submitting ? "onboarding…" : "Start onboarding"}
       </button>
     </div>
   );

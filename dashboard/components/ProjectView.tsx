@@ -10,6 +10,8 @@ import { FindingRow } from "./FindingRow";
 import { FindingDetail } from "./FindingDetail";
 import { LinearSync } from "./LinearSync";
 import { ProjectAuditHistory } from "./ProjectAuditHistory";
+import { OnboardingReviewPanel } from "./OnboardingReviewPanel";
+import { MaintenancePanel } from "./MaintenancePanel";
 import { STATUS_GROUPS, sortFindings } from "@/lib/constants";
 
 type FilterKey = "active" | "pending" | "resolved" | "all";
@@ -116,6 +118,9 @@ export function ProjectView({
             repo
           </a>
         )}
+        {(project.status ?? "active") === "draft" && (
+          <Badge color="minor">draft</Badge>
+        )}
         {canShip && (
           <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-green)" }} title="No blockers or open questions. Ready to deploy.">
             ✓ ready to deploy
@@ -125,6 +130,13 @@ export function ProjectView({
           <Badge color="blocker">{blockers} blocker{blockers > 1 ? "s" : ""}</Badge>
         )}
       </div>
+
+      <OnboardingReviewPanel
+        project={project}
+        onUpdated={async (_updatedProject) => {
+          await refetchProject();
+        }}
+      />
 
       {/* Metrics */}
       <div
@@ -143,7 +155,22 @@ export function ProjectView({
         <MetricCard label="Resolved"      value={resolved}       accent={resolved > 0 ? "var(--ink-green)" : undefined} />
         <MetricCard label="Blockers"      value={blockers}       accent={blockers > 0 ? "var(--ink-red)"   : undefined} />
         <MetricCard label="Questions"     value={questions}      accent={questions > 0 ? "var(--ink-blue)" : undefined} />
+        {project.manifest && <MetricCard label="Manifest modules" value={project.manifest.modules.length} />}
       </div>
+
+      {project.manifest && (
+        <div
+          style={{
+            marginBottom: "1rem",
+            fontSize: "10px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-text-4)",
+            lineHeight: 1.45,
+          }}
+        >
+          Coverage map: {project.manifest.domains.length} domains, revision {project.manifest.revision.slice(0, 8)}.
+        </div>
+      )}
 
       {/* Progress */}
       <div style={{ marginBottom: "0.375rem" }}>
@@ -167,7 +194,9 @@ export function ProjectView({
         onRefresh={async () => { await refetchProject(); }}
       />
 
-      <ProjectAuditHistory projectName={project.name} />
+      <MaintenancePanel projectName={project.name} />
+
+      <ProjectAuditHistory projectName={project.name} projectStatus={project.status} />
 
       {actionError && (
         <div

@@ -6,6 +6,59 @@
 export type Severity = "blocker" | "major" | "minor" | "nit";
 export type Priority = "P0" | "P1" | "P2" | "P3";
 export type FindingType = "bug" | "enhancement" | "debt" | "question";
+export type AuditExhaustiveness = "sampled" | "exhaustive";
+export type ManifestComplexity = "low" | "medium" | "high";
+export type ManifestNodeType =
+  | "component"
+  | "hook"
+  | "service"
+  | "util"
+  | "route"
+  | "schema"
+  | "migration"
+  | "config"
+  | "script"
+  | "doc"
+  | "test"
+  | "unknown";
+export type RepairAutofixEligibility =
+  | "manual_only"
+  | "suggest_only"
+  | "eligible";
+export type RepairRiskClass = "low" | "medium" | "high" | "critical";
+export type VerificationProfile =
+  | "none"
+  | "targeted"
+  | "project"
+  | "manual";
+export type MaintenanceSourceType =
+  | "finding"
+  | "scanner_import"
+  | "historical_receipt"
+  | "todo_import"
+  | "manual";
+export type MaintenanceBacklogStatus =
+  | "open"
+  | "planned"
+  | "in_progress"
+  | "blocked"
+  | "deferred"
+  | "done";
+export type NextActionRecommendation =
+  | "review"
+  | "plan_task"
+  | "queue_repair"
+  | "verify"
+  | "re_audit"
+  | "defer";
+export type MaintenanceTaskStatus =
+  | "draft"
+  | "ready"
+  | "approved"
+  | "running"
+  | "blocked"
+  | "verified"
+  | "done";
 
 export type FindingStatus =
   | "open"
@@ -27,12 +80,23 @@ export interface ProofHook {
   start_line?: number;
 }
 
+export interface RepairPolicy {
+  autofix_eligibility?: RepairAutofixEligibility;
+  risk_class?: RepairRiskClass;
+  verification_profile?: VerificationProfile;
+  verification_commands?: string[];
+  rollback_notes?: string;
+  approval_required?: boolean;
+}
+
 export interface SuggestedFix {
   approach?: string;
   affected_files?: string[];
   estimated_effort?: string;
   risk_notes?: string;
   tests_needed?: string[];
+  rollback_notes?: string;
+  verification_commands?: string[];
 }
 
 export interface HistoryEvent {
@@ -40,6 +104,177 @@ export interface HistoryEvent {
   actor: string;
   event: string;
   notes?: string;
+}
+
+export interface ProvenanceRef {
+  manifest_revision?: string;
+  audit_run_id?: string;
+  finding_id?: string;
+  backlog_id?: string;
+  task_id?: string;
+  repair_job_id?: string;
+  verification_run_id?: string;
+  source_type?: MaintenanceSourceType;
+}
+
+export type ProjectStatus = "draft" | "active";
+export type ProjectSourceType =
+  | "portfolio_mirror"
+  | "git_url"
+  | "local_path"
+  | "import";
+export type ArtifactStatus = "draft" | "active";
+export type OnboardingStage =
+  | "collect_repo_context"
+  | "generate_project_profile"
+  | "generate_expectations"
+  | "operator_review"
+  | "activate_project"
+  | "completed";
+export type AuditKind =
+  | "logic"
+  | "security"
+  | "performance"
+  | "ux"
+  | "visual"
+  | "data"
+  | "deploy"
+  | "full"
+  | "synthesize";
+export type ScopeType =
+  | "project"
+  | "domain"
+  | "directory"
+  | "file"
+  | "diff"
+  | "selection";
+
+export interface ProjectArtifactVersion {
+  version: number;
+  status: ArtifactStatus;
+  content: string;
+  generatedAt: string;
+  source: "generated" | "manual";
+}
+
+export interface ProjectArtifact {
+  draft?: ProjectArtifactVersion;
+  active?: ProjectArtifactVersion;
+}
+
+export interface DecisionEvent {
+  id: string;
+  timestamp: string;
+  actor: string;
+  event_type: string;
+  target_type: "project" | "profile" | "expectations" | "finding" | "audit";
+  target_id?: string;
+  notes?: string;
+  audit_kind?: AuditKind;
+  scope_type?: ScopeType;
+  scope_paths?: string[];
+  model?: string;
+  provider?: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+}
+
+export interface AuditScopeConfig {
+  auditKind?: AuditKind;
+  scopeType?: ScopeType;
+  scopePaths?: string[];
+  baseRef?: string;
+  headRef?: string;
+  maxFiles?: number;
+  maxCharsPerFile?: number;
+}
+
+export interface ProjectCommands {
+  test?: string;
+  lint?: string;
+  build?: string;
+  typecheck?: string;
+}
+
+export interface ProjectRepoAccess {
+  localPath?: string;
+  cloneRef?: string;
+  mirrorPath?: string;
+}
+
+export interface ProjectAuditConfig {
+  defaultBranch?: string;
+  scanRoots?: string[];
+  configFiles?: string[];
+  commands?: ProjectCommands;
+  entrypoints?: string[];
+  checklistId?: string;
+  preferredScopeType?: ScopeType;
+}
+
+export interface ProjectProfileSummary {
+  status?: string;
+  languages?: string[];
+  frameworks?: string[];
+  deployment?: string;
+  liveUrls?: string[];
+}
+
+export interface OnboardingState {
+  stage: OnboardingStage;
+  reviewRequired: boolean;
+  profileApprovedAt?: string;
+  expectationsApprovedAt?: string;
+  activatedAt?: string;
+  lastError?: string;
+  updatedAt: string;
+  events?: DecisionEvent[];
+}
+
+export interface ManifestModule {
+  path: string;
+  domain: string;
+  type: ManifestNodeType;
+  description: string;
+  complexity: ManifestComplexity;
+  entrypoint?: boolean;
+}
+
+export interface DomainCoverageSummary {
+  domain: string;
+  total_modules: number;
+  reviewed_modules: number;
+  finding_count: number;
+  last_audited_at?: string;
+}
+
+export interface ProjectManifest {
+  revision: string;
+  generated_at: string;
+  source_root: string;
+  exhaustiveness: AuditExhaustiveness;
+  modules: ManifestModule[];
+  domains: DomainCoverageSummary[];
+  checklist_id?: string;
+  entrypoints?: string[];
+}
+
+export interface AuditCoverage {
+  manifest_revision?: string;
+  checklist_id?: string;
+  exhaustiveness?: AuditExhaustiveness;
+  confidence?: "low" | "medium" | "high";
+  coverage_complete?: boolean;
+  incomplete_reason?: string;
+  files_in_scope?: string[];
+  files_reviewed?: string[];
+  modules_in_scope?: string[];
+  modules_reviewed?: string[];
+  known_finding_ids?: string[];
+  known_findings_referenced?: string[];
+  checklist_passed?: number;
+  checklist_total?: number;
+  net_new_findings?: number;
 }
 
 export interface Finding {
@@ -55,6 +290,11 @@ export interface Finding {
   proof_hooks?: ProofHook[];
   suggested_fix?: SuggestedFix;
   history?: HistoryEvent[];
+  duplicate_of?: string;
+  first_seen_at?: string;
+  last_seen_at?: string;
+  last_seen_revision?: string;
+  repair_policy?: RepairPolicy;
 }
 
 export interface Project {
@@ -62,6 +302,10 @@ export interface Project {
   findings: Finding[];
   lastUpdated?: string;
   repositoryUrl?: string;
+  status?: ProjectStatus;
+  sourceType?: ProjectSourceType;
+  sourceRef?: string;
+  repoAccess?: ProjectRepoAccess;
   /** Optional: stack/hosting from project.json.template */
   stack?: {
     language?: string;
@@ -71,6 +315,15 @@ export interface Project {
     database?: string;
     css?: string;
   };
+  auditConfig?: ProjectAuditConfig;
+  profile?: ProjectArtifact;
+  expectations?: ProjectArtifact;
+  onboardingState?: OnboardingState;
+  decisionHistory?: DecisionEvent[];
+  profileSummary?: ProjectProfileSummary;
+  manifest?: ProjectManifest;
+  maintenanceBacklog?: MaintenanceBacklogItem[];
+  maintenanceTasks?: MaintenanceTask[];
 }
 
 export interface SyncMapping {
@@ -96,6 +349,7 @@ export interface OpenFindingsSchema {
 
 /** A finding queued to the repair engine from the dashboard. */
 export interface RepairJob {
+  id?: string;
   finding_id: string;
   project_name: string;
   queued_at: string;
@@ -105,4 +359,50 @@ export interface RepairJob {
   provider_used?: string;
   completed_at?: string;
   error?: string;
+  targeted_files?: string[];
+  verification_commands?: string[];
+  rollback_notes?: string;
+  repair_policy?: RepairPolicy;
+  maintenance_task_id?: string;
+  backlog_id?: string;
+  provenance?: ProvenanceRef;
+}
+
+export interface MaintenanceBacklogItem {
+  id: string;
+  project_name: string;
+  title: string;
+  summary?: string;
+  canonical_status: MaintenanceBacklogStatus;
+  source_type: MaintenanceSourceType;
+  priority: Priority;
+  severity: Severity;
+  risk_class: RepairRiskClass;
+  next_action: NextActionRecommendation;
+  finding_ids: string[];
+  dedupe_keys?: string[];
+  duplicate_of?: string;
+  blocked_reason?: string;
+  provenance?: ProvenanceRef;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MaintenanceTask {
+  id: string;
+  project_name: string;
+  backlog_id: string;
+  title: string;
+  intended_outcome: string;
+  status: MaintenanceTaskStatus;
+  target_domains: string[];
+  target_files: string[];
+  risk_class: RepairRiskClass;
+  verification_profile?: VerificationProfile;
+  verification_commands?: string[];
+  rollback_notes?: string;
+  notes?: string;
+  provenance?: ProvenanceRef;
+  created_at?: string;
+  updated_at?: string;
 }

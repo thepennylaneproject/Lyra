@@ -15,6 +15,7 @@ import { bullmqConnectionFromEnv } from "@/lib/redis-bullmq";
 const JOB_TYPES: LyraJobType[] = [
   "weekly_audit",
   "onboard_project",
+  "onboard_repository",
   "re_audit_project",
   "synthesize_project",
   "audit_project",
@@ -30,7 +31,7 @@ export async function GET() {
     return NextResponse.json({
       configured: false,
       redis_configured: redisConfigured(),
-      enqueue_auth_optional: false,
+      enqueue_auth_optional: true,
       jobs: [],
       runs: [],
     });
@@ -43,7 +44,7 @@ export async function GET() {
     return NextResponse.json({
       configured: true,
       redis_configured: redisConfigured(),
-      enqueue_auth_optional: false,
+      enqueue_auth_optional: true,
       jobs,
       runs,
     });
@@ -68,6 +69,10 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const jobType = body.job_type as LyraJobType;
+    const payload =
+      typeof body.payload === "object" && body.payload !== null
+        ? (body.payload as Record<string, unknown>)
+        : {};
     if (!JOB_TYPES.includes(jobType)) {
       return NextResponse.json(
         {
@@ -86,10 +91,23 @@ export async function POST(request: Request) {
         typeof body.repository_url === "string"
           ? body.repository_url.trim() || null
           : null,
-      payload:
-        typeof body.payload === "object" && body.payload !== null
-          ? (body.payload as Record<string, unknown>)
-          : {},
+      manifest_revision:
+        typeof body.manifest_revision === "string"
+          ? body.manifest_revision.trim() || null
+          : typeof payload.manifest_revision === "string"
+            ? payload.manifest_revision.trim() || null
+          : null,
+      checklist_id:
+        typeof body.checklist_id === "string"
+          ? body.checklist_id.trim() || null
+          : typeof payload.checklist_id === "string"
+            ? payload.checklist_id.trim() || null
+          : null,
+      repo_ref:
+        typeof body.repo_ref === "string"
+          ? body.repo_ref.trim() || null
+          : null,
+      payload,
     });
 
     const connection = bullmqConnectionFromEnv();
@@ -142,4 +160,3 @@ export async function POST(request: Request) {
     );
   }
 }
-
