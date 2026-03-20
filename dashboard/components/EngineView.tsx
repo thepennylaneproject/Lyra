@@ -131,9 +131,11 @@ function ModelChip({ alias }: { alias: string }) {
 }
 
 export function EngineView() {
-  const [data,         setData]         = useState<EngineData | null>(null);
-  const [loading,      setLoading]      = useState(true);
-  const [routingError, setRoutingError] = useState<string | null>(null);
+  const [data,              setData]              = useState<EngineData | null>(null);
+  const [loading,           setLoading]           = useState(true);
+  const [routingError,      setRoutingError]      = useState<string | null>(null);
+  const [fullRoutingError,  setFullRoutingError]  = useState<string | null>(null);
+  const [expandError,       setExpandError]       = useState(false);
 
   const fetchAll = useCallback(async () => {
     setRoutingError(null);
@@ -145,7 +147,8 @@ export function EngineView() {
       ]);
       if (!routingRes.ok) {
         const errText = await routingRes.text();
-        setRoutingError(`Could not load routing (${routingRes.status}): ${errText.slice(0, 120)}`);
+        setFullRoutingError(errText);
+        setRoutingError(`Could not load routing (${routingRes.status})`);
       }
       const routing     = routingRes.ok  ? await routingRes.json()  : {};
       const status      = statusRes.ok   ? await statusRes.json()   : {};
@@ -276,8 +279,19 @@ export function EngineView() {
             >
               {routingError ? (
                 <>
-                  {routingError}
-                  <button type="button" onClick={() => fetchAll()} style={{ marginLeft: "0.5rem", fontSize: "11px" }}>
+                  <div>
+                    {expandError && fullRoutingError ? fullRoutingError : routingError}
+                    {fullRoutingError && fullRoutingError.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandError(!expandError)}
+                        style={{ marginLeft: "0.5rem", fontSize: "11px", textDecoration: "underline", border: "none", background: "none", color: "inherit", cursor: "pointer" }}
+                      >
+                        {expandError ? "hide" : "show details"}
+                      </button>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => fetchAll()} style={{ marginLeft: "0", marginTop: "0.5rem", fontSize: "11px" }}>
                     Retry
                   </button>
                 </>
