@@ -16,6 +16,7 @@ import { EngineView } from "@/components/EngineView";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { Shell, type NavView } from "@/components/Shell";
 import { STATUS_GROUPS, PRIORITY_ORDER, SEVERITY_ORDER, sortFindings } from "@/lib/constants";
+import { isInQueuedSet } from "@/lib/finding-validation";
 
 export default function Home() {
   const router = useRouter();
@@ -67,7 +68,11 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         setQueuedFindingIds(
-          new Set((data.queue ?? []).map((j: { finding_id: string }) => j.finding_id))
+          new Set(
+            (data.queue ?? []).map((j: { finding_id: string; project_name: string }) =>
+              j.project_name ? `${j.project_name}:${j.finding_id}` : j.finding_id
+            )
+          )
         );
         return;
       }
@@ -144,14 +149,20 @@ export default function Home() {
   );
 
   const handleImport = useCallback(async (project: Project) => {
-    const res = await apiFetch("/api/projects", {
+    // QA-008: Use /api/import which handles both create and update so that
+    // re-importing an existing project merges findings instead of returning 409.
+    const res = await apiFetch("/api/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(project),
+      body: JSON.stringify({
+        name: project.name,
+        open_findings: project.findings ?? [],
+        repositoryUrl: project.repositoryUrl,
+      }),
     });
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
-      throw new Error(error.error ?? "Failed to create project");
+      throw new Error(error.error ?? "Failed to import project");
     }
     await fetchProjects();
     setShowImport(false);
@@ -185,7 +196,7 @@ export default function Home() {
       body:    JSON.stringify({ finding_id: findingId, project_name: projectName }),
     });
     if (!res.ok) throw new Error("Failed to queue");
-    setQueuedFindingIds((prev) => new Set([...prev, findingId]));
+    setQueuedFindingIds((prev) => new Set([...prev, `${projectName}:${findingId}`]));
   }, []);
 
   const handleExport = useCallback((project: Project) => {
@@ -437,7 +448,7 @@ export default function Home() {
           priority={nextAction.priority ?? ""}
           severity={nextAction.severity ?? "nit"}
           projectName={nextAction._project}
-          isQueued={queuedFindingIds.has(nextAction.finding_id ?? "")}
+          isQueued={isInQueuedSet(queuedFindingIds, nextAction._project, nextAction.finding_id ?? "")}
           onQueue={() => handleQueueRepair(nextAction!.finding_id ?? "", nextAction!._project)}
           onOpen={() => setActiveProject(nextAction!._project)}
         />

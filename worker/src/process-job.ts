@@ -23,16 +23,24 @@ function repoRoot(): string {
 
 function loadPrompts(): { core: string; auditAgent: string } {
   const root = repoRoot();
-  const corePath = join(root, "core_system_prompt");
+  const corePath = join(root, "core_system_prompt.md");
   const auditPath = join(root, "audits", "prompts", "audit-agent.md");
-  const core = existsSync(corePath)
-    ? readFileSync(corePath, "utf-8")
-    : "You are Lyra. Output structured JSON findings.";
+  if (!existsSync(corePath)) {
+    throw new Error(`core_system_prompt.md not found at ${corePath}`);
+  }
+  const core = readFileSync(corePath, "utf-8");
   const auditAgent = existsSync(auditPath)
     ? readFileSync(auditPath, "utf-8")
     : "";
+  console.log(`[lyra-worker] prompts loaded: core=${corePath} audit=${auditPath || "(missing)"}`);
   return { core, auditAgent };
 }
+
+const ACTIVE_FINDING_STATUSES = new Set([
+  "open",
+  "accepted",
+  "in_progress",
+]);
 
 function mergeFindings2(
   existing: Array<Record<string, unknown>>,
@@ -44,15 +52,39 @@ function mergeFindings2(
     if (id) byId.set(id, { ...f });
   }
   let added = 0;
+  const incomingIds = new Set<string>();
   for (const f of incoming) {
     const id = String(f.finding_id ?? "");
     if (!id) continue;
+    incomingIds.add(id);
     if (!byId.has(id)) {
       byId.set(id, { ...f, status: f.status ?? "open" });
       added++;
     } else {
+      // Upsert audit content fields but preserve local workflow state
       const old = byId.get(id)!;
-      byId.set(id, { ...old, ...f, finding_id: id });
+      byId.set(id, {
+        ...old,
+        ...f,
+        finding_id: id,
+        // Preserve workflow fields from existing record
+        status: old.status ?? f.status ?? "open",
+        history: old.history ?? f.history,
+      });
+    }
+  }
+  // QA-001: Resolve stale active findings that the LLM no longer reports.
+  // Only do this when the re-audit actually produced findings; an empty
+  // incoming set more likely indicates an audit/LLM failure than every issue
+  // being fixed, so we leave existing findings untouched in that case.
+  if (existing.length > 0 && incoming.length > 0) {
+    for (const [id, f] of byId) {
+      if (
+        !incomingIds.has(id) &&
+        ACTIVE_FINDING_STATUSES.has(String(f.status ?? ""))
+      ) {
+        byId.set(id, { ...f, status: "fixed_verified" });
+      }
     }
   }
   return { merged: [...byId.values()], added };
@@ -122,10 +154,11 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       const existing = (prev?.findings ?? []) as Array<Record<string, unknown>>;
       const { merged, added } = mergeFindings2(existing, incoming);
       totalAdded += added;
+      // Spread prev to preserve all project fields (stack, repositoryUrl, etc.)
       await saveProject(pool, {
+        ...(prev ?? {}),
         name: app.projectName,
         findings: merged,
-        repositoryUrl: prev?.repositoryUrl ?? null,
         lastUpdated: new Date().toISOString(),
       });
       summaries.push(`${app.projectName}: +${added} findings`);
@@ -174,7 +207,11 @@ async function runSynthesize(
   core: string,
   auditAgent: string
 ): Promise<void> {
-  const projects = await listAllProjects(pool);
+  const allProjects = await listAllProjects(pool);
+  // When a project_name is set, scope the synthesis to that project only
+  const projects = job.project_name
+    ? allProjects.filter((p) => p.name === job.project_name)
+    : allProjects;
   const lines = projects.flatMap((p) =>
     (p.findings as Array<{ title?: string; severity?: string }>).map(
       (f) => `- [${p.name}] ${f.severity ?? "?"}: ${f.title ?? "?"}`
@@ -182,7 +219,8 @@ async function runSynthesize(
   );
   const blob = lines.slice(0, 200).join("\n") || "No findings yet.";
   const key = process.env.OPENAI_API_KEY?.trim();
-  let summary = `Portfolio: ${projects.length} projects, ${lines.length} finding lines.`;
+  const scopeLabel = job.project_name ? `project "${job.project_name}"` : "portfolio";
+  let summary = `${scopeLabel}: ${projects.length} project(s), ${lines.length} finding lines.`;
   if (key) {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -195,7 +233,7 @@ async function runSynthesize(
         messages: [
           {
             role: "system",
-            content: `${core}\nSummarize cross-portfolio audit themes in 2 short paragraphs.`,
+            content: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs.`,
           },
           { role: "user", content: blob },
         ],
@@ -215,6 +253,6 @@ async function runSynthesize(
     project_name: job.project_name,
     summary: summary.slice(0, 2000),
     findings_added: 0,
-    payload: { synthesized: true },
+    payload: { synthesized: true, scope: job.project_name ?? "portfolio" },
   });
 }

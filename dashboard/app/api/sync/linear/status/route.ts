@@ -5,16 +5,18 @@ import { getProjectSyncState } from "@/lib/sync-state";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const projectName = searchParams.get("project") ?? "";
-  if (!projectName.trim()) {
+  const rawName = searchParams.get("project") ?? "";
+  if (!rawName.trim()) {
     return NextResponse.json(
       { error: "project query param is required" },
       { status: 400 }
     );
   }
+  // Normalize once so both repo lookup and sync-state key are consistent
+  const projectName = rawName.trim();
 
   const repo = getRepository();
-  const project = await repo.getByName(projectName.trim());
+  const project = await repo.getByName(projectName);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }

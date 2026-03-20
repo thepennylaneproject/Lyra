@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Finding, FindingStatus } from "@/lib/types";
 import { Badge } from "./Badge";
 import { STATUS_GROUPS } from "@/lib/constants";
+import { isInQueuedSet } from "@/lib/finding-validation";
 
 const WORKFLOW_HINTS: Record<FindingStatus, string> = {
   open: "Finding is new and unresolved. Start work or defer.",

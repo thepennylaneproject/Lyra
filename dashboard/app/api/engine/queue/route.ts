@@ -38,7 +38,9 @@ export async function POST(request: Request) {
     }
 
     const queue = readRepairQueue();
-    const existing = queue.find((j) => j.finding_id === findingId);
+    const existing = queue.find(
+      (j) => j.finding_id === findingId && j.project_name === projectName
+    );
     if (existing) {
       return NextResponse.json({ job: existing, added: false });
     }
@@ -67,15 +69,32 @@ export async function DELETE(request: Request) {
     const body = await request.json();
     const findingId =
       typeof body.finding_id === "string" ? body.finding_id.trim() : "";
+    const projectName =
+      typeof body.project_name === "string" ? body.project_name.trim() : "";
     if (!findingId) {
       return NextResponse.json(
-        { error: "finding_id is required" },
+        { error: "finding_id and project_name are required" },
         { status: 400 }
       );
     }
 
     const queue = readRepairQueue();
-    const next = queue.filter((j) => j.finding_id !== findingId);
+    // Remove by composite key (project_name, finding_id) when project_name is provided,
+    // fall back to finding_id-only match for backwards compatibility.
+    let next: typeof queue;
+    if (projectName) {
+      next = queue.filter(
+        (j) => !(j.finding_id === findingId && j.project_name === projectName)
+      );
+    } else {
+      // Legacy path: no project_name supplied. Warn and fall back to finding_id only.
+      // This may remove entries from multiple projects if finding_ids are reused.
+      console.warn(
+        `DELETE /api/engine/queue called without project_name for finding_id=${findingId}. ` +
+          "Provide project_name to scope the removal correctly."
+      );
+      next = queue.filter((j) => j.finding_id !== findingId);
+    }
     writeRepairQueue(next);
 
     return NextResponse.json({ removed: queue.length - next.length });

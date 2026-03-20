@@ -143,26 +143,31 @@ class RepairOrchestrator:
         apply_msg = "no candidate selected"
         if selected:
             run.selected_node_id = selected.node_id
-            run.status = "applied"
+            candidate_passed = bool(selected.eval_summary and selected.eval_summary.result.passed)
             if self.config.apply.auto_apply:
-                ok, touched_files, apply_msg = apply_candidate_to_root(selected.candidate, self.repo_root, self.config.apply)
-                if ok:
-                    update_finding_after_apply(
-                        findings_file=os.path.join(self.repo_root, self.config.artifacts.findings_file),
-                        finding_id=finding.finding_id,
-                        run_id=run_id,
-                        selected_node_id=selected.node_id,
-                        touched_files=touched_files,
-                        notes=selected.candidate.notes,
-                    )
-                    if selected.eval_summary and selected.eval_summary.result.passed:
+                if not candidate_passed:
+                    # Do not auto-apply a non-passing candidate (ARCH-016)
+                    run.status = "selected"
+                    apply_msg = "no passing candidate; skipped auto-apply"
+                else:
+                    run.status = "applied"
+                    ok, touched_files, apply_msg = apply_candidate_to_root(selected.candidate, self.repo_root, self.config.apply)
+                    if ok:
+                        update_finding_after_apply(
+                            findings_file=os.path.join(self.repo_root, self.config.artifacts.findings_file),
+                            finding_id=finding.finding_id,
+                            run_id=run_id,
+                            selected_node_id=selected.node_id,
+                            touched_files=touched_files,
+                            notes=selected.candidate.notes,
+                        )
                         try:
                             self.memory.ensure_collection()
                             self.memory.remember_success(finding, selected.candidate, selected.score)
                         except Exception:
                             pass
-                else:
-                    run.status = "failed"
+                    else:
+                        run.status = "failed"
             else:
                 run.status = "selected"
 
