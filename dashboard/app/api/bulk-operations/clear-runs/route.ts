@@ -1,0 +1,82 @@
+import { NextResponse } from "next/server";
+import { createPostgresPool } from "@/lib/postgres";
+import { apiErrorMessage } from "@/lib/api-error";
+import { recordDurableEventBestEffort } from "@/lib/durable-state";
+
+/**
+ * POST /api/bulk-operations/clear-runs
+ *
+ * Delete all completed audit runs for a specific project (or all projects if not specified).
+ * This is useful for clearing out old audit history to start fresh.
+ *
+ * Request body:
+ *   {
+ *     "project_name": "ProjectName" (optional; if omitted, clears all projects)
+ *   }
+ *
+ * Response:
+ *   {
+ *     "ok": true,
+ *     "runs_deleted": N,
+ *     "project_name": "ProjectName" or null
+ *   }
+ *
+ * Auth: Required (handled by middleware)
+ */
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json().catch(() => ({}))) as {
+      project_name?: string;
+    };
+
+    const projectName = body.project_name
+      ? String(body.project_name).trim()
+      : null;
+
+    if (projectName && !projectName.match(/^[a-zA-Z0-9_\-]+$/)) {
+      return NextResponse.json(
+        { error: "Invalid project name format" },
+        { status: 400 }
+      );
+    }
+
+    const pool = createPostgresPool();
+    let query = "DELETE FROM lyra_audit_runs";
+    const params: unknown[] = [];
+
+    if (projectName) {
+      query += " WHERE LOWER(TRIM(project_name)) = LOWER(TRIM($1))";
+      params.push(projectName);
+    }
+
+    query += " RETURNING id";
+
+    const result = await pool.query(query, params);
+    const runsDeleted = result.length;
+
+    await recordDurableEventBestEffort({
+      event_type: "bulk_operation_clear_runs",
+      project_name: projectName,
+      source: "bulk_operations_api",
+      summary: `Cleared ${runsDeleted} audit runs${
+        projectName ? ` for project ${projectName}` : " across all projects"
+      }`,
+      payload: {
+        runs_deleted: runsDeleted,
+        project_name: projectName,
+      },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      runs_deleted: runsDeleted,
+      project_name: projectName,
+    });
+  } catch (e) {
+    console.error("POST /api/bulk-operations/clear-runs", e);
+    return NextResponse.json(
+      { error: apiErrorMessage(e) },
+      { status: 500 }
+    );
+  }
+}
