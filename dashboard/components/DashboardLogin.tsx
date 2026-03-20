@@ -76,12 +76,22 @@ export function DashboardLogin({ onSuccess }: { onSuccess: () => void }) {
           Sign in
         </h1>
         <p style={{ fontSize: "12px", color: "var(--ink-text-3)", marginBottom: "1rem", lineHeight: 1.5 }}>
-          Enter the same value as{" "}
-          <code style={{ fontSize: "11px" }}>DASHBOARD_API_SECRET</code> or{" "}
-          <code style={{ fontSize: "11px" }}>ORCHESTRATION_ENQUEUE_SECRET</code>{" "}
-          from <strong>dashboard/.env.local</strong> (local dev) or <strong>Netlify env</strong> (production). CI and Netlify functions use{" "}
-          <code style={{ fontSize: "11px" }}>Authorization: Bearer …</code>.
+          Enter your API secret to unlock the dashboard.
         </p>
+        <div style={{ fontSize: "11px", color: "var(--ink-text-4)", marginBottom: "1rem", lineHeight: 1.6 }}>
+          <div style={{ marginBottom: "0.5rem" }}>
+            <strong style={{ color: "var(--ink-text-2)" }}>Local dev:</strong>{" "}
+            <code style={{ fontSize: "10px" }}>DASHBOARD_API_SECRET</code> from <code style={{ fontSize: "10px" }}>dashboard/.env.local</code>
+          </div>
+          <div style={{ marginBottom: "0.5rem" }}>
+            <strong style={{ color: "var(--ink-text-2)" }}>Production:</strong>{" "}
+            <code style={{ fontSize: "10px" }}>ORCHESTRATION_ENQUEUE_SECRET</code> from Netlify environment
+          </div>
+          <div>
+            <strong style={{ color: "var(--ink-text-2)" }}>CI/Workers:</strong> Use{" "}
+            <code style={{ fontSize: "10px" }}>Authorization: Bearer [same value]</code>
+          </div>
+        </div>
         <label
           htmlFor="dashboard-secret"
           style={{

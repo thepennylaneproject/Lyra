@@ -292,17 +292,6 @@ export function OrchestrationPanel() {
     );
   }
 
-  if (!data) {
-    if (loadError) {
-      return (
-        <div style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--color-text-danger)", marginBottom: "1rem" }}>
-          {loadError}
-        </div>
-      );
-    }
-    return null;
-  }
-
   const canEnqueue =
     jobsConfigured &&
     (enqueueAuthOptional || enqueueSecret.trim().length > 0);
@@ -321,10 +310,43 @@ export function OrchestrationPanel() {
         <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-text-4)" }}>
           Orchestration (Supabase + BullMQ)
         </div>
-        <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: jobsConfigured ? "var(--ink-green)" : "var(--ink-amber)" }}>
-          {jobsConfigured ? `jobs DB · redis ${redisConfigured ? "on" : "poll mode"}` : "DATABASE_URL + migrations required"}
-        </div>
+        {data && (
+          <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: jobsConfigured ? "var(--ink-green)" : "var(--ink-amber)" }}>
+            {jobsConfigured ? `jobs DB · redis ${redisConfigured ? "on" : "poll mode"}` : "DATABASE_URL + migrations required"}
+          </div>
+        )}
       </div>
+
+      {!data && loadError && (
+        <div
+          style={{
+            marginBottom: "0.75rem",
+            padding: "0.75rem 0.85rem",
+            borderRadius: "var(--radius-md)",
+            background: "var(--ink-bg-sunken)",
+            border: "0.5px solid var(--ink-border-faint)",
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-red)",
+            lineHeight: 1.45,
+          }}
+        >
+          <strong>Orchestration unavailable:</strong> {loadError}
+          <button
+            type="button"
+            onClick={() => load(undefined, { bypassCache: true })}
+            style={{ marginLeft: "0.5rem", fontSize: "11px", textDecoration: "underline", cursor: "pointer", border: "none", background: "none", color: "inherit" }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!data && !loadError && (
+        <div style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+          Initializing orchestration...
+        </div>
+      )}
 
       <div style={{ marginBottom: "0.75rem" }}>
         <label style={{ fontSize: "9px", color: "var(--ink-text-4)", display: "block", marginBottom: "0.25rem" }}>
@@ -339,19 +361,21 @@ export function OrchestrationPanel() {
         />
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-          gap: "1rem",
-          marginBottom: "1rem",
-        }}
-      >
-        <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Projects</div><div style={{ fontSize: "22px" }}>{data.summary.total_projects}</div></div>
-        <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Onboarding</div><div style={{ fontSize: "22px" }}>{data.summary.onboarding}</div></div>
-        <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Visual gaps</div><div style={{ fontSize: "22px" }}>{data.summary.visual_audit_missing}</div></div>
-        <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Re-audit due</div><div style={{ fontSize: "22px" }}>{data.summary.audit_due}</div></div>
-      </div>
+      {data && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+            gap: "1rem",
+            marginBottom: "1rem",
+          }}
+        >
+          <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Projects</div><div style={{ fontSize: "22px" }}>{data.summary.total_projects}</div></div>
+          <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Onboarding</div><div style={{ fontSize: "22px" }}>{data.summary.onboarding}</div></div>
+          <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Visual gaps</div><div style={{ fontSize: "22px" }}>{data.summary.visual_audit_missing}</div></div>
+          <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Re-audit due</div><div style={{ fontSize: "22px" }}>{data.summary.audit_due}</div></div>
+        </div>
+      )}
 
       {jobsLoadError && (
         <div
@@ -502,11 +526,13 @@ export function OrchestrationPanel() {
         </div>
       )}
 
-      <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-text-4)", marginBottom: "0.5rem" }}>
-        Next actions → enqueue job
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        {data.projects.slice(0, 5).map((project) => (
+      {data && (
+        <>
+          <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-text-4)", marginBottom: "0.5rem" }}>
+            Next actions → enqueue job
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {data.projects.slice(0, 5).map((project) => (
           <div key={project.project_name} style={{ display: "flex", justifyContent: "space-between", gap: "1rem", fontSize: "12px", alignItems: "center" }}>
             <div>
               <div style={{ color: "var(--ink-text-2)" }}>{project.project_name}</div>
@@ -531,9 +557,11 @@ export function OrchestrationPanel() {
             </div>
           </div>
         ))}
-      </div>
+          </div>
+        </>
+      )}
 
-      {durable?.configured && (
+      {data && durable?.configured && (
         <div style={{ marginTop: "0.9rem", borderTop: "0.5px solid var(--ink-border-faint)", paddingTop: "0.9rem" }}>
           <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-text-4)", marginBottom: "0.5rem" }}>
             Recent durable events

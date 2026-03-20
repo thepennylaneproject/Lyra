@@ -14,6 +14,13 @@ import { STATUS_GROUPS, sortFindings } from "@/lib/constants";
 
 type FilterKey = "active" | "pending" | "resolved" | "all";
 
+const FILTER_LABELS: Record<FilterKey, string> = {
+  active: "active",
+  pending: "pending verification",
+  resolved: "resolved",
+  all: "all",
+};
+
 interface ProjectViewProps {
   project:           Project;
   onBack:            () => void;
@@ -110,8 +117,8 @@ export function ProjectView({
           </a>
         )}
         {canShip && (
-          <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-green)" }}>
-            ✓ ship
+          <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-green)" }} title="No blockers or open questions. Ready to deploy.">
+            ✓ ready to deploy
           </span>
         )}
         {!canShip && blockers > 0 && (
@@ -132,7 +139,7 @@ export function ProjectView({
       >
         <MetricCard label="Total"         value={total} />
         <MetricCard label="Active"        value={counts.active}  accent={counts.active  > 0 ? "var(--ink-amber)" : undefined} />
-        <MetricCard label="Pending"       value={counts.pending} />
+        <MetricCard label="Pending verification" value={counts.pending} />
         <MetricCard label="Resolved"      value={resolved}       accent={resolved > 0 ? "var(--ink-green)" : undefined} />
         <MetricCard label="Blockers"      value={blockers}       accent={blockers > 0 ? "var(--ink-red)"   : undefined} />
         <MetricCard label="Questions"     value={questions}      accent={questions > 0 ? "var(--ink-blue)" : undefined} />
@@ -231,7 +238,7 @@ export function ProjectView({
               color:       filter === f ? "var(--ink-text)" : "var(--ink-text-4)",
             }}
           >
-            {f}{f !== "all" && ` (${counts[f] ?? 0})`}
+            {FILTER_LABELS[f]}{f !== "all" && ` (${counts[f] ?? 0})`}
           </button>
         ))}
         <input
@@ -254,8 +261,20 @@ export function ProjectView({
       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
         {filtered.length === 0 && (
           <EmptyState
-            icon="✓"
-            title={filter === "active" ? "No active findings" : "No findings match"}
+            icon={
+              total === 0 ? "◆" : // No findings ever found
+              filter === "active" && resolved === total ? "✓" : // All resolved
+              "→" // Filtered to nothing
+            }
+            title={
+              total === 0
+                ? "No findings. Run an audit to discover issues."
+                : filter === "active" && resolved === total
+                ? "All findings resolved. Ready to deploy."
+                : filter === "active"
+                ? "No active findings"
+                : "No findings match this filter"
+            }
           />
         )}
         {filtered.map((f) => (

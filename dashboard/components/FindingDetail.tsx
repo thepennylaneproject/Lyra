@@ -4,6 +4,18 @@ import { Badge } from "./Badge";
 import { STATUS_GROUPS } from "@/lib/constants";
 import { isInQueuedSet } from "@/lib/finding-validation";
 
+const WORKFLOW_HINTS: Record<FindingStatus, string> = {
+  open: "Finding is new and unresolved. Start work or defer.",
+  accepted: "Finding is acknowledged and pending action.",
+  in_progress: "You're actively working on this fix.",
+  fixed_pending_verify: "Fix is implemented; awaiting verification.",
+  fixed_verified: "Fix has been verified and is complete.",
+  wont_fix: "You've decided not to fix this.",
+  deferred: "Fix postponed for later.",
+  duplicate: "This is a duplicate of another finding.",
+  converted_to_enhancement: "This has been converted to an enhancement request.",
+};
+
 const SEVERITY_BORDER: Record<string, string> = {
   blocker: "var(--ink-red)",
   major:   "var(--ink-amber)",
@@ -48,9 +60,19 @@ export function FindingDetail({
 }: FindingDetailProps) {
   const [queueing, setQueueing] = useState(false);
   const [queueMsg, setQueueMsg] = useState<string | null>(null);
-  const isQueued = isInQueuedSet(queuedFindingIds, projectName, finding.finding_id);
+  const [actionInFlight, setActionInFlight] = useState<string | null>(null);
+  const isQueued = queuedFindingIds?.has(finding.finding_id) ?? false;
   const fix      = typeof finding.suggested_fix === "object" ? finding.suggested_fix : {};
   const stripe   = SEVERITY_BORDER[finding.severity ?? ""] ?? "var(--ink-border)";
+
+  const handleAction = async (status: FindingStatus) => {
+    setActionInFlight(status);
+    try {
+      await onAction(finding.finding_id, status);
+    } finally {
+      setActionInFlight(null);
+    }
+  };
 
   return (
     <div
@@ -224,6 +246,25 @@ export function FindingDetail({
         </div>
       )}
 
+      {/* Status workflow hint */}
+      {finding.status && (
+        <div
+          style={{
+            fontSize: "12px",
+            color: "var(--ink-text-2)",
+            lineHeight: 1.5,
+            marginBottom: "1rem",
+            padding: "0.75rem 0.85rem",
+            background: "var(--ink-bg-sunken)",
+            borderRadius: "var(--radius-md)",
+            border: "0.5px solid var(--ink-border-faint)",
+          }}
+        >
+          <strong style={{ color: "var(--ink-text)" }}>Status:</strong>{" "}
+          {WORKFLOW_HINTS[finding.status] ?? "Unknown status"}
+        </div>
+      )}
+
       {/* Actions */}
       <div
         style={{
@@ -240,32 +281,36 @@ export function FindingDetail({
           <>
             <button
               type="button"
-              onClick={() => onAction(finding.finding_id, "in_progress")}
+              disabled={actionInFlight !== null}
+              onClick={() => handleAction("in_progress")}
             >
-              Start fix
+              {actionInFlight === "in_progress" ? "…" : "Start fix"}
             </button>
             <button
               type="button"
-              onClick={() => onAction(finding.finding_id, "deferred")}
+              disabled={actionInFlight !== null}
+              onClick={() => handleAction("deferred")}
             >
-              Defer
+              {actionInFlight === "deferred" ? "…" : "Defer"}
             </button>
           </>
         )}
         {finding.status === "in_progress" && (
           <button
             type="button"
-            onClick={() => onAction(finding.finding_id, "fixed_pending_verify")}
+            disabled={actionInFlight !== null}
+            onClick={() => handleAction("fixed_pending_verify")}
           >
-            Mark done
+            {actionInFlight === "fixed_pending_verify" ? "…" : "Mark done"}
           </button>
         )}
         {finding.status === "fixed_pending_verify" && (
           <button
             type="button"
-            onClick={() => onAction(finding.finding_id, "fixed_verified")}
+            disabled={actionInFlight !== null}
+            onClick={() => handleAction("fixed_verified")}
           >
-            Verify fix
+            {actionInFlight === "fixed_verified" ? "…" : "Verify fix"}
           </button>
         )}
 
@@ -279,9 +324,9 @@ export function FindingDetail({
                 setQueueMsg(null);
                 try {
                   await onQueueRepair(finding.finding_id, projectName);
-                  setQueueMsg("Queued.");
+                  setQueueMsg("✓ queued for repair");
                 } catch {
-                  setQueueMsg("Failed.");
+                  setQueueMsg("✗ failed to queue");
                 } finally {
                   setQueueing(false);
                 }
@@ -303,7 +348,13 @@ export function FindingDetail({
             </span>
           )}
           {queueMsg && !isQueued && (
-            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+            <span
+              style={{
+                fontSize: "11px",
+                fontFamily: "var(--font-mono)",
+                color: queueMsg.includes("✓") ? "var(--ink-green)" : "var(--ink-red)",
+              }}
+            >
               {queueMsg}
             </span>
           )}

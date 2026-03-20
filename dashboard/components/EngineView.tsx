@@ -66,6 +66,15 @@ const STATUS_MARK: Record<string, { symbol: string; color: string }> = {
   failed:    { symbol: "✗",  color: "var(--ink-red)" },
 };
 
+const TASK_LABELS: Record<string, string> = {
+  generate_pseudo_code_fixes: "Code fix generation",
+  apply_code_patches: "Patch application",
+  run_tests: "Test execution",
+  validate_output: "Output validation",
+  analyze_findings: "Finding analysis",
+  generate_summary: "Summary generation",
+};
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -122,9 +131,11 @@ function ModelChip({ alias }: { alias: string }) {
 }
 
 export function EngineView() {
-  const [data,         setData]         = useState<EngineData | null>(null);
-  const [loading,      setLoading]      = useState(true);
-  const [routingError, setRoutingError] = useState<string | null>(null);
+  const [data,              setData]              = useState<EngineData | null>(null);
+  const [loading,           setLoading]           = useState(true);
+  const [routingError,      setRoutingError]      = useState<string | null>(null);
+  const [fullRoutingError,  setFullRoutingError]  = useState<string | null>(null);
+  const [expandError,       setExpandError]       = useState(false);
 
   const fetchAll = useCallback(async () => {
     setRoutingError(null);
@@ -136,7 +147,8 @@ export function EngineView() {
       ]);
       if (!routingRes.ok) {
         const errText = await routingRes.text();
-        setRoutingError(`Could not load routing (${routingRes.status}): ${errText.slice(0, 120)}`);
+        setFullRoutingError(errText);
+        setRoutingError(`Could not load routing (${routingRes.status})`);
       }
       const routing     = routingRes.ok  ? await routingRes.json()  : {};
       const status      = statusRes.ok   ? await statusRes.json()   : {};
@@ -219,9 +231,9 @@ export function EngineView() {
               key={task}
               style={{
                 display:       "grid",
-                gridTemplateColumns: "1fr auto auto",
+                gridTemplateColumns: "1fr auto auto auto",
                 alignItems:    "center",
-                gap:           "1rem",
+                gap:           "0.75rem",
                 padding:       "0.625rem 0",
                 borderBottom:  "0.5px solid var(--ink-border-faint)",
               }}
@@ -233,7 +245,16 @@ export function EngineView() {
                   color:      "var(--ink-text-2)",
                 }}
               >
-                {task.replace(/_/g, " ")}
+                {TASK_LABELS[task] ?? task.replace(/_/g, " ")}
+              </span>
+              <span
+                style={{
+                  fontSize:   "9px",
+                  fontFamily: "var(--font-mono)",
+                  color:      "var(--ink-text-4)",
+                }}
+              >
+                ({task})
               </span>
               <ModelChip alias={route.primary} />
               <span
@@ -258,8 +279,19 @@ export function EngineView() {
             >
               {routingError ? (
                 <>
-                  {routingError}
-                  <button type="button" onClick={() => fetchAll()} style={{ marginLeft: "0.5rem", fontSize: "11px" }}>
+                  <div>
+                    {expandError && fullRoutingError ? fullRoutingError : routingError}
+                    {fullRoutingError && fullRoutingError.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandError(!expandError)}
+                        style={{ marginLeft: "0.5rem", fontSize: "11px", textDecoration: "underline", border: "none", background: "none", color: "inherit", cursor: "pointer" }}
+                      >
+                        {expandError ? "hide" : "show details"}
+                      </button>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => fetchAll()} style={{ marginLeft: "0", marginTop: "0.5rem", fontSize: "11px" }}>
                     Retry
                   </button>
                 </>
