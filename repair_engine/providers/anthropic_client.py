@@ -61,10 +61,10 @@ class AnthropicClient:
             "x-api-key": self.api_key,
             "anthropic-version": ANTHROPIC_API_VERSION,
         }
-        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        http_request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read())
+            with urllib.request.urlopen(http_request, timeout=self.timeout) as http_response:
+                return json.loads(http_response.read())
         except urllib.error.HTTPError as exc:
             text = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(
@@ -90,8 +90,8 @@ class AnthropicClient:
         results: list[str] = [""] * len(prompts)
         with ThreadPoolExecutor(max_workers=max(1, concurrency)) as executor:
             futures = {
-                executor.submit(self.complete, p, temperature, max_tokens): i
-                for i, p in enumerate(prompts)
+                executor.submit(self.complete, prompt_text, temperature, max_tokens): prompt_index
+                for prompt_index, prompt_text in enumerate(prompts)
             }
             for fut in as_completed(futures):
                 idx = futures[fut]

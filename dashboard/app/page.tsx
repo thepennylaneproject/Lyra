@@ -50,10 +50,10 @@ export default function Home() {
       }
       const data = await res.json();
       setProjects(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error("Failed to fetch projects", e);
+    } catch (error) {
+      console.error("Failed to fetch projects", error);
       setProjectsError(
-        e instanceof Error ? e.message : "Network error loading projects."
+        error instanceof Error ? error.message : "Network error loading projects."
       );
       setProjects([]);
     } finally {
@@ -82,9 +82,9 @@ export default function Home() {
           ? body.error
           : `Repair queue could not be loaded (${res.status}). “Queued” badges may be wrong.`;
       setQueueError(msg);
-    } catch (e) {
+    } catch (error) {
       setQueueError(
-        e instanceof Error ? e.message : "Network error loading repair queue."
+        error instanceof Error ? error.message : "Network error loading repair queue."
       );
     }
   }, []);
@@ -95,10 +95,10 @@ export default function Home() {
   }, [fetchProjects, fetchQueue]);
 
   useLayoutEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const p = q.get("project");
-    if (p) setActiveProject(p);
-    if (q.get("view") === "engine") setActiveView("engine");
+    const searchParams = new URLSearchParams(window.location.search);
+    const projectParam = searchParams.get("project");
+    if (projectParam) setActiveProject(projectParam);
+    if (searchParams.get("view") === "engine") setActiveView("engine");
   }, []);
 
   useEffect(() => {
@@ -118,9 +118,9 @@ export default function Home() {
     try {
       const res = await apiFetch(`/api/projects/${encodeURIComponent(activeProject)}`);
       if (!res.ok) return null;
-      const p = await res.json();
-      setProjects((prev) => prev.map((x) => (x.name === activeProject ? p : x)));
-      return p;
+      const projectData = await res.json();
+      setProjects((prev) => prev.map((x) => (x.name === activeProject ? projectData : x)));
+      return projectData;
     } catch {
       return null;
     }
@@ -203,8 +203,8 @@ export default function Home() {
           ? body.error
           : `Could not remove project (${res.status}). Try again.`
       );
-    } catch (e) {
-      setRemoveError(e instanceof Error ? e.message : "Network error while removing project.");
+    } catch (error) {
+      setRemoveError(error instanceof Error ? error.message : "Network error while removing project.");
     }
   }, [activeProject]);
 
@@ -273,25 +273,25 @@ export default function Home() {
   // ── Portfolio view ──
 
   // Compute portfolio totals
-  const totalFindings = projects.reduce((s, p) => s + (p.findings?.length ?? 0), 0);
-  const totalBacklog = projects.reduce((s, p) => s + (p.maintenanceBacklog?.length ?? 0), 0);
+  const totalFindings = projects.reduce((acc, project) => acc + (project.findings?.length ?? 0), 0);
+  const totalBacklog = projects.reduce((acc, project) => acc + (project.maintenanceBacklog?.length ?? 0), 0);
   const totalBlockers = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => f.severity === "blocker" && STATUS_GROUPS.active.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => f.severity === "blocker" && STATUS_GROUPS.active.includes(f.status)).length,
     0
   );
   const totalActive   = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => STATUS_GROUPS.active.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => STATUS_GROUPS.active.includes(f.status)).length,
     0
   );
   const totalResolved = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => STATUS_GROUPS.resolved.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => STATUS_GROUPS.resolved.includes(f.status)).length,
     0
   );
-  const shippable = projects.filter((p) => {
-    const f = p.findings ?? [];
-    const b = f.filter((x) => x.severity === "blocker" && STATUS_GROUPS.active.includes(x.status)).length;
-    const q = f.filter((x) => x.type === "question" && STATUS_GROUPS.active.includes(x.status)).length;
-    return f.length > 0 && b === 0 && q === 0;
+  const shippable = projects.filter((project) => {
+    const findings = project.findings ?? [];
+    const blockerCount = findings.filter((x) => x.severity === "blocker" && STATUS_GROUPS.active.includes(x.status)).length;
+    const questionCount = findings.filter((x) => x.type === "question" && STATUS_GROUPS.active.includes(x.status)).length;
+    return findings.length > 0 && blockerCount === 0 && questionCount === 0;
   }).length;
 
   // Compute next action across all projects

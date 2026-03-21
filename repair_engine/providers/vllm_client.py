@@ -20,10 +20,10 @@ class VLLMClient:
         headers = {"content-type": "application/json"}
         if self.api_key:
             headers["authorization"] = f"Bearer {self.api_key}"
-        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        http_request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read())
+            with urllib.request.urlopen(http_request, timeout=self.timeout) as http_response:
+                return json.loads(http_response.read())
         except urllib.error.HTTPError as exc:
             text = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"vLLM request failed ({exc.code}): {text[:500]}") from exc

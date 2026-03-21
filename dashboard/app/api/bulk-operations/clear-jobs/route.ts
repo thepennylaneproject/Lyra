@@ -99,10 +99,10 @@ export async function POST(request: Request) {
       project_name: projectName,
       status_filter: statusFilter,
     });
-  } catch (e) {
-    console.error("POST /api/bulk-operations/clear-jobs", e);
+  } catch (error) {
+    console.error("POST /api/bulk-operations/clear-jobs", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

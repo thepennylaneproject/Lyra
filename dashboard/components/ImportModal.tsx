@@ -54,8 +54,8 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
   }
 
   function loadFile(file: File) {
-    const n = file.name.replace("open_findings", "").replace(".json", "").replace(/^[-_]/, "");
-    if (!name && n) setName(n);
+    const derivedName = file.name.replace("open_findings", "").replace(".json", "").replace(/^[-_]/, "");
+    if (!name && derivedName) setName(derivedName);
     const reader = new FileReader();
     reader.onload = (ev) => setJsonText((ev.target?.result as string) ?? "");
     reader.readAsText(file);

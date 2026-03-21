@@ -56,10 +56,10 @@ export async function POST(request: Request) {
   if (!dryRun) {
     try {
       states = await getTeamStates();
-    } catch (e) {
-      console.error("sync/linear/push getTeamStates", e);
+    } catch (error) {
+      console.error("sync/linear/push getTeamStates", error);
       return NextResponse.json(
-        { error: apiErrorMessage(e) },
+        { error: apiErrorMessage(error) },
         { status: 502 }
       );
     }
@@ -107,9 +107,9 @@ export async function POST(request: Request) {
               failed += 1;
               errors.push(`update ${fid}: stateId not resolved or API returned false`);
             }
-          } catch (e) {
+          } catch (error) {
             failed += 1;
-            errors.push(`update ${fid}: ${e instanceof Error ? e.message : String(e)}`);
+            errors.push(`update ${fid}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
       } else {

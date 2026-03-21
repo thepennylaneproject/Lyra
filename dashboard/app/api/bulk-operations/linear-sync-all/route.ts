@@ -117,10 +117,10 @@ export async function POST(request: Request) {
       project_summaries: projectSummaries,
       message: `Queued ${totalSyncedFindings} finding(s) for Linear sync across ${projectSummaries.length} project(s). Sync will complete in the background.`,
     });
-  } catch (e) {
-    console.error("POST /api/bulk-operations/linear-sync-all", e);
+  } catch (error) {
+    console.error("POST /api/bulk-operations/linear-sync-all", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

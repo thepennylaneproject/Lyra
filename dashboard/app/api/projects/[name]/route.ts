@@ -14,10 +14,10 @@ export async function GET(_request: Request, { params }: Params) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
     return NextResponse.json(project);
-  } catch (e) {
-    console.error("GET /api/projects/[name]", e);
+  } catch (error) {
+    console.error("GET /api/projects/[name]", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -54,10 +54,10 @@ export async function PUT(request: Request, { params }: Params) {
     };
     const project = await repo.update(updated);
     return NextResponse.json(project);
-  } catch (e) {
-    console.error("PUT /api/projects/[name]", e);
+  } catch (error) {
+    console.error("PUT /api/projects/[name]", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -73,10 +73,10 @@ export async function DELETE(_request: Request, { params }: Params) {
     }
     await repo.delete(existing.name);
     return new NextResponse(null, { status: 204 });
-  } catch (e) {
-    console.error("DELETE /api/projects/[name]", e);
+  } catch (error) {
+    console.error("DELETE /api/projects/[name]", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
