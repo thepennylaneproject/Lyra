@@ -11,7 +11,7 @@
 -- Create the new normalized table
 create table if not exists public.lyra_linear_sync_new (
   project_name text not null,
-  finding_id uuid not null,
+  finding_id text not null,
   linear_issue_id text not null,
   linear_team_key text,
   synced_at timestamptz not null default now(),
@@ -45,7 +45,7 @@ comment on column public.lyra_linear_sync_new.project_name is
   'Project that contains the finding';
 
 comment on column public.lyra_linear_sync_new.finding_id is
-  'UUID of the Lyra finding';
+  'Lyra finding identifier (string; may be UUID or e.g. appname-finding-0)';
 
 comment on column public.lyra_linear_sync_new.linear_issue_id is
   'Linear issue ID (e.g., "ENG-123")';
