@@ -27,7 +27,8 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from .base import CompletionMixin
 
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_API_VERSION = "2023-06-01"
@@ -39,7 +40,7 @@ ANTHROPIC_MODELS: dict[str, str] = {
 }
 
 
-class AnthropicClient:
+class AnthropicClient(CompletionMixin):
     """Anthropic Messages API client implementing the CompletionProvider protocol."""
 
     def __init__(self, model: str, api_key: str, timeout: int = 120) -> None:
@@ -77,29 +78,6 @@ class AnthropicClient:
         if not content:
             return ""
         return content[0].get("text", "")
-
-    def complete_many(
-        self,
-        prompts: list[str],
-        temperature: float = 0.4,
-        max_tokens: int = 1500,
-        concurrency: int = 8,
-    ) -> list[str]:
-        if not prompts:
-            return []
-        results: list[str] = [""] * len(prompts)
-        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as executor:
-            futures = {
-                executor.submit(self.complete, p, temperature, max_tokens): i
-                for i, p in enumerate(prompts)
-            }
-            for fut in as_completed(futures):
-                idx = futures[fut]
-                try:
-                    results[idx] = fut.result()
-                except Exception:
-                    results[idx] = ""
-        return results
 
 
 def build_anthropic_client(

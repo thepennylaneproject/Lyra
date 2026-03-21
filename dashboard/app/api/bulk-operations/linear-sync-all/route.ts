@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
-import { apiErrorMessage } from "@/lib/api-error";
+import { apiErrorMessage, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 
 /**
@@ -30,9 +30,9 @@ import { recordDurableEventBestEffort } from "@/lib/durable-state";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as {
+    const body = await parseJsonBody<{
       team_key?: string;
-    };
+    }>(request);
 
     const teamKey = body.team_key ? String(body.team_key).trim() : null;
 
