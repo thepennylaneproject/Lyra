@@ -88,7 +88,7 @@ export async function POST(request: Request) {
         `INSERT INTO lyra_linear_sync_new (project_name, finding_id, linear_issue_id, linear_team_key)
          VALUES ($1, $2, '', $3)
          ON CONFLICT (project_name, finding_id) DO UPDATE SET
-           linear_team_key = COALESCE($3, linear_team_key),
+           linear_team_key = COALESCE($3, lyra_linear_sync_new.linear_team_key),
            updated_at = now()`,
         [projectName, fId, teamKey]
       )
