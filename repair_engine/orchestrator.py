@@ -12,6 +12,7 @@ from .config import EngineConfig
 from .evaluator.docker_runner import DockerEvaluator
 from .generation import generate_root_candidates, refine_candidates
 from .ingestion import IngestionFilters, filter_findings, load_findings
+from .integrations.dashboard_client import DashboardClient
 from .localization import localize_fault
 from .memory.qdrant_store import QdrantMemoryStore
 from .models import EvalSummary, Finding, PatchCandidate, RepairRun
@@ -31,6 +32,12 @@ class RepairOrchestrator:
             config.integrations.qdrant_url,
             config.integrations.qdrant_collection,
         )
+        # Initialize dashboard client if configured
+        self.dashboard_client: DashboardClient | None = None
+        dashboard_url = os.getenv("LYRA_DASHBOARD_URL", "")
+        dashboard_key = os.getenv("LYRA_DASHBOARD_API_KEY", "")
+        if dashboard_url:
+            self.dashboard_client = DashboardClient(dashboard_url, dashboard_key)
 
     def _run_dir(self, run_id: str) -> Path:
         run_dir = Path(self.repo_root) / self.config.artifacts.runs_root / run_id
@@ -72,6 +79,37 @@ class RepairOrchestrator:
                 )
             )
         return seeded
+
+    def _report_to_dashboard(
+        self,
+        finding: Finding,
+        run_id: str,
+        status: str,
+        touched_files: list[str],
+        apply_msg: str,
+        patch_applied: bool,
+    ) -> None:
+        """Report repair completion to dashboard if configured."""
+        if not self.dashboard_client:
+            return
+
+        try:
+            # Determine if patch was applied based on status and touched files
+            applied = patch_applied and status == "applied" and len(touched_files) > 0
+
+            self.dashboard_client.report_repair_complete(
+                finding_id=finding.finding_id,
+                project_name=finding.raw.get("project_name", "unknown"),
+                run_id=run_id,
+                status=status if status in ("completed", "failed", "applied") else "completed",
+                patch_applied=applied,
+                applied_files=touched_files,
+                error=apply_msg if not applied else None,
+                message=apply_msg,
+            )
+        except Exception as e:
+            # Log error but don't fail the repair run
+            print(f"Failed to report repair to dashboard: {e}")
 
     def run_for_finding(self, finding: Finding) -> dict[str, Any]:
         run_id = f"repair-{finding.finding_id}-{uuid.uuid4().hex[:8]}"
@@ -172,6 +210,13 @@ class RepairOrchestrator:
                 run.status = "selected"
 
         self._persist_run(run_dir, run, finding, fault_slice, tree, touched_files, apply_msg)
+
+        # Report completion to dashboard if configured
+        patch_applied = run.status == "applied" and len(touched_files) > 0
+        self._report_to_dashboard(
+            finding, run_id, run.status, touched_files, apply_msg, patch_applied
+        )
+
         return {
             "run_id": run_id,
             "finding_id": finding.finding_id,

@@ -204,14 +204,14 @@ export function OrchestrationPanel() {
     return () => ac.abort();
   }, [load]);
 
-  const authHeaders = (): HeadersInit => {
+  const authHeaders = useCallback((): HeadersInit => {
     const h: Record<string, string> = { "Content-Type": "application/json" };
     const s = enqueueSecret.trim();
     if (s) {
       h.Authorization = `Bearer ${s}`;
     }
     return h;
-  };
+  }, [enqueueSecret]);
 
   const dispatchAction = useCallback(
     async (action: OrchestrationActionKind, projectName?: string) => {
@@ -236,7 +236,7 @@ export function OrchestrationPanel() {
         setDispatching(null);
       }
     },
-    [load, enqueueSecret]
+    [load, authHeaders]
   );
 
   const clearQueue = useCallback(async () => {
@@ -260,7 +260,7 @@ export function OrchestrationPanel() {
     } finally {
       setDispatching(null);
     }
-  }, [load, enqueueSecret]);
+  }, [load, authHeaders]);
 
   const enqueueWeekly = useCallback(async () => {
     setDispatchError(null);
@@ -282,7 +282,7 @@ export function OrchestrationPanel() {
     } finally {
       setDispatching(null);
     }
-  }, [load, enqueueSecret]);
+  }, [load, authHeaders]);
 
   if (loading) {
     return (

@@ -58,8 +58,8 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const res  = await apiFetch("/api/sync/audit", { method: "POST" });
-      const data = await res.json();
+      const res = await apiFetch("/api/sync/audit", { method: "POST" });
+      await res.json().catch(() => null);
       if (res.ok) {
         setSyncMsg("✓ Synced");
         await fetchStatus();

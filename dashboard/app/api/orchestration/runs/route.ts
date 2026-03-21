@@ -10,14 +10,6 @@ import {
 } from "@/lib/maintenance-store";
 import { apiErrorMessage } from "@/lib/api-error";
 
-function enqueueSecret(): string {
-  return (
-    process.env.ORCHESTRATION_ENQUEUE_SECRET?.trim() ||
-    process.env.DASHBOARD_API_SECRET?.trim() ||
-    ""
-  );
-}
-
 /**
  * GET ?project=Name — recent lyra_audit_runs + lyra_audit_jobs for that project.
  * Auth: same middleware as other /api routes (cookie or Bearer).

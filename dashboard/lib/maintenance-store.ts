@@ -368,3 +368,80 @@ export async function updateMaintenanceBacklogStatus(
     [id, status, nextAction]
   );
 }
+
+/**
+ * Update a repair job with completion status and metadata from the repair engine.
+ * Called by the Python repair engine when a repair run completes.
+ */
+export async function updateRepairJobCompletion(args: {
+  finding_id: string;
+  project_name: string;
+  status: "completed" | "failed" | "applied";
+  patch_applied?: boolean;
+  applied_files?: string[];
+  error?: string;
+  run_id?: string;
+}): Promise<RepairJob> {
+  const rows = await pool().query(
+    `UPDATE lyra_repair_jobs
+        SET status = $1,
+            patch_applied = COALESCE($2, patch_applied),
+            error = COALESCE($3, error),
+            finished_at = now(),
+            payload = jsonb_build_object(
+              'applied_files', COALESCE($4::jsonb, payload->'applied_files', '[]'::jsonb),
+              'run_id', COALESCE($5, payload->>'run_id')
+            ) || (payload - 'applied_files' - 'run_id')
+      WHERE finding_id = $6 AND project_name = $7 AND status = 'queued'
+      RETURNING *`,
+    [
+      args.status,
+      args.patch_applied ?? null,
+      args.error ?? null,
+      JSON.stringify(args.applied_files ?? []),
+      args.run_id ?? null,
+      args.finding_id,
+      args.project_name,
+    ]
+  );
+
+  if (!rows[0]) {
+    throw new Error(
+      `Repair job not found or not in queued status: ${args.project_name}/${args.finding_id}`
+    );
+  }
+
+  const row = rows[0];
+  return {
+    id: row.id != null ? String(row.id) : undefined,
+    finding_id: String(row.finding_id),
+    project_name: String(row.project_name),
+    queued_at:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at),
+    status: String(row.status) as RepairJob["status"],
+    patch_applied:
+      typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
+    completed_at:
+      row.finished_at instanceof Date
+        ? row.finished_at.toISOString()
+        : row.finished_at != null
+          ? String(row.finished_at)
+          : undefined,
+    error: row.error != null ? String(row.error) : undefined,
+    targeted_files: Array.isArray(row.targeted_files)
+      ? (row.targeted_files as string[])
+      : [],
+    verification_commands: Array.isArray(row.verification_commands)
+      ? (row.verification_commands as string[])
+      : [],
+    rollback_notes:
+      row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+    repair_policy: asJsonObject(row.repair_policy),
+    maintenance_task_id:
+      row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
+    backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
+    provenance: asJsonObject(row.provenance),
+  };
+}

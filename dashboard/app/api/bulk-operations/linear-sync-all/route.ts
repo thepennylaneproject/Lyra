@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       "SELECT name, project_json FROM lyra_projects ORDER BY name"
     );
 
-    if (!projectRows.rows || projectRows.rows.length === 0) {
+    if (projectRows.length === 0) {
       return NextResponse.json({
         ok: true,
         total_projects: 0,
@@ -57,16 +57,19 @@ export async function POST(request: Request) {
     let totalSyncedFindings = 0;
 
     // Sync each project
-    for (const row of projectRows.rows) {
-      const projectName = row.name;
+    for (const row of projectRows) {
+      const projectName =
+        typeof row.name === "string" ? row.name : String(row.name ?? "");
       const projectJson = row.project_json;
-      const project = typeof projectJson === "object" && projectJson !== null ? projectJson : {};
+      const project = (
+        typeof projectJson === "object" && projectJson !== null ? projectJson : {}
+      ) as Record<string, unknown>;
       const findings = Array.isArray(project.findings) ? project.findings : [];
 
       // Get all finding IDs for this project
       const findingIds = findings
         .map((f: { finding_id?: string }) => f.finding_id)
-        .filter(Boolean);
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
 
       if (findingIds.length === 0) continue;
 

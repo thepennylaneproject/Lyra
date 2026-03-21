@@ -162,6 +162,11 @@ export class PostgresPool {
     const result = await this.pool.query(sql, params);
     return result.rows as Record<string, unknown>[];
   }
+
+  /** Close all pool clients. Use in scripts (e.g. migrations); avoid on the shared app pool during requests. */
+  async end(): Promise<void> {
+    await this.pool.end();
+  }
 }
 
 let sharedPostgresPool: PostgresPool | null = null;

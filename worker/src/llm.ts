@@ -27,11 +27,48 @@ export interface CoverageOut {
   incomplete_reason?: string;
 }
 
+import { getRegistry } from "./providers/registry.js";
+
 export interface AuditLlmResult {
   findings: FindingOut[];
   coverage: CoverageOut;
   model: string;
+  provider: string;
   raw_response: string;
+  costUsd?: number;
+}
+
+/**
+ * Determine the model to use based on routing strategy and configuration.
+ * Supports multiple formats:
+ *   - "openai:mini" (explicit provider:model format)
+ *   - "gpt-4o-mini" (inferred as openai:mini)
+ *   - "claude-3.5-sonnet" (inferred as anthropic:sonnet)
+ */
+function resolveModel(): { primary: string; fallback: string | undefined } {
+  const configuredModel = process.env.LYRA_AUDIT_MODEL?.trim();
+  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
+
+  if (configuredModel) {
+    // If explicitly configured, use it with a fallback
+    if (configuredModel.includes(":")) {
+      return { primary: configuredModel, fallback: "openai:mini" };
+    }
+    // Infer provider from model name
+    const inferred = getRegistry().inferProvider(configuredModel);
+    return { primary: `${inferred.provider}:${inferred.modelId}`, fallback: "openai:mini" };
+  }
+
+  // Use strategy-based defaults
+  switch (strategy) {
+    case "aggressive":
+      return { primary: "anthropic:haiku", fallback: "openai:mini" };
+    case "precision":
+      return { primary: "anthropic:sonnet", fallback: "openai:balanced" };
+    case "balanced":
+    default:
+      return { primary: "openai:mini", fallback: "anthropic:haiku" };
+  }
 }
 
 export async function auditWithLlm(
@@ -50,34 +87,48 @@ export async function auditWithLlm(
     manifestRevision?: string;
   }
 ): Promise<AuditLlmResult> {
-  const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) {
-    console.warn("[lyra-worker] OPENAI_API_KEY not set; skipping LLM audit");
-    return {
-      coverage: {
-        coverage_complete: false,
-        confidence: "low",
-        checklist_id: extras?.checklistId,
-        incomplete_reason: "OPENAI_API_KEY not configured",
-      },
-      model: "none",
-      raw_response: "OPENAI_API_KEY not configured",
-      findings: [
-        {
-          finding_id: `${appName}-no-api-key`,
-          title: "OPENAI_API_KEY not configured",
-          description: "Worker cannot run LLM audit without OPENAI_API_KEY.",
-          type: "question",
-          severity: "minor",
-          priority: "P2",
-          status: "open",
-          category: "config",
+  const registry = getRegistry();
+  const { primary, fallback } = resolveModel();
+
+  // Check if at least one provider is configured
+  const primaryRef = primary.split(":");
+  const primaryProvider = registry.getProvider(primaryRef[0]);
+
+  if (!primaryProvider || !primaryProvider.isConfigured()) {
+    const fallbackRef = fallback?.split(":");
+    const fallbackProvider = fallbackRef ? registry.getProvider(fallbackRef[0]) : null;
+
+    if (!fallbackProvider || !fallbackProvider.isConfigured()) {
+      console.warn(
+        `[lyra-worker] No LLM provider configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY`
+      );
+      return {
+        coverage: {
+          coverage_complete: false,
+          confidence: "low",
+          checklist_id: extras?.checklistId,
+          incomplete_reason: "No LLM provider configured",
         },
-      ],
-    };
+        model: "none",
+        provider: "none",
+        raw_response: "No LLM provider configured",
+        findings: [
+          {
+            finding_id: `${appName}-no-llm-provider`,
+            title: "No LLM provider configured",
+            description:
+              "Worker cannot run LLM audit without OPENAI_API_KEY or ANTHROPIC_API_KEY.",
+            type: "question",
+            severity: "minor",
+            priority: "P2",
+            status: "open",
+            category: "config",
+          },
+        ],
+      };
+    }
   }
 
-  const model = process.env.LYRA_AUDIT_MODEL?.trim() || "gpt-4o-mini";
   const user = `App name: ${appName}
 ${visualOnly ? "Focus on visual/UI/UX expectations only.\n" : ""}
 ${auditKind ? `Primary audit kind: ${auditKind}\n` : ""}
@@ -99,33 +150,42 @@ ${codeContext}
 
 Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output contract.`;
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: `${corePrompt}\n\n---\n\n${auditAgentPrompt}` },
-        { role: "user", content: user },
-      ],
-      response_format: { type: "json_object" },
+  let llmResponse;
+  try {
+    llmResponse = await registry.call(primary, fallback, {
+      systemPrompt: `${corePrompt}\n\n---\n\n${auditAgentPrompt}`,
+      userPrompt: user,
+      responseFormat: "json_object",
       temperature: 0.2,
-      max_tokens: 4096,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenAI error ${res.status}: ${err.slice(0, 500)}`);
+      maxTokens: 4096,
+    });
+  } catch (error) {
+    console.error("[lyra-worker] LLM call failed:", error);
+    return {
+      coverage: {
+        coverage_complete: false,
+        confidence: "low",
+        checklist_id: extras?.checklistId,
+        incomplete_reason: `LLM error: ${error instanceof Error ? error.message : String(error)}`,
+      },
+      model: "error",
+      provider: "error",
+      raw_response: String(error),
+      findings: [
+        {
+          finding_id: `${appName}-llm-error`,
+          title: "LLM call failed",
+          description: error instanceof Error ? error.message : String(error),
+          type: "question",
+          severity: "minor",
+          priority: "P2",
+          status: "open",
+        },
+      ],
+    };
   }
 
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const raw = data.choices?.[0]?.message?.content ?? "{}";
+  const raw = llmResponse.content;
   let parsed: { findings?: FindingOut[]; coverage?: CoverageOut };
   try {
     parsed = JSON.parse(raw) as { findings?: FindingOut[]; coverage?: CoverageOut };
@@ -137,8 +197,10 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
         checklist_id: extras?.checklistId,
         incomplete_reason: "LLM returned non-JSON",
       },
-      model,
+      model: llmResponse.model,
+      provider: llmResponse.provider,
       raw_response: raw,
+      costUsd: llmResponse.costUsd,
       findings: [
         {
           finding_id: `${appName}-parse-error`,
@@ -155,7 +217,9 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
   const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
   const coverage = parsed.coverage ?? {};
   return {
-    model,
+    model: llmResponse.model,
+    provider: llmResponse.provider,
+    costUsd: llmResponse.costUsd,
     raw_response: raw,
     coverage: {
       coverage_complete: Boolean(coverage.coverage_complete),

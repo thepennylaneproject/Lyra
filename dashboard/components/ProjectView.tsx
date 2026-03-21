@@ -134,7 +134,7 @@ export function ProjectView({
 
       <OnboardingReviewPanel
         project={project}
-        onUpdated={async (_updatedProject) => {
+        onUpdated={async () => {
           await refetchProject();
         }}
       />

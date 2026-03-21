@@ -22,6 +22,11 @@ export function parseOpenFindingsPayload(
   body: string
 ): { findings: Finding[] } {
   const data = JSON.parse(body) as OpenFindingsSchema & { findings?: Finding[] };
+  const hasOpen = Object.prototype.hasOwnProperty.call(data, "open_findings");
+  const hasFindings = Object.prototype.hasOwnProperty.call(data, "findings");
+  if (!hasOpen && !hasFindings) {
+    throw new Error("No findings array found");
+  }
   const findings = data.open_findings ?? data.findings ?? [];
   if (!Array.isArray(findings)) {
     throw new Error("No findings array found");

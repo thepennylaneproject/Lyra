@@ -31,7 +31,6 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 const MAX_SAMPLE_FILES = 40;
-const MAX_REPORT_FILES = 12;
 const MAX_FILE_PREVIEW = 2400;
 
 export interface OnboardRepositoryInput {
@@ -329,10 +328,6 @@ function buildProjectProfile(snapshot: RepoSnapshot): string {
     .join("\n");
   const dependencyTable = Object.entries(snapshot.dependencyGroups)
     .map(([label, deps]) => `### ${label}\n${deps.length > 0 ? deps.map((d) => `- ${d}`).join("\n") : "- [NOT FOUND IN CODEBASE]"}`)
-    .join("\n\n");
-  const sampleBlock = snapshot.fileSamples
-    .slice(0, MAX_REPORT_FILES)
-    .map((sample) => `\`\`\`\n${sample.path}\n\`\`\`\n${sample.excerpt}`)
     .join("\n\n");
 
   return `# ${snapshot.projectName} — Codebase Intelligence Audit

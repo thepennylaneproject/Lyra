@@ -1,0 +1,121 @@
+version: "3.8"
+
+services:
+  # PostgreSQL database (Supabase backend)
+  postgres:
+    image: postgres:16-alpine
+    container_name: lyra-postgres
+    environment:
+      POSTGRES_USER: lyra
+      POSTGRES_PASSWORD: lyra-dev-password
+      POSTGRES_DB: lyra
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lyra -d lyra"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lyra-network
+
+  # Redis for job queueing
+  redis:
+    image: redis:7-alpine
+    container_name: lyra-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lyra-network
+
+  # Dashboard (Next.js)
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: lyra-dashboard
+    environment:
+      # Database
+      DATABASE_URL: postgresql://lyra:lyra-dev-password@postgres:5432/lyra
+      # Redis
+      REDIS_URL: redis://redis:6379
+      # Auth
+      DASHBOARD_API_SECRET: dev-secret-key-change-in-production
+      # API Keys (add your own)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Routing
+      LYRA_ROUTING_STRATEGY: balanced
+      # Logging
+      LOG_LEVEL: debug
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - lyra-network
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
+    # Run migrations first, then start dev server
+    command: bash -c "npm run migrate && npm run dev"
+
+  # Worker (Node.js audit processor)
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: lyra-worker
+    environment:
+      # Database
+      DATABASE_URL: postgresql://lyra:lyra-dev-password@postgres:5432/lyra
+      # Redis for job queue
+      REDIS_URL: redis://redis:6379
+      # Job processing
+      LYRA_JOB_POLL_MS: 5000
+      LYRA_JOB_POLL_IDLE_MS: 10000
+      # Repository
+      LYRA_REPO_ROOT: /workspace
+      # Code sampling
+      LYRA_MAX_FILES_PER_PASS: 8
+      LYRA_MAX_CHARS_PER_FILE: 8000
+      # LLM routing
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LYRA_AUDIT_MODEL: ${LYRA_AUDIT_MODEL:-}
+      LYRA_ROUTING_STRATEGY: balanced
+      # Logging
+      DEBUG: lyra:*
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - lyra-network
+    volumes:
+      # Mount the entire repo for code audits
+      - .:/workspace
+      # Keep node_modules isolated
+      - /app/node_modules
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  lyra-network:
+    driver: bridge

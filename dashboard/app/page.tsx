@@ -15,7 +15,7 @@ import { PatternPanel } from "@/components/PatternPanel";
 import { EngineView } from "@/components/EngineView";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { Shell, type NavView } from "@/components/Shell";
-import { STATUS_GROUPS, PRIORITY_ORDER, SEVERITY_ORDER, sortFindings } from "@/lib/constants";
+import { STATUS_GROUPS, PRIORITY_ORDER, SEVERITY_ORDER } from "@/lib/constants";
 import { isInQueuedSet } from "@/lib/finding-validation";
 
 export default function Home() {

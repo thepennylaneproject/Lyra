@@ -287,6 +287,8 @@ export interface Finding {
   status: FindingStatus;
   confidence?: string;
   category?: string;
+  /** Extra fields from import payloads (audit agents, scanners) */
+  metadata?: Record<string, unknown>;
   proof_hooks?: ProofHook[];
   suggested_fix?: SuggestedFix;
   history?: HistoryEvent[];
@@ -295,6 +297,14 @@ export interface Finding {
   last_seen_at?: string;
   last_seen_revision?: string;
   repair_policy?: RepairPolicy;
+  /** Set when a repair-engine patch is applied and awaits verification */
+  verified_at?: string;
+  /** Per-finding decision trail (e.g. engine patch events) */
+  decision_history?: Array<{
+    timestamp: string;
+    decision: string;
+    metadata?: Record<string, unknown>;
+  }>;
 }
 
 export interface Project {

@@ -61,21 +61,26 @@ export async function POST(request: Request) {
       [projectName]
     );
 
-    if (!projectRows.rows || projectRows.rows.length === 0) {
+    if (projectRows.length === 0) {
       return NextResponse.json(
         { error: `Project not found: ${projectName}` },
         { status: 404 }
       );
     }
 
-    const projectJson = projectRows.rows[0].project_json;
-    const project = typeof projectJson === "object" && projectJson !== null ? projectJson : {};
+    const projectJson = projectRows[0].project_json;
+    const project = (
+      typeof projectJson === "object" && projectJson !== null ? projectJson : {}
+    ) as Record<string, unknown>;
     const projectFindings = Array.isArray(project.findings) ? project.findings : [];
 
     // Determine which findings to sync
-    const toSync = findingIds.length > 0
-      ? findingIds
-      : projectFindings.map((f: { finding_id?: string }) => f.finding_id).filter(Boolean);
+    const toSync =
+      findingIds.length > 0
+        ? findingIds
+        : projectFindings
+            .map((f: { finding_id?: string }) => f.finding_id)
+            .filter((id): id is string => typeof id === "string" && id.length > 0);
 
     // Create/update sync mappings for each finding
     const syncPromises = toSync.map((fId: string) =>
