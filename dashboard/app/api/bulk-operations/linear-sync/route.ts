@@ -82,19 +82,18 @@ export async function POST(request: Request) {
             .map((f: { finding_id?: string }) => f.finding_id)
             .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-    // Create/update sync mappings for each finding
-    const syncPromises = toSync.map((fId: string) =>
-      pool.query(
+    // Create/update sync mappings for all findings in a single batch query
+    if (toSync.length > 0) {
+      await pool.query(
         `INSERT INTO lyra_linear_sync_new (project_name, finding_id, linear_issue_id, linear_team_key)
-         VALUES ($1, $2, '', $3)
+         SELECT $1, t.finding_id, '', $2
+         FROM UNNEST($3::text[]) AS t(finding_id)
          ON CONFLICT (project_name, finding_id) DO UPDATE SET
-           linear_team_key = COALESCE($3, linear_team_key),
+           linear_team_key = COALESCE($2, linear_team_key),
            updated_at = now()`,
-        [projectName, fId, teamKey]
-      )
-    );
-
-    await Promise.all(syncPromises);
+        [projectName, teamKey, toSync]
+      );
+    }
     const syncedCount = toSync.length;
 
     // Log this as an event (actual Linear sync happens async in a separate worker)
