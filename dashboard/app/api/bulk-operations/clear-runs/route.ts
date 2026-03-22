@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
-import { apiErrorMessage } from "@/lib/api-error";
+import { apiErrorMessage, isValidProjectName, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 
 /**
@@ -25,15 +25,15 @@ import { recordDurableEventBestEffort } from "@/lib/durable-state";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as {
+    const body = await parseJsonBody<{
       project_name?: string;
-    };
+    }>(request);
 
     const projectName = body.project_name
       ? String(body.project_name).trim()
       : null;
 
-    if (projectName && !projectName.match(/^[a-zA-Z0-9_\-]+$/)) {
+    if (projectName && !isValidProjectName(projectName)) {
       return NextResponse.json(
         { error: "Invalid project name format" },
         { status: 400 }
