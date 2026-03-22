@@ -119,10 +119,10 @@ export async function POST(request: Request) {
       project_name: projectName,
       message: `Queued ${syncedCount} finding(s) for Linear sync. Sync will complete in the background.`,
     });
-  } catch (e) {
-    console.error("POST /api/bulk-operations/linear-sync", e);
+  } catch (error) {
+    console.error("POST /api/bulk-operations/linear-sync", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

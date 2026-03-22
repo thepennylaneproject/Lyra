@@ -34,12 +34,12 @@ class QdrantMemoryStore:
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
-        req = urllib.request.Request(url, data=body, method=method, headers={"content-type": "application/json"})
+        http_request = urllib.request.Request(url, data=body, method=method, headers={"content-type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                if resp.status == 204:
+            with urllib.request.urlopen(http_request, timeout=20) as http_response:
+                if http_response.status == 204:
                     return {}
-                raw = resp.read()
+                raw = http_response.read()
                 if not raw:
                     return {}
                 return json.loads(raw)

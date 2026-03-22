@@ -110,8 +110,8 @@ export async function POST(request: Request) {
         try {
           await pool.query(insertQuery, row);
           queuedCount++;
-        } catch (e) {
-          console.warn("Failed to insert repair queue item:", e);
+        } catch (error) {
+          console.warn("Failed to insert repair queue item:", error);
         }
       }
     }
@@ -142,10 +142,10 @@ export async function POST(request: Request) {
           ? `Queued ${queuedCount} finding(s) for repair.${skippedCount > 0 ? ` ${skippedCount} were already queued.` : ""}`
           : "No new findings queued (all were already in queue).",
     });
-  } catch (e) {
-    console.error("POST /api/bulk-operations/repair-queue", e);
+  } catch (error) {
+    console.error("POST /api/bulk-operations/repair-queue", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

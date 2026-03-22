@@ -160,8 +160,8 @@ export function EngineView() {
         recentRuns:  status.recent_repair_runs ?? [],
         totalCost:   status.total_cost_usd ?? 0,
       });
-    } catch (e) {
-      setRoutingError(e instanceof Error ? e.message : "Could not load routing");
+    } catch (error) {
+      setRoutingError(error instanceof Error ? error.message : "Could not load routing");
     } finally {
       setLoading(false);
     }

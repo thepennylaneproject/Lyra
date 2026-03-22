@@ -10,10 +10,10 @@ export async function GET() {
     ]);
 
     return NextResponse.json({ config, state });
-  } catch (e) {
-    console.error("GET /api/durable-state", e);
+  } catch (error) {
+    console.error("GET /api/durable-state", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

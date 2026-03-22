@@ -72,10 +72,10 @@ export async function POST(request: Request) {
       runs_deleted: runsDeleted,
       project_name: projectName,
     });
-  } catch (e) {
-    console.error("POST /api/bulk-operations/clear-runs", e);
+  } catch (error) {
+    console.error("POST /api/bulk-operations/clear-runs", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

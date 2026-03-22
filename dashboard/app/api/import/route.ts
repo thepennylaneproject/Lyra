@@ -105,12 +105,12 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json({ project, created: true, mode, added, removed: 0, skipped: 0 });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     if (message.includes("No findings array") || message.includes("JSON")) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-    console.error("POST /api/import", e);
-    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
+    console.error("POST /api/import", error);
+    return NextResponse.json({ error: apiErrorMessage(error) }, { status: 500 });
   }
 }

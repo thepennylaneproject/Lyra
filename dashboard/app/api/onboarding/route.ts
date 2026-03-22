@@ -44,10 +44,10 @@ export async function POST(request: Request) {
 
     const created = await repo.create(draft);
     return NextResponse.json({ project: created, created: true }, { status: 201 });
-  } catch (e) {
-    console.error("POST /api/onboarding", e);
+  } catch (error) {
+    console.error("POST /api/onboarding", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

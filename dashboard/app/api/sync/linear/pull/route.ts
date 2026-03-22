@@ -60,10 +60,10 @@ export async function POST(request: Request) {
     let issue: { state?: { name?: string } } | null = null;
     try {
       issue = await getIssue(linearId);
-    } catch (e) {
+    } catch (error) {
       // Track failures instead of silently swallowing them (ARCH-013)
       failed += 1;
-      errors.push(`fetch ${fid}: ${e instanceof Error ? e.message : String(e)}`);
+      errors.push(`fetch ${fid}: ${error instanceof Error ? error.message : String(error)}`);
       continue;
     }
     if (!issue) continue;

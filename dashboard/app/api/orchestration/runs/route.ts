@@ -48,10 +48,10 @@ export async function GET(request: Request) {
       manifest,
       repair_jobs: repairJobs,
     });
-  } catch (e) {
-    console.error("GET /api/orchestration/runs", e);
+  } catch (error) {
+    console.error("GET /api/orchestration/runs", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

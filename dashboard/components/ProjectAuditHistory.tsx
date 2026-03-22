@@ -19,10 +19,10 @@ function deltaVsPrior(
   prior: number | undefined
 ): string | null {
   if (prior === undefined) return null;
-  const d = current - prior;
-  if (d === 0) return "same as prior run";
-  if (d > 0) return `+${d} vs prior run`;
-  return `${d} vs prior run`;
+  const delta = current - prior;
+  if (delta === 0) return "same as prior run";
+  if (delta > 0) return `+${delta} vs prior run`;
+  return `${delta} vs prior run`;
 }
 
 function formatAuditLabel(
@@ -60,18 +60,18 @@ export function ProjectAuditHistory({ projectName, projectStatus }: ProjectAudit
 
   useEffect(() => {
     try {
-      const s = sessionStorage.getItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
-      if (s) setEnqueueSecret(s);
+      const storedSecret = sessionStorage.getItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
+      if (storedSecret) setEnqueueSecret(storedSecret);
     } catch {
       /* ignore */
     }
   }, []);
 
-  const persistSecret = (v: string) => {
-    setEnqueueSecret(v);
+  const persistSecret = (secretValue: string) => {
+    setEnqueueSecret(secretValue);
     try {
-      if (v.trim())
-        sessionStorage.setItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY, v.trim());
+      if (secretValue.trim())
+        sessionStorage.setItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY, secretValue.trim());
       else sessionStorage.removeItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
     } catch {
       /* ignore */
@@ -170,10 +170,10 @@ export function ProjectAuditHistory({ projectName, projectStatus }: ProjectAudit
     (enqueueAuthOptional || enqueueSecret.trim().length > 0);
 
   const authHeaders = (): HeadersInit => {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
-    const s = enqueueSecret.trim();
-    if (s) h.Authorization = `Bearer ${s}`;
-    return h;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const trimmedSecret = enqueueSecret.trim();
+    if (trimmedSecret) headers.Authorization = `Bearer ${trimmedSecret}`;
+    return headers;
   };
 
   const enqueueAudit = async (
@@ -193,8 +193,8 @@ export function ProjectAuditHistory({ projectName, projectStatus }: ProjectAudit
         throw new Error(err.error ?? `Failed (${res.status})`);
       }
       await load();
-    } catch (e) {
-      setDispatchError(e instanceof Error ? e.message : String(e));
+    } catch (error) {
+      setDispatchError(error instanceof Error ? error.message : String(error));
     } finally {
       setDispatching(null);
     }

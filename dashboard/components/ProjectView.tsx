@@ -83,9 +83,9 @@ export function ProjectView({
         if (updated) setFindings(updated.findings ?? []);
         const f = updated?.findings?.find((x) => x.finding_id === findingId);
         if (f) setSelected({ ...f, status: newStatus });
-      } catch (e) {
+      } catch (error) {
         const msg =
-          e instanceof Error ? e.message : "Could not update finding. Check connection and try again.";
+          error instanceof Error ? error.message : "Could not update finding. Check connection and try again.";
         setActionError(msg);
       }
     },

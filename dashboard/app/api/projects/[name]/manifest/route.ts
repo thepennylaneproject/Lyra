@@ -19,10 +19,10 @@ export async function GET(_request: Request, { params }: Params) {
       project_name: project.name,
       manifest,
     });
-  } catch (e) {
-    console.error("GET /api/projects/[name]/manifest", e);
+  } catch (error) {
+    console.error("GET /api/projects/[name]/manifest", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
