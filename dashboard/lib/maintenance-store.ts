@@ -84,6 +84,62 @@ export async function listRepairJobsForProject(
   });
 }
 
+/** Newest-first repair ledger rows for one finding (Postgres store only). */
+export async function listRepairJobsForFinding(
+  projectName: string,
+  findingId: string,
+  limit = 8
+): Promise<RepairJob[]> {
+  const rows = await pool().query(
+    `SELECT *
+       FROM lyra_repair_jobs
+      WHERE lower(trim(project_name)) = lower(trim($1))
+        AND finding_id = $2
+      ORDER BY created_at DESC
+      LIMIT $3`,
+    [projectName, findingId, limit]
+  );
+  return rows.map((row) => {
+    const repairPolicy = asJsonObject(row.repair_policy);
+    const payload = asJsonObject(row.payload);
+    return {
+      id: String(row.id),
+      finding_id: String(row.finding_id),
+      project_name: String(row.project_name),
+      queued_at:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+      status: String(row.status) as RepairJob["status"],
+      patch_applied:
+        typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
+      completed_at:
+        row.finished_at instanceof Date
+          ? row.finished_at.toISOString()
+          : row.finished_at != null
+            ? String(row.finished_at)
+            : undefined,
+      error: row.error != null ? String(row.error) : undefined,
+      targeted_files: Array.isArray(row.targeted_files)
+        ? (row.targeted_files as string[])
+        : [],
+      verification_commands: Array.isArray(row.verification_commands)
+        ? (row.verification_commands as string[])
+        : [],
+      rollback_notes:
+        row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+      repair_policy: {
+        ...repairPolicy,
+        ...asJsonObject(payload.repair_policy),
+      },
+      maintenance_task_id:
+        row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
+      backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
+      provenance: asJsonObject(row.provenance),
+    };
+  });
+}
+
 export async function listRecentRepairJobs(limit = 50): Promise<RepairJob[]> {
   const rows = await pool().query(
     `SELECT *

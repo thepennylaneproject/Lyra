@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { AUTH_COOKIE_NAME } from "@/lib/auth-constants";
+import {
+  DASHBOARD_MISCONFIGURED_MESSAGE,
+  isOpenApiAllowedWithoutSecret,
+} from "@/lib/dashboard-secret";
 
 async function verifySessionCookie(
   token: string,
@@ -36,10 +40,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
-  if (pathname === "/api/health") {
-    return NextResponse.next();
-  }
-  if (pathname === "/api/auth/login" && request.method === "POST") {
+  if (pathname === "/api/health" && request.method === "GET") {
     return NextResponse.next();
   }
 
@@ -47,6 +48,16 @@ export async function middleware(request: NextRequest) {
     process.env.DASHBOARD_API_SECRET?.trim() ||
     process.env.ORCHESTRATION_ENQUEUE_SECRET?.trim();
   if (!raw) {
+    if (!isOpenApiAllowedWithoutSecret()) {
+      return NextResponse.json(
+        { error: "misconfigured", message: DASHBOARD_MISCONFIGURED_MESSAGE },
+        { status: 503 }
+      );
+    }
+    return NextResponse.next();
+  }
+
+  if (pathname === "/api/auth/login" && request.method === "POST") {
     return NextResponse.next();
   }
 

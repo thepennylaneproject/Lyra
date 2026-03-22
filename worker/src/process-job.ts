@@ -566,6 +566,14 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       }
     }
 
+    const jobExhaustiveness = projectAuditDetails.some(
+      (d) => String((d as { exhaustiveness?: string }).exhaustiveness ?? "") === "sampled"
+    )
+      ? "sampled"
+      : projectAuditDetails.length > 0
+        ? "exhaustive"
+        : "exhaustive";
+
     await completeJob(pool, dbJobId, null, {
       job_type: job.job_type,
       project_name: job.project_name,
@@ -575,7 +583,7 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       checklist_id: jobChecklistId,
       coverage_complete: jobCoverageComplete,
       completion_confidence: jobConfidence,
-      exhaustiveness: "exhaustive",
+      exhaustiveness: jobExhaustiveness,
       payload: {
         projects: projects.map((p) => p.name),
         visual_only: visualOnly,
