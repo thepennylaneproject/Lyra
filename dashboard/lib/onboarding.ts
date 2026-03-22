@@ -91,6 +91,7 @@ interface RepoSnapshot {
   dependencyGroups: Record<string, string[]>;
   envVars: string[];
   testFiles: string[];
+  allFilePaths: string[];
   topLevelTree: Array<{ path: string; note: string }>;
   fileSamples: Array<{ path: string; excerpt: string }>;
   commands: {
@@ -316,6 +317,7 @@ function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string, provide
     dependencyGroups,
     envVars,
     testFiles,
+    allFilePaths: files,
     topLevelTree,
     fileSamples: sampleFiles(files, root),
     commands: {
@@ -778,12 +780,33 @@ function detectDeploymentSignals(files: string[], root: string): string[] {
   return out;
 }
 
+// Domains that are always service dashboards / documentation, never a live app URL
+const SERVICE_DOMAINS = [
+  "app.supabase.com", "supabase.com", "dashboard.stripe.com", "stripe.com",
+  "platform.openai.com", "console.anthropic.com", "aimlapi.com",
+  "aistudio.google.com", "platform.deepseek.com", "console.mistral.ai",
+  "dashboard.cohere.com", "cohere.com", "openai.com", "anthropic.com",
+  "github.com", "npmjs.com", "docs.github.com", "developer.mozilla.org",
+  "tailwindcss.com", "reactjs.org", "nextjs.org", "vitejs.dev",
+  "cloudinary.com", "posthog.com", "linear.app",
+];
+
+function isServiceUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return SERVICE_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  } catch {
+    return true; // malformed URLs are not live app URLs
+  }
+}
+
 function extractUrls(files: string[], root: string): string[] {
   const urls = new Set<string>();
   for (const file of files.slice(0, 100)) {
     const text = readTextIfExists(join(root, file));
-    for (const match of text.matchAll(/https?:\/\/[^\s'")]+/g)) {
-      urls.add(match[0]);
+    for (const match of text.matchAll(/https?:\/\/[^\s'")<>]+/g)) {
+      const url = match[0].replace(/[.,;]+$/, ""); // strip trailing punctuation
+      if (!isServiceUrl(url)) urls.add(url);
     }
   }
   return [...urls];
@@ -879,8 +902,10 @@ function buildApiLayerSection(snapshot: RepoSnapshot): string {
   const apiFunctions = snapshot.fileSamples.filter((s) =>
     /^(netlify\/functions|api|app\/api|pages\/api|server\/api|src\/api)/i.test(s.path)
   );
+  // Match files named exactly route.ts / route.js (Next.js App Router convention),
+  // not components whose name contains "Route" (e.g. ProtectedRoute.tsx)
   const routeFiles = snapshot.fileSamples.filter((s) =>
-    /route\.(ts|js)|endpoint\.(ts|js)/i.test(s.path)
+    /[/\\]route\.(ts|js)$|[/\\]endpoint\.(ts|js)$/i.test(s.path)
   );
   const allApiFiles = [...apiFunctions, ...routeFiles];
 
@@ -1107,7 +1132,9 @@ This profile was generated from static repository analysis. Sections marked [NOT
 }
 
 function buildFeatureInventory(snapshot: RepoSnapshot): string {
-  const files = snapshot.fileSamples.map((s) => s.path);
+  // Use all file paths for categorization — fileSamples only covers 40 files
+  // out of potentially hundreds, which makes large repos look nearly empty.
+  const files = snapshot.allFilePaths;
   // Group files into feature areas by path pattern
   const areas: Record<string, { files: string[]; signals: Set<string> }> = {};
   const categorize = (file: string): string => {
