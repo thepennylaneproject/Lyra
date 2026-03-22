@@ -33,6 +33,25 @@ const TEXT_EXTENSIONS = new Set([
 const MAX_SAMPLE_FILES = 40;
 const MAX_FILE_PREVIEW = 2400;
 
+const SKIP_DIRS = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".netlify",
+  ".cache",
+  ".turbo",
+  "out",
+  "coverage",
+  "__pycache__",
+  ".vercel",
+  ".svelte-kit",
+  ".nuxt",
+  ".output",
+  "archive_closet",
+]);
+
 export interface OnboardRepositoryInput {
   name?: string;
   repository_url?: string;
@@ -370,10 +389,10 @@ ${snapshot.frameworks.length > 0 ? `${snapshot.frameworks.join(", ")} applicatio
 ${verified(snapshot.stack?.database)} [VERIFIED OR INFERRED FROM CONFIG]
 
 ### 6. API Layer
-${snapshot.configFiles.filter((file) => /api|route|server/i.test(file)).map((file) => `- \`${file}\``).join("\n") || "[NOT FOUND IN CODEBASE]"}
+${buildApiLayerSection(snapshot)}
 
 ### 7. External Service Integrations
-${detectIntegrationsFromDependencies(snapshot.dependencyGroups).join("\n") || "[NOT FOUND IN CODEBASE]"}
+${detectIntegrationsFromDependencies(snapshot.dependencyGroups, snapshot.fileSamples).join("\n") || "[NOT FOUND IN CODEBASE]"}
 
 ### 8. AI/ML Components
 ${detectAiSignals(snapshot.dependencyGroups, snapshot.fileSamples)}
@@ -386,18 +405,15 @@ ${snapshot.envVars.length > 0 ? snapshot.envVars.map((name) => `- ${name}`).join
 
 ## SECTION 3: FEATURE INVENTORY
 
-This foundation pass records implementation signals from files rather than claiming a complete feature inventory.
-${snapshot.fileSamples.map((sample) => `- \`${sample.path}\` suggests active implementation scope`).join("\n") || "- [NOT FOUND IN CODEBASE]"}
+${buildFeatureInventory(snapshot)}
 
 ## SECTION 4: DESIGN SYSTEM & BRAND
 
-${detectDesignSignals(snapshot.fileSamples, snapshot.configFiles)}
+${detectDesignSignals(snapshot.fileSamples, snapshot.configFiles, snapshot.dependencyGroups)}
 
 ## SECTION 5: DATA & SCALE SIGNALS
 
-- Test files found: ${snapshot.testFiles.length}
-- Deployment/config files: ${snapshot.configFiles.length}
-- File count scanned: ${snapshot.fileCount}
+${buildScaleSection(snapshot)}
 
 ## SECTION 6: MONETIZATION & BUSINESS LOGIC
 
@@ -405,9 +421,7 @@ ${detectBillingSignals(snapshot.dependencyGroups, snapshot.fileSamples)}
 
 ## SECTION 7: CODE QUALITY & MATURITY SIGNALS
 
-- Config files: ${snapshot.configFiles.join(", ") || "[NOT FOUND IN CODEBASE]"}
-- Tests present: ${snapshot.testFiles.length > 0 ? "yes" : "no"}
-- Default commands: ${formatCommands(snapshot.commands)}
+${buildCodeQualitySection(snapshot)}
 
 ## SECTION 8: ECOSYSTEM CONNECTIONS
 
@@ -415,23 +429,11 @@ ${snapshot.repositoryUrl ? `- Primary repository: ${snapshot.repositoryUrl}` : "
 
 ## SECTION 9: WHAT'S MISSING (CRITICAL)
 
-- Production gaps: ${snapshot.profileSummary.status === "production" ? "Review still required for scale readiness." : "Deployment, reliability, and runtime validation should be reviewed before production use."}
-- Investor readiness gaps: metrics, growth evidence, and operations documentation are not inferred automatically.
-- Codebase gaps: this profile is generated from direct repository inspection and flags missing data explicitly.
-- Recommended next steps:
-  1. Review and tighten the generated expectations document.
-  2. Confirm scan roots and commands before activating audits.
-  3. Run a scoped full audit after activation.
-  4. Add or verify deployment and environment documentation.
-  5. Capture operator decisions so Lyra can calibrate future audits.
+${buildGapsSection(snapshot)}
 
 ## SECTION 10: EXECUTIVE SUMMARY
 
-${snapshot.projectName} appears to be a ${snapshot.profileSummary.status ?? "working"} codebase oriented around ${snapshot.frameworks[0] ?? snapshot.languages[0] ?? "a custom stack"}. This summary is generated only from repository evidence and marks missing data explicitly.
-
-The codebase shows technical signals through ${snapshot.configFiles.slice(0, 4).join(", ") || "its source tree"} and ${snapshot.testFiles.length > 0 ? `${snapshot.testFiles.length} test files` : "no detected test suite"}. Commands and stack metadata have been captured for future audits.
-
-The next milestone is to review the generated profile and expectations, activate the project, and run scoped audits against the stored scan roots. That will turn this from imported metadata into an auditable Lyra project.
+${buildExecutiveSummary(snapshot)}
 
 \`\`\`
 ---
@@ -526,7 +528,7 @@ function listFiles(root: string): string[] {
       return;
     }
     for (const name of entries) {
-      if (name === ".git" || name === "node_modules" || name === "dist" || name === "build" || name === ".next") continue;
+      if (SKIP_DIRS.has(name)) continue;
       const full = join(dir, name);
       let st;
       try {
@@ -617,7 +619,16 @@ function extractReadmeQuote(text: string): string | undefined {
 }
 
 function sampleFiles(files: string[], root: string): Array<{ path: string; excerpt: string }> {
-  const picked = files.filter((file) => TEXT_EXTENSIONS.has(extname(file).toLowerCase())).slice(0, MAX_SAMPLE_FILES);
+  const textFiles = files.filter((file) => TEXT_EXTENSIONS.has(extname(file).toLowerCase()));
+  // Prioritize actual source files over config/build artifacts
+  const priority = (file: string): number => {
+    if (/^(src|app|lib|server|api|pages|components|features|hooks|domain|services|modules)\//i.test(file)) return 0;
+    if (/^(netlify\/functions|supabase\/migrations|scripts)\//i.test(file)) return 1;
+    if (/\.(ts|tsx|js|jsx|py)$/.test(file)) return 2;
+    return 3;
+  };
+  const sorted = [...textFiles].sort((a, b) => priority(a) - priority(b) || a.localeCompare(b));
+  const picked = sorted.slice(0, MAX_SAMPLE_FILES);
   return picked.map((file) => {
     const text = readTextIfExists(join(root, file));
     return {
@@ -852,71 +863,543 @@ function classifyRepoStatus(
   return "alpha";
 }
 
-function detectIntegrationsFromDependencies(groups: Record<string, string[]>): string[] {
-  const integrations = new Set<string>();
-  for (const dep of Object.values(groups).flat()) {
-    if (/stripe/i.test(dep)) integrations.add("- Stripe");
-    if (/supabase/i.test(dep)) integrations.add("- Supabase");
-    if (/openai/i.test(dep)) integrations.add("- OpenAI");
-    if (/anthropic/i.test(dep)) integrations.add("- Anthropic");
-    if (/sentry/i.test(dep)) integrations.add("- Sentry");
+function buildApiLayerSection(snapshot: RepoSnapshot): string {
+  const lines: string[] = [];
+
+  // Detect API functions/routes from file paths
+  const apiFunctions = snapshot.fileSamples.filter((s) =>
+    /^(netlify\/functions|api|app\/api|pages\/api|server\/api|src\/api)/i.test(s.path)
+  );
+  const routeFiles = snapshot.fileSamples.filter((s) =>
+    /route\.(ts|js)|endpoint\.(ts|js)/i.test(s.path)
+  );
+  const allApiFiles = [...apiFunctions, ...routeFiles];
+
+  if (allApiFiles.length > 0) {
+    lines.push(`**API endpoints detected (${allApiFiles.length}):**`);
+    for (const f of allApiFiles.slice(0, 25)) {
+      // Try to infer HTTP method and purpose from excerpt
+      const methods = new Set<string>();
+      if (/GET|req\.method.*GET/i.test(f.excerpt)) methods.add("GET");
+      if (/POST|req\.method.*POST/i.test(f.excerpt)) methods.add("POST");
+      if (/PATCH|PUT/i.test(f.excerpt)) methods.add("PATCH");
+      if (/DELETE/i.test(f.excerpt)) methods.add("DELETE");
+      const methodStr = methods.size > 0 ? `[${[...methods].join("/")}]` : "";
+      lines.push(`- \`${f.path}\` ${methodStr}`);
+    }
+    if (allApiFiles.length > 25) {
+      lines.push(`- ... + ${allApiFiles.length - 25} more endpoints`);
+    }
   }
-  return [...integrations];
+
+  // Check for API config patterns
+  const configApiFiles = snapshot.configFiles.filter((f) => /api|route|server/i.test(f));
+  if (configApiFiles.length > 0 && allApiFiles.length === 0) {
+    lines.push(`**API config files:** ${configApiFiles.map((f) => `\`${f}\``).join(", ")}`);
+  }
+
+  if (lines.length === 0) return "[NOT FOUND IN CODEBASE]";
+  return lines.join("\n");
+}
+
+function buildScaleSection(snapshot: RepoSnapshot): string {
+  const lines: string[] = [];
+
+  lines.push(`| Signal | Value |`);
+  lines.push(`|---|---|`);
+  lines.push(`| Total files scanned | ${snapshot.fileCount} |`);
+  lines.push(`| Source files sampled | ${snapshot.fileSamples.length} |`);
+  lines.push(`| Test files | ${snapshot.testFiles.length} |`);
+  lines.push(`| Config files | ${snapshot.configFiles.length} |`);
+  lines.push(`| Commits | ${snapshot.commitCount ?? "unknown"} |`);
+
+  if (snapshot.firstCommitDate && snapshot.latestCommitDate) {
+    const first = new Date(snapshot.firstCommitDate);
+    const latest = new Date(snapshot.latestCommitDate);
+    const weeks = Math.round((latest.getTime() - first.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    lines.push(`| Repository age | ~${weeks} weeks |`);
+    if (snapshot.commitCount && weeks > 0) {
+      lines.push(`| Commit velocity | ~${Math.round(snapshot.commitCount / Math.max(weeks, 1))}/week |`);
+    }
+  }
+
+  // Performance patterns detected
+  const perfSignals = new Set<string>();
+  for (const sample of snapshot.fileSamples) {
+    const e = sample.excerpt;
+    if (/React\.lazy|lazy\(|Suspense/i.test(e)) perfSignals.add("Code splitting (React.lazy)");
+    if (/useMemo|useCallback|memo\(/i.test(e)) perfSignals.add("Memoization");
+    if (/staleTime|cacheTime|react-query/i.test(e)) perfSignals.add("Query caching");
+    if (/p-limit|concurrency|throttle/i.test(e)) perfSignals.add("Concurrency control");
+    if (/aggregate|materialized|daily_/i.test(e)) perfSignals.add("Pre-computed aggregates");
+    if (/sha.?256|hash|dedup/i.test(e)) perfSignals.add("Content deduplication");
+  }
+  if (perfSignals.size > 0) {
+    lines.push("");
+    lines.push(`**Performance patterns:** ${[...perfSignals].join(", ")}`);
+  }
+
+  return lines.join("\n");
+}
+
+function buildCodeQualitySection(snapshot: RepoSnapshot): string {
+  const lines: string[] = [];
+
+  // Commands
+  lines.push(`**Validation commands:**`);
+  lines.push(formatCommands(snapshot.commands));
+  lines.push("");
+
+  // Test coverage
+  if (snapshot.testFiles.length > 0) {
+    lines.push(`**Test files (${snapshot.testFiles.length}):** ${snapshot.testFiles.slice(0, 10).map((f) => `\`${f}\``).join(", ")}${snapshot.testFiles.length > 10 ? ` + ${snapshot.testFiles.length - 10} more` : ""}`);
+  } else {
+    lines.push("**Testing:** No test files detected ⚠️");
+  }
+
+  // Linting / type checking
+  const deps = Object.values(snapshot.dependencyGroups).flat();
+  const qualityTools = new Set<string>();
+  if (deps.some((d) => /eslint/i.test(d))) qualityTools.add("ESLint");
+  if (deps.some((d) => /prettier/i.test(d))) qualityTools.add("Prettier");
+  if (deps.some((d) => /stylelint/i.test(d))) qualityTools.add("Stylelint");
+  if (deps.some((d) => /typescript/i.test(d))) qualityTools.add("TypeScript");
+  if (deps.some((d) => /storybook/i.test(d))) qualityTools.add("Storybook");
+  if (deps.some((d) => /chromatic/i.test(d))) qualityTools.add("Chromatic");
+  if (qualityTools.size > 0) {
+    lines.push(`**Quality tooling:** ${[...qualityTools].join(", ")}`);
+  }
+
+  // CI/CD
+  const ciFiles = snapshot.configFiles.filter((f) =>
+    /workflow|ci\.yml|ci\.yaml|\.github\/workflows/i.test(f)
+  );
+  if (ciFiles.length > 0) {
+    lines.push(`**CI/CD:** ${ciFiles.map((f) => `\`${f}\``).join(", ")}`);
+  }
+
+  // Code patterns
+  const patterns = new Set<string>();
+  for (const sample of snapshot.fileSamples) {
+    const e = sample.excerpt;
+    if (/ErrorBoundary|error.boundary/i.test(e)) patterns.add("Error boundaries");
+    if (/try\s*\{[\s\S]*catch/i.test(e)) patterns.add("Structured error handling");
+    if (/console\.error|console\.warn/i.test(e)) patterns.add("Console logging");
+    if (/zod|z\.object|z\.string/i.test(e)) patterns.add("Zod validation");
+    if (/ajv|jsonschema/i.test(e)) patterns.add("JSON Schema validation");
+  }
+  if (patterns.size > 0) {
+    lines.push(`**Code patterns:** ${[...patterns].join(", ")}`);
+  }
+
+  return lines.join("\n\n");
+}
+
+function buildGapsSection(snapshot: RepoSnapshot): string {
+  const gaps: Array<{ gap: string; severity: string; notes: string }> = [];
+
+  // Check for missing test coverage
+  if (snapshot.testFiles.length === 0) {
+    gaps.push({ gap: "No test suite detected", severity: "High", notes: "No test files found in the repository" });
+  } else if (snapshot.testFiles.length < 5 && snapshot.fileCount > 100) {
+    gaps.push({ gap: "Low test coverage", severity: "Medium", notes: `${snapshot.testFiles.length} test files for ${snapshot.fileCount} total files` });
+  }
+
+  // Check for missing deployment
+  if (snapshot.deploymentSignals.length === 0) {
+    gaps.push({ gap: "No deployment configuration", severity: "High", notes: "No Netlify, Vercel, Docker, or CI/CD config detected" });
+  }
+
+  // Check for error monitoring
+  const deps = Object.values(snapshot.dependencyGroups).flat();
+  if (!deps.some((d) => /sentry|bugsnag|datadog|newrelic/i.test(d))) {
+    gaps.push({ gap: "No error monitoring service", severity: "Medium", notes: "No Sentry, Bugsnag, or similar dependency found" });
+  }
+
+  // Check for env documentation
+  if (snapshot.envVars.length > 5 && !snapshot.configFiles.some((f) => /\.env\.example|\.env\.template/i.test(f))) {
+    gaps.push({ gap: "No .env.example file", severity: "Low", notes: `${snapshot.envVars.length} env vars used but no template file for onboarding` });
+  }
+
+  // Security signals
+  for (const sample of snapshot.fileSamples) {
+    if (/Access-Control-Allow-Origin.*\*/i.test(sample.excerpt)) {
+      gaps.push({ gap: "Wildcard CORS policy", severity: "High", notes: `Found in \`${sample.path}\` — should be origin-specific` });
+      break;
+    }
+  }
+
+  // Missing README
+  if (!snapshot.readmeQuote) {
+    gaps.push({ gap: "Missing or empty README", severity: "Low", notes: "No description found in README" });
+  }
+
+  if (gaps.length === 0) {
+    return "No critical gaps detected from static analysis. A runtime audit is recommended to verify.";
+  }
+
+  const table = gaps.map((g) => `| ${g.gap} | ${g.severity} | ${g.notes} |`).join("\n");
+  return `| Gap | Severity | Notes |
+|---|---|---|
+${table}
+
+**Recommended next steps:**
+1. Review and tighten the generated expectations document.
+2. Confirm scan roots and commands before activating audits.
+3. Run a scoped full audit after activation.
+4. Address high-severity gaps before production deployment.
+5. Capture operator decisions so Lyra can calibrate future audits.`;
+}
+
+function buildExecutiveSummary(snapshot: RepoSnapshot): string {
+  const name = snapshot.projectName;
+  const status = snapshot.profileSummary.status ?? "working";
+  const framework = snapshot.frameworks[0] ?? snapshot.languages[0] ?? "a custom stack";
+  const age = (() => {
+    if (!snapshot.firstCommitDate || !snapshot.latestCommitDate) return "";
+    const weeks = Math.round(
+      (new Date(snapshot.latestCommitDate).getTime() - new Date(snapshot.firstCommitDate).getTime()) /
+        (7 * 24 * 60 * 60 * 1000)
+    );
+    return ` over ~${weeks} weeks`;
+  })();
+  const commitInfo = snapshot.commitCount ? ` with ${snapshot.commitCount} commits${age}` : "";
+
+  // Count features
+  const hasAuth = snapshot.fileSamples.some((s) => /auth|login|session/i.test(s.path));
+  const hasBilling = snapshot.fileSamples.some((s) => /billing|stripe|checkout|subscription/i.test(s.path));
+  const hasAi = snapshot.fileSamples.some((s) => /(ai|llm|provider|model|completion)/i.test(s.path));
+  const hasApi = snapshot.fileSamples.some((s) => /^(netlify\/functions|api|app\/api|pages\/api)/i.test(s.path));
+
+  const capabilities: string[] = [];
+  if (hasAuth) capabilities.push("authentication");
+  if (hasBilling) capabilities.push("billing");
+  if (hasAi) capabilities.push("AI integration");
+  if (hasApi) capabilities.push("serverless API layer");
+  if (snapshot.stack?.database !== "unknown") capabilities.push(`${snapshot.stack?.database} database`);
+
+  const capabilityStr = capabilities.length > 0
+    ? ` The codebase includes ${capabilities.join(", ")}.`
+    : "";
+
+  const testStr = snapshot.testFiles.length > 0
+    ? `${snapshot.testFiles.length} test files provide partial coverage.`
+    : "No test suite was detected.";
+
+  const deployStr = snapshot.deploymentSignals.length > 0
+    ? `Deployment is configured via ${snapshot.deploymentSignals[0].replace(" detected", "").toLowerCase()}.`
+    : "No deployment configuration was detected.";
+
+  return `**${name}** is a **${status}** ${framework} project${commitInfo}.${capabilityStr}
+
+${testStr} ${deployStr}
+
+This profile was generated from static repository analysis. Sections marked [NOT FOUND IN CODEBASE] require manual review or a deeper audit pass. The next step is to review the generated expectations, activate the project, and run scoped audits to produce actionable findings.`;
+}
+
+function buildFeatureInventory(snapshot: RepoSnapshot): string {
+  const files = snapshot.fileSamples.map((s) => s.path);
+  // Group files into feature areas by path pattern
+  const areas: Record<string, { files: string[]; signals: Set<string> }> = {};
+  const categorize = (file: string): string => {
+    if (/\/(auth|login|signup|register|password|session)\b/i.test(file)) return "Authentication";
+    if (/\/(billing|checkout|subscription|payment|stripe|pricing|webhook)/i.test(file)) return "Billing & Payments";
+    if (/\/(ai|llm|provider|router|completion|prompt|model|agent)/i.test(file)) return "AI / ML Integration";
+    if (/\/(api|function|endpoint|route)\b/i.test(file) && !/test/i.test(file)) return "API Endpoints";
+    if (/\/(component|ui|widget|modal|panel|button|form|layout|page|view)/i.test(file)) return "UI Components";
+    if (/\/(hook|use[A-Z])/i.test(file)) return "React Hooks";
+    if (/\/(migration|schema|seed|sql)/i.test(file)) return "Database / Migrations";
+    if (/\/(test|spec|__tests__)/i.test(file)) return "Testing";
+    if (/\/(style|css|theme|token|design)/i.test(file)) return "Design System";
+    if (/\/(asset|image|upload|media|storage|cloudinary)/i.test(file)) return "Asset Management";
+    if (/\/(config|setting|env)/i.test(file)) return "Configuration";
+    if (/\/(script|tool|util|helper|lib)/i.test(file)) return "Utilities & Scripts";
+    if (/\/(doc|readme|guide|changelog)/i.test(file)) return "Documentation";
+    if (/\/(onboarding|wizard|tour|welcome)/i.test(file)) return "Onboarding";
+    if (/\/(dashboard|admin|metric|analytics)/i.test(file)) return "Admin / Analytics";
+    if (/\/(flow|canvas|workflow|pipeline|node)/i.test(file)) return "Workflow Engine";
+    return "Other";
+  };
+
+  for (const file of files) {
+    const area = categorize(file);
+    if (!areas[area]) areas[area] = { files: [], signals: new Set() };
+    areas[area].files.push(file);
+  }
+
+  // Also scan samples for deeper signals
+  for (const sample of snapshot.fileSamples) {
+    const area = categorize(sample.path);
+    if (!areas[area]) continue;
+    const e = sample.excerpt.toLowerCase();
+    if (e.includes("export default") || e.includes("export function")) areas[area].signals.add("exports");
+    if (e.includes("fetch(") || e.includes("axios")) areas[area].signals.add("HTTP calls");
+    if (e.includes("usestate") || e.includes("useeffect")) areas[area].signals.add("React state");
+    if (e.includes("create table") || e.includes("alter table")) areas[area].signals.add("DDL");
+    if (e.includes("rls") || e.includes("row level")) areas[area].signals.add("RLS");
+    if (e.includes("stripe")) areas[area].signals.add("Stripe integration");
+    if (e.includes("jwt") || e.includes("bearer") || e.includes("getuser")) areas[area].signals.add("JWT auth");
+  }
+
+  const sorted = Object.entries(areas)
+    .filter(([, v]) => v.files.length > 0)
+    .sort((a, b) => b[1].files.length - a[1].files.length);
+
+  if (sorted.length === 0) return "- [NOT FOUND IN CODEBASE]";
+
+  const lines = sorted.map(([area, data]) => {
+    const fileList = data.files.slice(0, 5).map((f) => `\`${f}\``).join(", ");
+    const extra = data.files.length > 5 ? ` + ${data.files.length - 5} more` : "";
+    const signals = data.signals.size > 0 ? ` — signals: ${[...data.signals].join(", ")}` : "";
+    return `| **${area}** | ${data.files.length} files | ${fileList}${extra}${signals} |`;
+  });
+
+  return `| Feature Area | Files | Key Paths |
+|---|---|---|
+${lines.join("\n")}`;
+}
+
+function detectIntegrationsFromDependencies(
+  groups: Record<string, string[]>,
+  samples?: Array<{ path: string; excerpt: string }>
+): string[] {
+  const integrations = new Map<string, string>();
+  const depList = Object.values(groups).flat();
+
+  // Dependency-based detection
+  const depSignals: Array<[RegExp, string, string]> = [
+    [/stripe/i, "Stripe", "Subscription billing, checkout, webhooks"],
+    [/supabase/i, "Supabase", "PostgreSQL DB, Auth, Storage"],
+    [/openai/i, "OpenAI", "AI completions"],
+    [/anthropic/i, "Anthropic", "AI completions (Claude)"],
+    [/sentry/i, "Sentry", "Error monitoring"],
+    [/cloudinary/i, "Cloudinary", "Image/asset CDN"],
+    [/posthog/i, "PostHog", "Product analytics"],
+    [/octokit/i, "GitHub (Octokit)", "GitHub API integration"],
+    [/resend|sendgrid|nodemailer/i, "Email Service", "Transactional email"],
+    [/redis|ioredis|bullmq/i, "Redis", "Caching / job queue"],
+    [/twilio/i, "Twilio", "SMS / communications"],
+    [/aws-sdk|@aws/i, "AWS", "Cloud infrastructure"],
+    [/firebase/i, "Firebase", "Backend-as-a-service"],
+    [/deepseek/i, "DeepSeek", "AI completions"],
+    [/huggingface/i, "HuggingFace", "AI/ML models"],
+    [/mistral/i, "Mistral", "AI completions"],
+    [/cohere/i, "Cohere", "AI completions"],
+  ];
+
+  for (const dep of depList) {
+    for (const [pattern, name, purpose] of depSignals) {
+      if (pattern.test(dep)) integrations.set(name, purpose);
+    }
+  }
+
+  // Code-based detection from samples
+  if (samples) {
+    for (const sample of samples) {
+      const e = sample.excerpt;
+      if (/DEEPSEEK_API_KEY|deepseek\.com/i.test(e) && !integrations.has("DeepSeek"))
+        integrations.set("DeepSeek", "AI completions (inferred from code)");
+      if (/GEMINI_API_KEY|generativelanguage\.googleapis/i.test(e) && !integrations.has("Google Gemini"))
+        integrations.set("Google Gemini", "AI completions (inferred from code)");
+      if (/TAVILY_API_KEY/i.test(e) && !integrations.has("Tavily"))
+        integrations.set("Tavily", "Web search / RAG (inferred from code)");
+      if (/BRAVE_SEARCH/i.test(e) && !integrations.has("Brave Search"))
+        integrations.set("Brave Search", "Web search (inferred from code)");
+      if (/AIMLAPI/i.test(e) && !integrations.has("AimlAPI"))
+        integrations.set("AimlAPI", "AI aggregator (inferred from code)");
+    }
+  }
+
+  return [...integrations.entries()].map(([name, purpose]) => `- **${name}** — ${purpose}`);
 }
 
 function detectAiSignals(
   groups: Record<string, string[]>,
   samples: Array<{ path: string; excerpt: string }>
 ): string {
-  const deps = Object.values(groups).flat().filter((dep) => /(openai|anthropic|langchain|huggingface|replicate)/i.test(dep));
+  const deps = Object.values(groups).flat().filter((dep) =>
+    /(openai|anthropic|langchain|huggingface|replicate|deepseek|mistral|cohere|aimlapi)/i.test(dep)
+  );
+  const lines: string[] = [];
+
   if (deps.length > 0) {
-    return `Dependencies indicate AI integration: ${deps.join(", ")}`;
+    lines.push(`**AI dependencies:** ${deps.join(", ")}`);
   }
-  if (samples.some((sample) => /prompt|completion|embedding|gpt/i.test(sample.excerpt))) {
-    return "Prompt or model-related strings detected in sampled files.";
+
+  // Scan samples for provider implementations, routers, prompt patterns
+  const providerFiles = samples.filter((s) =>
+    /(provider|router|model|ai|llm|agent|completion|prompt)/i.test(s.path)
+  );
+  if (providerFiles.length > 0) {
+    lines.push(`**AI-related source files:** ${providerFiles.map((s) => `\`${s.path}\``).join(", ")}`);
   }
-  return "[NOT FOUND IN CODEBASE]";
+
+  // Detect specific patterns
+  const patterns: Array<[RegExp, string]> = [
+    [/class\s+\w*(Router|Provider|Agent)/i, "Provider/Router architecture"],
+    [/streaming|server-sent|SSE|ReadableStream/i, "Streaming completions"],
+    [/embedding|vector|semantic.search/i, "Embeddings / vector search"],
+    [/prompt.*template|system.*prompt/i, "Prompt templating"],
+    [/fallback.*provider|retry.*provider/i, "Multi-provider fallback"],
+    [/token.*count|cost.*estimat|usage.*track/i, "Token/cost tracking"],
+    [/agent.*catalog|agent.*preset/i, "Agent presets/catalog"],
+    [/benchmark|evaluat/i, "Model benchmarking"],
+    [/retrieval|rag|search.*context/i, "RAG / retrieval augmentation"],
+  ];
+
+  const detectedPatterns = new Set<string>();
+  for (const sample of samples) {
+    for (const [pattern, label] of patterns) {
+      if (pattern.test(sample.excerpt)) detectedPatterns.add(label);
+    }
+  }
+  if (detectedPatterns.size > 0) {
+    lines.push(`**Detected patterns:** ${[...detectedPatterns].join(", ")}`);
+  }
+
+  if (lines.length === 0) {
+    if (samples.some((s) => /prompt|completion|gpt|claude/i.test(s.excerpt))) {
+      return "AI-related strings detected in code but no structured AI subsystem found.";
+    }
+    return "[NOT FOUND IN CODEBASE]";
+  }
+  return lines.join("\n\n");
 }
 
 function detectAuthSignals(
   groups: Record<string, string[]>,
   samples: Array<{ path: string; excerpt: string }>
 ): string {
-  const deps = Object.values(groups).flat().filter((dep) => /(auth|clerk|lucia|next-auth|passport)/i.test(dep));
+  const deps = Object.values(groups).flat().filter((dep) =>
+    /(auth|clerk|lucia|next-auth|passport|supabase)/i.test(dep)
+  );
+  const lines: string[] = [];
   if (deps.length > 0) {
-    return `Authentication libraries detected: ${deps.join(", ")}`;
+    lines.push(`**Auth libraries:** ${deps.join(", ")}`);
   }
-  if (samples.some((sample) => /login|session|token|auth/i.test(sample.excerpt))) {
-    return "Auth-related code paths detected in sampled files.";
+
+  const authFiles = samples.filter((s) =>
+    /(auth|login|signup|register|session|callback|password)/i.test(s.path)
+  );
+  if (authFiles.length > 0) {
+    lines.push(`**Auth-related files:** ${authFiles.map((s) => `\`${s.path}\``).join(", ")}`);
   }
-  return "[NOT FOUND IN CODEBASE]";
+
+  const methods = new Set<string>();
+  for (const sample of samples) {
+    const e = sample.excerpt;
+    if (/supabase\.auth|getUser|getSession/i.test(e)) methods.add("Supabase Auth (JWT)");
+    if (/signInWith(Password|OAuth|Otp)/i.test(e)) methods.add("Email/password + OAuth");
+    if (/oauth.*callback|github.*auth/i.test(e)) methods.add("OAuth callback flow");
+    if (/ProtectedRoute|GuestRoute|RequireAuth/i.test(e)) methods.add("Route guards");
+    if (/RLS|row.level.security/i.test(e)) methods.add("Row-Level Security");
+    if (/Bearer|authorization.*header/i.test(e)) methods.add("Bearer token verification");
+    if (/password.*reset|forgot.*password/i.test(e)) methods.add("Password reset flow");
+  }
+  if (methods.size > 0) {
+    lines.push(`**Auth methods:** ${[...methods].join(", ")}`);
+  }
+
+  if (lines.length === 0) {
+    if (samples.some((s) => /login|session|token|auth/i.test(s.excerpt))) {
+      return "Auth-related code paths detected in sampled files.";
+    }
+    return "[NOT FOUND IN CODEBASE]";
+  }
+  return lines.join("\n\n");
 }
 
 function detectDesignSignals(
   samples: Array<{ path: string; excerpt: string }>,
-  configFiles: string[]
+  configFiles: string[],
+  dependencyGroups?: Record<string, string[]>
 ): string {
-  if (configFiles.some((file) => /tailwind/i.test(file))) {
-    return "Tailwind or design-token style configuration detected.";
+  const lines: string[] = [];
+  const deps = dependencyGroups ? Object.values(dependencyGroups).flat() : [];
+
+  // CSS framework
+  if (configFiles.some((f) => /tailwind/i.test(f)) || deps.some((d) => /tailwindcss/i.test(d))) {
+    lines.push("**CSS framework:** Tailwind CSS");
   }
-  if (samples.some((sample) => /color|font|theme|className/i.test(sample.excerpt))) {
-    return "UI styling signals detected in sampled files.";
+  if (deps.some((d) => /framer-motion/i.test(d))) lines.push("**Animation:** Framer Motion");
+  if (deps.some((d) => /radix-ui/i.test(d))) lines.push("**Primitives:** Radix UI");
+  if (deps.some((d) => /lucide|heroicons|phosphor/i.test(d))) lines.push("**Icons:** Icon library detected");
+
+  // Component patterns
+  const uiFiles = samples.filter((s) =>
+    /(component|modal|button|panel|layout|toast|form|card|badge|meter)/i.test(s.path)
+  );
+  if (uiFiles.length > 0) {
+    lines.push(`**UI component files (${uiFiles.length}):** ${uiFiles.slice(0, 8).map((s) => `\`${s.path}\``).join(", ")}${uiFiles.length > 8 ? " + more" : ""}`);
   }
-  return "[NOT FOUND IN CODEBASE]";
+
+  // Design tokens / theme
+  const tokenFiles = samples.filter((s) =>
+    /(token|theme|design-system|palette|color)/i.test(s.path)
+  );
+  if (tokenFiles.length > 0) {
+    lines.push(`**Design token / theme files:** ${tokenFiles.map((s) => `\`${s.path}\``).join(", ")}`);
+  }
+
+  // Storybook
+  if (deps.some((d) => /storybook/i.test(d)) || configFiles.some((f) => /storybook/i.test(f))) {
+    lines.push("**Component documentation:** Storybook");
+  }
+
+  // Dark mode
+  if (samples.some((s) => /darkMode|dark.*theme|theme.*dark|class.*dark/i.test(s.excerpt))) {
+    lines.push("**Dark mode:** Supported");
+  }
+
+  if (lines.length === 0) {
+    if (samples.some((s) => /className|style|css/i.test(s.excerpt))) {
+      return "UI styling detected in source files but no structured design system found.";
+    }
+    return "[NOT FOUND IN CODEBASE]";
+  }
+  return lines.join("\n\n");
 }
 
 function detectBillingSignals(
   groups: Record<string, string[]>,
   samples: Array<{ path: string; excerpt: string }>
 ): string {
-  const deps = Object.values(groups).flat().filter((dep) => /(stripe|paypal|billing)/i.test(dep));
+  const deps = Object.values(groups).flat().filter((dep) => /(stripe|paypal|billing|paddle)/i.test(dep));
+  const lines: string[] = [];
+
   if (deps.length > 0) {
-    return `Billing libraries detected: ${deps.join(", ")}`;
+    lines.push(`**Payment libraries:** ${deps.join(", ")}`);
   }
-  if (samples.some((sample) => /pricing|subscription|plan/i.test(sample.excerpt))) {
-    return "Pricing or plan strings detected in sampled files.";
+
+  const billingFiles = samples.filter((s) =>
+    /(billing|checkout|subscription|payment|stripe|pricing|webhook|invoice)/i.test(s.path)
+  );
+  if (billingFiles.length > 0) {
+    lines.push(`**Billing-related files:** ${billingFiles.map((s) => `\`${s.path}\``).join(", ")}`);
   }
-  return "[NOT FOUND IN CODEBASE]";
+
+  const signals = new Set<string>();
+  for (const sample of samples) {
+    const e = sample.excerpt;
+    if (/checkout.*session|createCheckout/i.test(e)) signals.add("Checkout flow");
+    if (/webhook.*event|constructEvent/i.test(e)) signals.add("Webhook handling");
+    if (/customer.*portal/i.test(e)) signals.add("Customer portal");
+    if (/subscription.*status|cancel.*subscription/i.test(e)) signals.add("Subscription lifecycle");
+    if (/idempoten|webhook_events/i.test(e)) signals.add("Idempotent webhook processing");
+    if (/tier|plan.*limit|feature.*gate/i.test(e)) signals.add("Tier-based feature gating");
+    if (/free|pro|team|enterprise/i.test(e) && /plan|tier|pricing/i.test(e)) signals.add("Multi-tier pricing");
+  }
+  if (signals.size > 0) {
+    lines.push(`**Billing patterns:** ${[...signals].join(", ")}`);
+  }
+
+  if (lines.length === 0) {
+    if (samples.some((s) => /pricing|subscription|plan/i.test(s.excerpt))) {
+      return "Pricing or plan strings detected in sampled files.";
+    }
+    return "[NOT FOUND IN CODEBASE]";
+  }
+  return lines.join("\n\n");
 }
 
 function formatCommands(commands: RepoSnapshot["commands"]): string {
