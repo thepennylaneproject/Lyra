@@ -327,9 +327,12 @@ export function getLinearPriority(finding: Finding): number {
   return PRIORITY_MAP[finding.priority] ?? 4;
 }
 
-export function getEnvLabelId(): string | null {
-  const id = getEnv("LINEAR_LABEL_ID");
-  return id || null;
+export function getEnvLabelId(cluster?: string): string | null {
+  if (cluster) {
+    const clusterLabel = getEnv(`LINEAR_LABEL_ID_${cluster.toUpperCase()}`);
+    if (clusterLabel) return clusterLabel;
+  }
+  return getEnv("LINEAR_LABEL_ID") || null;
 }
 
 export function getEnvProjectId(projectName?: string): string | null {

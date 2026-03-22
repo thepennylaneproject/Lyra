@@ -13,6 +13,7 @@ import { ProjectAuditHistory } from "./ProjectAuditHistory";
 import { OnboardingReviewPanel } from "./OnboardingReviewPanel";
 import { MaintenancePanel } from "./MaintenancePanel";
 import { BulkActionsPanel } from "./BulkActionsPanel";
+import { ProjectManagementPanel } from "./ProjectManagementPanel";
 import { STATUS_GROUPS, sortFindings } from "@/lib/constants";
 import { UI_COPY } from "@/lib/ui-copy";
 
@@ -223,6 +224,35 @@ export function ProjectView({
 
       {tab === "operations" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+
+          {/* ── Project management ──────────────────────────────── */}
+          <details
+            style={{
+              border: "0.5px solid var(--ink-border-faint)",
+              borderRadius: "var(--radius-md)",
+              padding: "0.5rem 0.75rem",
+              background: "var(--ink-bg-sunken)",
+            }}
+          >
+            <summary
+              style={{
+                fontSize: "11px",
+                fontFamily: "var(--font-mono)",
+                color: "var(--ink-text-3)",
+                cursor: "pointer",
+              }}
+            >
+              Project management
+            </summary>
+            <div style={{ marginTop: "1rem" }}>
+              <ProjectManagementPanel
+                project={project}
+                onDeleted={onBack}
+                onUpdated={async () => { await refetchProject(); }}
+              />
+            </div>
+          </details>
+
           <details
             open={showOnboarding}
             style={{

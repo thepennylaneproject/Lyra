@@ -16,8 +16,8 @@ const TEXT_EXT = new Set([
   ".html",
 ]);
 
-const DEFAULT_MAX_FILE_CHARS = 6000;
-const DEFAULT_MAX_FILES = 12;
+const DEFAULT_MAX_FILE_CHARS = 12000;
+const DEFAULT_MAX_FILES = 24;
 /** Bounded excerpt from the app’s intelligence report (`*_report.md` in the mirror tree). */
 const MAX_REPORT_CHARS = 12000;
 

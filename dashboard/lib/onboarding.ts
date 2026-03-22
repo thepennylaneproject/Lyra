@@ -1095,3 +1095,67 @@ export function summarizeAuditDecision(
     after: args.after,
   });
 }
+
+// ── Cluster-Aware Onboarding Utilities ─────────────────────────────────────────
+
+export async function collectGitHistory(repoPath: string): Promise<string> {
+  try {
+    const log = execFileSync("git", ["-C", repoPath, "log", "-n", "100", "--oneline", "--stat"], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    return log.slice(0, 15000);
+  } catch (e) {
+    return "Git history unavailable: " + (e instanceof Error ? e.message : String(e));
+  }
+}
+
+export async function collectDependencyManifest(repoPath: string): Promise<string> {
+  const pkgPath = join(repoPath, "package.json");
+  if (!existsSync(pkgPath)) return "No package.json found.";
+  try {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    return JSON.stringify(deps, null, 2);
+  } catch (e) {
+    return "Failed to parse dependencies.";
+  }
+}
+
+export async function generateModuleManifest(repoPath: string): Promise<Record<string, unknown>> {
+  const tree = describeTopLevel(repoPath);
+  return {
+    revision: "v1-onboarding",
+    generated_at: new Date().toISOString(),
+    source_root: repoPath,
+    exhaustiveness: "exhaustive",
+    modules: tree.map((t) => ({
+      name: t.path,
+      path: t.path,
+      description: t.note,
+      complexity: "medium",
+      dependencies: [],
+    })),
+    domains: [],
+  };
+}
+
+export async function generateCssTokenMap(repoPath: string): Promise<string> {
+  const out = [];
+  const candidates = [
+    "tailwind.config.js",
+    "tailwind.config.ts",
+    "globals.css",
+    "src/globals.css",
+    "src/index.css",
+    "styles/globals.css",
+    "src/styles/globals.css" // Added based on Lyra project structure
+  ];
+  for (const f of candidates) {
+    const p = join(repoPath, f);
+    if (existsSync(p)) {
+      out.push(`--- ${f} ---\n` + readFileSync(p, "utf8").slice(0, 3000));
+    }
+  }
+  return out.length > 0 ? out.join("\n\n") : "No standard CSS token maps found.";
+}

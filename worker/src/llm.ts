@@ -39,35 +39,76 @@ export interface AuditLlmResult {
 }
 
 /**
- * Determine the model to use based on routing strategy and configuration.
- * Supports multiple formats:
- *   - "openai:mini" (explicit provider:model format)
- *   - "gpt-4o-mini" (inferred as openai:mini)
- *   - "claude-3.5-sonnet" (inferred as anthropic:sonnet)
+ * Determine the model to use based on routing strategy and configured providers.
+ *
+ * The router checks which providers are actually available at runtime and picks
+ * the best tier for each strategy. You never need to set LYRA_AUDIT_MODEL —
+ * just add API keys and the router upgrades automatically.
+ *
+ * Tier preference order (best → cheapest fallback):
+ *   precision:  sonnet → deepseek:v3 → openai:balanced → openai:mini
+ *   balanced:   deepseek:v3 → sonnet → openai:balanced → openai:mini
+ *   aggressive: openai:mini → haiku → deepseek:v3 → openai:balanced
+ *
+ * DeepSeek V3 slots into balanced because it matches Sonnet-level code reasoning
+ * at ~10× lower cost. Gemini is available via LYRA_AUDIT_MODEL=gemini:flash for
+ * large-context full-project scans (1M token window) when needed.
+ *
+ * LYRA_AUDIT_MODEL is an escape hatch for explicit model selection only.
  */
 function resolveModel(): { primary: string; fallback: string | undefined } {
   const configuredModel = process.env.LYRA_AUDIT_MODEL?.trim();
   const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
 
+  // Escape hatch: explicit model override (rarely needed)
   if (configuredModel) {
-    // If explicitly configured, use it with a fallback
     if (configuredModel.includes(":")) {
-      return { primary: configuredModel, fallback: "openai:mini" };
+      return { primary: configuredModel, fallback: undefined };
     }
-    // Infer provider from model name
     const inferred = getRegistry().inferProvider(configuredModel);
-    return { primary: `${inferred.provider}:${inferred.modelId}`, fallback: "openai:mini" };
+    return { primary: `${inferred.provider}:${inferred.modelId}`, fallback: undefined };
   }
 
-  // Use strategy-based defaults
+  // Check which providers are configured at runtime
+  const registry = getRegistry();
+  const hasAnthropic   = registry.getProvider("anthropic")?.isConfigured()   ?? false;
+  const hasDeepSeek    = registry.getProvider("deepseek")?.isConfigured()    ?? false;
+  const hasOpenAI      = registry.getProvider("openai")?.isConfigured()      ?? false;
+  const hasHuggingFace = registry.getProvider("huggingface")?.isConfigured() ?? false;
+  const hasAimlapi     = registry.getProvider("aimlapi")?.isConfigured()     ?? false;
+
+  // Build a ranked list for each strategy and return the first configured pair
   switch (strategy) {
     case "aggressive":
-      return { primary: "anthropic:haiku", fallback: "openai:mini" };
+      // Fastest/cheapest — spot checks, iterative feedback loops
+      // HuggingFace nano is free; use it first, then escalate
+      return hasHuggingFace
+        ? { primary: "huggingface:nano",   fallback: hasOpenAI ? "openai:mini" : hasDeepSeek ? "deepseek:v3" : undefined }
+        : hasOpenAI
+          ? { primary: "openai:mini",       fallback: hasAnthropic ? "anthropic:haiku" : undefined }
+          : hasDeepSeek
+            ? { primary: "deepseek:v3",     fallback: hasAnthropic ? "anthropic:haiku" : undefined }
+            : { primary: "anthropic:haiku", fallback: undefined };
+
     case "precision":
-      return { primary: "anthropic:sonnet", fallback: "openai:balanced" };
+      // Maximum quality — pre-deploy, investor reviews, security audits
+      return hasAnthropic
+        ? { primary: "anthropic:sonnet",   fallback: hasOpenAI ? "openai:balanced" : undefined }
+        : hasDeepSeek
+          ? { primary: "deepseek:v3",      fallback: hasOpenAI ? "openai:balanced" : undefined }
+          : { primary: "openai:balanced",  fallback: undefined };
+
     case "balanced":
     default:
-      return { primary: "openai:mini", fallback: "anthropic:haiku" };
+      // Default — DeepSeek V3 preferred (Sonnet-level reasoning at lower cost),
+      // Sonnet as fallback for when DeepSeek is not yet configured
+      return hasDeepSeek
+        ? { primary: "deepseek:v3",        fallback: hasAnthropic ? "anthropic:sonnet" : hasOpenAI ? "openai:balanced" : undefined }
+        : hasAnthropic
+          ? { primary: "anthropic:sonnet", fallback: hasOpenAI ? "openai:balanced" : undefined }
+          : hasAimlapi
+            ? { primary: "aimlapi:mid",    fallback: hasOpenAI ? "openai:balanced" : undefined }
+            : { primary: "openai:balanced", fallback: undefined };
   }
 }
 
@@ -139,7 +180,7 @@ ${extras?.checklistId ? `Checklist: ${extras.checklistId}\n` : ""}
 ## Scope files
 ${(extras?.filesInScope ?? []).length > 0 ? extras?.filesInScope?.join("\n") : "(scope file list unavailable)"}
 
-## Already-known findings
+## Already-known findings (do not duplicate these)
 ${(extras?.knownFindingIds ?? []).length > 0 ? extras?.knownFindingIds?.join("\n") : "(none provided)"}
 
 ## Expectations document
@@ -147,6 +188,27 @@ ${expectations}
 
 ## Repository context
 ${codeContext}
+
+## Output requirements
+
+Produce findings with DIVERSE types — not just "bug". Use all four types:
+- "bug": broken behavior, runtime error, incorrect logic
+- "debt": working but fragile, missing constraint, type drift, migration gap
+- "question": ambiguous intent that requires human decision before code is written
+- "enhancement": missing capability that would improve correctness or safety
+
+Use SPECIFIC categories — not just "ux", "logic", or "security". Use fine-grained names like:
+  migration-gap, schema-mismatch, missing-rls, n-plus-one, type-drift, error-handling,
+  race-condition, missing-error-boundary, auth-bypass, dead-code, missing-validation,
+  copy-mismatch, missing-state, broken-flow, a11y-gap, bundle-size, cache-miss
+
+Each finding MUST include:
+- A specific proof_hook referencing the actual file path (and line number where possible)
+- A concrete suggested_fix with the affected_files listed
+
+Do NOT report on the audit infrastructure itself (draft expectations, missing validation commands). Focus only on issues in the application code.
+
+Do NOT produce near-duplicate findings. If you see multiple instances of the same pattern, report ONE finding that lists all affected locations in its description.
 
 Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output contract.`;
 
@@ -157,7 +219,7 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
       userPrompt: user,
       responseFormat: "json_object",
       temperature: 0.2,
-      maxTokens: 4096,
+      maxTokens: 12288,
     });
   } catch (error) {
     console.error("[lyra-worker] LLM call failed:", error);
