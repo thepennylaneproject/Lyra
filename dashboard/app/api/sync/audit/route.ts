@@ -156,10 +156,10 @@ export async function POST(request: Request) {
           ? `Imported ${findingsImported} findings across ${projectsUpdated} project(s).`
           : "All findings already present — nothing new to import.",
     });
-  } catch (e) {
-    console.error("POST /api/sync/audit", e);
+  } catch (error) {
+    console.error("POST /api/sync/audit", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

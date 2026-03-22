@@ -24,10 +24,10 @@ export async function GET() {
     }
     const queue = readRepairQueue();
     return NextResponse.json({ queue, size: queue.length });
-  } catch (e) {
-    console.error("GET /api/engine/queue", e);
+  } catch (error) {
+    console.error("GET /api/engine/queue", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -114,10 +114,10 @@ export async function POST(request: Request) {
     writeRepairQueue(queue);
 
     return NextResponse.json({ job, added: true });
-  } catch (e) {
-    console.error("POST /api/engine/queue", e);
+  } catch (error) {
+    console.error("POST /api/engine/queue", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -163,10 +163,10 @@ export async function DELETE(request: Request) {
     writeRepairQueue(next);
 
     return NextResponse.json({ removed: queue.length - next.length });
-  } catch (e) {
-    console.error("DELETE /api/engine/queue", e);
+  } catch (error) {
+    console.error("DELETE /api/engine/queue", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

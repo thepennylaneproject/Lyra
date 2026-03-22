@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
-import { apiErrorMessage } from "@/lib/api-error";
+import { apiErrorMessage, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 
 /**
@@ -30,9 +30,9 @@ import { recordDurableEventBestEffort } from "@/lib/durable-state";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as {
+    const body = await parseJsonBody<{
       team_key?: string;
-    };
+    }>(request);
 
     const teamKey = body.team_key ? String(body.team_key).trim() : null;
 
@@ -56,7 +56,10 @@ export async function POST(request: Request) {
     const projectSummaries: Array<{ project_name: string; findings_count: number }> = [];
     let totalSyncedFindings = 0;
 
-    // Sync each project
+    // Collect all (project_name, finding_id) pairs across every project
+    const allProjectNames: string[] = [];
+    const allFindingIds: string[] = [];
+
     for (const row of projectRows) {
       const projectName =
         typeof row.name === "string" ? row.name : String(row.name ?? "");
@@ -95,6 +98,19 @@ export async function POST(request: Request) {
       totalSyncedFindings += findingIds.length;
     }
 
+    // Upsert all sync mappings in a single batch query
+    if (allFindingIds.length > 0) {
+      await pool.query(
+        `INSERT INTO lyra_linear_sync_new (project_name, finding_id, linear_issue_id, linear_team_key)
+         SELECT t.project_name, t.finding_id, '', $1
+         FROM UNNEST($2::text[], $3::text[]) AS t(project_name, finding_id)
+         ON CONFLICT (project_name, finding_id) DO UPDATE SET
+           linear_team_key = COALESCE($1, linear_team_key),
+           updated_at = now()`,
+        [teamKey, allProjectNames, allFindingIds]
+      );
+    }
+
     // Log this as an event
     await recordDurableEventBestEffort({
       event_type: "bulk_operation_linear_sync_all_queued",
@@ -117,10 +133,10 @@ export async function POST(request: Request) {
       project_summaries: projectSummaries,
       message: `Queued ${totalSyncedFindings} finding(s) for Linear sync across ${projectSummaries.length} project(s). Sync will complete in the background.`,
     });
-  } catch (e) {
-    console.error("POST /api/bulk-operations/linear-sync-all", e);
+  } catch (error) {
+    console.error("POST /api/bulk-operations/linear-sync-all", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

@@ -91,18 +91,18 @@ export function OrchestrationPanel() {
 
   useEffect(() => {
     try {
-      const s = sessionStorage.getItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
-      if (s) setEnqueueSecret(s);
+      const storedSecret = sessionStorage.getItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
+      if (storedSecret) setEnqueueSecret(storedSecret);
     } catch {
       /* ignore */
     }
   }, []);
 
-  const persistSecret = (v: string) => {
-    setEnqueueSecret(v);
+  const persistSecret = (secretValue: string) => {
+    setEnqueueSecret(secretValue);
     try {
-      if (v.trim())
-        sessionStorage.setItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY, v.trim());
+      if (secretValue.trim())
+        sessionStorage.setItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY, secretValue.trim());
       else sessionStorage.removeItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
     } catch {
       /* ignore */
@@ -155,14 +155,14 @@ export function OrchestrationPanel() {
     let redisConfiguredVal = false;
     let jobsErr: string | null = null;
     if (jobsRes.ok) {
-      const j = await jobsRes.json();
-      jobsConfiguredVal = Boolean(j.configured);
-      redisConfiguredVal = Boolean(j.redis_configured);
+      const jobsPayload = await jobsRes.json();
+      jobsConfiguredVal = Boolean(jobsPayload.configured);
+      redisConfiguredVal = Boolean(jobsPayload.redis_configured);
       setJobsConfigured(jobsConfiguredVal);
       setRedisConfigured(redisConfiguredVal);
-      setEnqueueAuthOptional(Boolean(j.enqueue_auth_optional));
-      jobsVal = Array.isArray(j.jobs) ? j.jobs : [];
-      runsVal = Array.isArray(j.runs) ? j.runs : [];
+      setEnqueueAuthOptional(Boolean(jobsPayload.enqueue_auth_optional));
+      jobsVal = Array.isArray(jobsPayload.jobs) ? jobsPayload.jobs : [];
+      runsVal = Array.isArray(jobsPayload.runs) ? jobsPayload.runs : [];
       setJobs(jobsVal);
       setRuns(runsVal);
       setJobsLoadError(null);
@@ -212,12 +212,12 @@ export function OrchestrationPanel() {
   }, [load]);
 
   const authHeaders = useCallback((): HeadersInit => {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
-    const s = enqueueSecret.trim();
-    if (s) {
-      h.Authorization = `Bearer ${s}`;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const trimmedSecret = enqueueSecret.trim();
+    if (trimmedSecret) {
+      headers.Authorization = `Bearer ${trimmedSecret}`;
     }
-    return h;
+    return headers;
   }, [enqueueSecret]);
 
   const dispatchAction = useCallback(
@@ -261,8 +261,8 @@ export function OrchestrationPanel() {
         throw new Error(err.error ?? `Failed (${res.status})`);
       }
       await load(undefined, { bypassCache: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       setDispatchError(msg);
     } finally {
       setDispatching(null);

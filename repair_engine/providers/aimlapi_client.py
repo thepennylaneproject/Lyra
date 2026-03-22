@@ -12,7 +12,7 @@ Auth:      Bearer <AIMLAPI_API_KEY>
 
 from __future__ import annotations
 
-from .vllm_client import VLLMClient
+from .vllm_client import VLLMClient, build_vllm_tier_client
 
 AIMLAPI_BASE_URL = "https://api.aimlapi.com/v1"
 
@@ -47,13 +47,11 @@ def build_aimlapi_client(
     Returns:
         A VLLMClient pointed at api.aimlapi.com with the selected model.
     """
-    merged = {**AIMLAPI_MODELS, **(model_overrides or {})}
-    if tier not in merged:
-        raise ValueError(
-            f"Unknown tier '{tier}'. Valid tiers: {list(merged.keys())}"
-        )
-    return VLLMClient(
-        base_url=AIMLAPI_BASE_URL,
-        model=merged[tier],
+    return build_vllm_tier_client(
+        tier=tier,
         api_key=api_key,
+        models=AIMLAPI_MODELS,
+        base_url=AIMLAPI_BASE_URL,
+        provider_name="aimlapi",
+        model_overrides=model_overrides,
     )

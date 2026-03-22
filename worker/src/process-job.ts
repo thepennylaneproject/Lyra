@@ -572,6 +572,10 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
             }
           );
           auditModel = llm.model || auditModel;
+          const mappedFindings = llm.findings.map((finding) => ({
+            ...finding,
+            repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
+          }));
           passResults.push({
             findings: llm.findings.map((finding) => ({
               ...finding,

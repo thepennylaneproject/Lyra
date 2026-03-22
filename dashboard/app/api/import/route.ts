@@ -131,7 +131,7 @@ export async function POST(request: Request) {
     if (message.includes("No findings array") || message.includes("JSON")) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-    console.error("POST /api/import", e);
-    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
+    console.error("POST /api/import", error);
+    return NextResponse.json({ error: apiErrorMessage(error) }, { status: 500 });
   }
 }

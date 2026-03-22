@@ -373,25 +373,25 @@ export default function Home() {
   // ── Portfolio view ──
 
   // Compute portfolio totals
-  const totalFindings = projects.reduce((s, p) => s + (p.findings?.length ?? 0), 0);
-  const totalBacklog = projects.reduce((s, p) => s + (p.maintenanceBacklog?.length ?? 0), 0);
+  const totalFindings = projects.reduce((acc, project) => acc + (project.findings?.length ?? 0), 0);
+  const totalBacklog = projects.reduce((acc, project) => acc + (project.maintenanceBacklog?.length ?? 0), 0);
   const totalBlockers = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => f.severity === "blocker" && STATUS_GROUPS.active.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => f.severity === "blocker" && STATUS_GROUPS.active.includes(f.status)).length,
     0
   );
   const totalActive   = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => STATUS_GROUPS.active.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => STATUS_GROUPS.active.includes(f.status)).length,
     0
   );
   const totalResolved = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => STATUS_GROUPS.resolved.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => STATUS_GROUPS.resolved.includes(f.status)).length,
     0
   );
-  const shippable = projects.filter((p) => {
-    const f = p.findings ?? [];
-    const b = f.filter((x) => x.severity === "blocker" && STATUS_GROUPS.active.includes(x.status)).length;
-    const q = f.filter((x) => x.type === "question" && STATUS_GROUPS.active.includes(x.status)).length;
-    return f.length > 0 && b === 0 && q === 0;
+  const shippable = projects.filter((project) => {
+    const findings = project.findings ?? [];
+    const blockerCount = findings.filter((x) => x.severity === "blocker" && STATUS_GROUPS.active.includes(x.status)).length;
+    const questionCount = findings.filter((x) => x.type === "question" && STATUS_GROUPS.active.includes(x.status)).length;
+    return findings.length > 0 && blockerCount === 0 && questionCount === 0;
   }).length;
 
   if (loading) {

@@ -246,7 +246,7 @@ export async function saveProject(
 export async function listAllProjects(
   pool: pg.Pool
 ): Promise<Array<Record<string, unknown> & { name: string; findings: unknown[] }>> {
-  const r = await pool.query(`SELECT project_json FROM lyra_projects`);
+  const r = await pool.query(`SELECT project_json FROM lyra_projects ORDER BY name`);
   const out: Array<Record<string, unknown> & { name: string; findings: unknown[] }> = [];
   for (const row of r.rows) {
     let j: Record<string, unknown>;
@@ -418,92 +418,105 @@ export async function upsertMaintenanceBacklogFromFindings(
   projectName: string,
   findings: Array<Record<string, unknown>>
 ): Promise<void> {
-  for (const finding of findings) {
-    const findingId = String(finding.finding_id ?? "").trim();
-    const title = String(finding.title ?? "").trim();
-    if (!findingId || !title) continue;
-    await pool.query(
-      `INSERT INTO lyra_maintenance_backlog (
-         id,
-         project_name,
-         title,
-         summary,
-         canonical_status,
-         source_type,
-         priority,
-         severity,
-         risk_class,
-         next_action,
-         finding_ids,
-         dedupe_keys,
-         duplicate_of,
-         blocked_reason,
-         provenance,
-         created_at,
-         updated_at
-       )
-       VALUES (
-         $1,
-         $2,
-         $3,
-         $4,
-         $5,
-         'finding',
-         $6,
-         $7,
-         $8,
-         $9,
-         $10::jsonb,
-         $11::jsonb,
-         $12,
-         $13,
-         $14::jsonb,
-         COALESCE($15::timestamptz, now()),
-         now()
-       )
-       ON CONFLICT (id) DO UPDATE SET
-         title = EXCLUDED.title,
-         summary = EXCLUDED.summary,
-         canonical_status = EXCLUDED.canonical_status,
-         priority = EXCLUDED.priority,
-         severity = EXCLUDED.severity,
-         risk_class = EXCLUDED.risk_class,
-         next_action = EXCLUDED.next_action,
-         finding_ids = EXCLUDED.finding_ids,
-         dedupe_keys = EXCLUDED.dedupe_keys,
-         duplicate_of = EXCLUDED.duplicate_of,
-         blocked_reason = EXCLUDED.blocked_reason,
-         provenance = EXCLUDED.provenance,
-         updated_at = now()`,
-      [
-        `backlog-${projectName}-${findingId}`,
-        projectName,
-        title,
-        typeof finding.description === "string" ? finding.description : null,
-        inferBacklogStatus(finding),
-        String(finding.priority ?? "P2"),
-        String(finding.severity ?? "minor"),
-        inferBacklogRiskClass(finding),
-        inferBacklogNextAction(finding),
-        JSON.stringify([findingId]),
-        JSON.stringify([
-          `finding:${findingId}`,
-          `title:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-        ]),
-        typeof finding.duplicate_of === "string" ? finding.duplicate_of : null,
-        String(finding.status ?? "") === "fixed_pending_verify"
-          ? "Waiting for verification."
-          : null,
-        JSON.stringify({
-          manifest_revision:
-            typeof finding.last_seen_revision === "string"
-              ? finding.last_seen_revision
-              : undefined,
-          finding_id: findingId,
-          source_type: "finding",
-        }),
-        typeof finding.first_seen_at === "string" ? finding.first_seen_at : null,
-      ]
+  // Filter out findings without a valid id or title before batching
+  const valid = findings.filter((f) => {
+    return String(f.finding_id ?? "").trim() && String(f.title ?? "").trim();
+  });
+  if (valid.length === 0) return;
+
+  const ids: string[]                  = [];
+  const titles: string[]               = [];
+  const summaries: (string | null)[]   = [];
+  const statuses: string[]             = [];
+  const priorities: string[]           = [];
+  const severities: string[]           = [];
+  const riskClasses: string[]          = [];
+  const nextActions: string[]          = [];
+  const findingIdArrays: string[]      = [];
+  const dedupeKeyArrays: string[]      = [];
+  const duplicateOfs: (string | null)[] = [];
+  const blockedReasons: (string | null)[] = [];
+  const provenances: string[]          = [];
+  const createdAts: (string | null)[]  = [];
+
+  for (const f of valid) {
+    const fid   = String(f.finding_id).trim();
+    const title = String(f.title).trim();
+
+    ids.push(`backlog-${projectName}-${fid}`);
+    titles.push(title);
+    summaries.push(typeof f.description === "string" ? f.description : null);
+    statuses.push(inferBacklogStatus(f));
+    priorities.push(String(f.priority ?? "P2"));
+    severities.push(String(f.severity ?? "minor"));
+    riskClasses.push(inferBacklogRiskClass(f));
+    nextActions.push(inferBacklogNextAction(f));
+    findingIdArrays.push(JSON.stringify([fid]));
+    dedupeKeyArrays.push(JSON.stringify([
+      `finding:${fid}`,
+      `title:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    ]));
+    duplicateOfs.push(typeof f.duplicate_of === "string" ? f.duplicate_of : null);
+    blockedReasons.push(
+      String(f.status ?? "") === "fixed_pending_verify" ? "Waiting for verification." : null
     );
+    provenances.push(JSON.stringify({
+      manifest_revision: typeof f.last_seen_revision === "string" ? f.last_seen_revision : undefined,
+      finding_id: fid,
+      source_type: "finding",
+    }));
+    createdAts.push(typeof f.first_seen_at === "string" ? f.first_seen_at : null);
   }
+
+  await pool.query(
+    `INSERT INTO lyra_maintenance_backlog (
+       id, project_name, title, summary, canonical_status, source_type,
+       priority, severity, risk_class, next_action, finding_ids, dedupe_keys,
+       duplicate_of, blocked_reason, provenance, created_at, updated_at
+     )
+     SELECT
+       t.id, $2, t.title, t.summary, t.canonical_status, 'finding',
+       t.priority, t.severity, t.risk_class, t.next_action,
+       t.finding_ids_json::jsonb, t.dedupe_keys_json::jsonb,
+       t.duplicate_of, t.blocked_reason, t.provenance_json::jsonb,
+       COALESCE(t.created_at_txt::timestamptz, now()), now()
+     FROM UNNEST(
+       $1::text[], $3::text[], $4::text[], $5::text[],
+       $6::text[], $7::text[], $8::text[], $9::text[], $10::text[],
+       $11::text[], $12::text[], $13::text[], $14::text[], $15::text[]
+     ) AS t(id, title, summary, canonical_status,
+            priority, severity, risk_class, next_action, finding_ids_json,
+            dedupe_keys_json, duplicate_of, blocked_reason, provenance_json, created_at_txt)
+     ON CONFLICT (id) DO UPDATE SET
+       title = EXCLUDED.title,
+       summary = EXCLUDED.summary,
+       canonical_status = EXCLUDED.canonical_status,
+       priority = EXCLUDED.priority,
+       severity = EXCLUDED.severity,
+       risk_class = EXCLUDED.risk_class,
+       next_action = EXCLUDED.next_action,
+       finding_ids = EXCLUDED.finding_ids,
+       dedupe_keys = EXCLUDED.dedupe_keys,
+       duplicate_of = EXCLUDED.duplicate_of,
+       blocked_reason = EXCLUDED.blocked_reason,
+       provenance = EXCLUDED.provenance,
+       updated_at = now()`,
+    [
+      ids,             // $1
+      projectName,     // $2
+      titles,          // $3
+      summaries,       // $4
+      statuses,        // $5
+      priorities,      // $6
+      severities,      // $7
+      riskClasses,     // $8
+      nextActions,     // $9
+      findingIdArrays, // $10
+      dedupeKeyArrays, // $11
+      duplicateOfs,    // $12
+      blockedReasons,  // $13
+      provenances,     // $14
+      createdAts,      // $15
+    ]
+  );
 }

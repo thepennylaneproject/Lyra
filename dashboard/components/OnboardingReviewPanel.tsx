@@ -66,8 +66,8 @@ export function OnboardingReviewPanel({
       }
       const updated = (await res.json()) as Project;
       await onUpdated(updated);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(null);
     }

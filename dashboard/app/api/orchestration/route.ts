@@ -12,10 +12,10 @@ export async function GET() {
       Promise.resolve(getEngineStatus()),
     ]);
     return NextResponse.json(derivePortfolioOrchestration(projects, engineStatus));
-  } catch (e) {
-    console.error("GET /api/orchestration", e);
+  } catch (error) {
+    console.error("GET /api/orchestration", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
