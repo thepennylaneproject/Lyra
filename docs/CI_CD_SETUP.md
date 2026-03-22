@@ -98,6 +98,11 @@ If your tests require API keys (OpenAI, Anthropic, etc.):
      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
    ```
 
+### Dashboard production (Netlify / hosting)
+
+- **Required for public deploys:** Set **`DASHBOARD_API_SECRET`** or **`ORCHESTRATION_ENQUEUE_SECRET`** on the host. Without it, a production build responds with **503** on dashboard APIs (fail closed) except **`GET /api/health`**.
+- **Staging / E2E only:** Set **`LYRA_ALLOW_OPEN_API=true`** if you intentionally need the legacy “open API without a secret” behavior under `NODE_ENV=production`.
+
 ## Workflow Triggers
 
 ### Continuous Integration (`.github/workflows/ci.yml`)

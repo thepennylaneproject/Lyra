@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { getRepository } from "@/lib/repository-instance";
 import { parseOpenFindingsPayload } from "@/lib/repository";
-import type { Project, Finding } from "@/lib/types";
+import type { Finding, Project } from "@/lib/types";
 import { apiErrorMessage } from "@/lib/api-error";
 import { normalizeMaintenanceBacklog } from "@/lib/maintenance-backlog";
 import {
   upsertMaintenanceBacklogItems,
 } from "@/lib/maintenance-store";
 import { hasSupabaseProjectsStore } from "@/lib/store-supabase";
+import { mergeImportedFindings, type ImportSummary } from "@/lib/import-summary";
 
 export async function POST(request: Request) {
   try {
@@ -39,29 +40,39 @@ export async function POST(request: Request) {
 
     const repo = getRepository();
     const existing = await repo.getByName(projectName);
+    const totalBefore = existing?.findings?.length ?? 0;
 
     let findings: Finding[];
-    let added = 0;
-    let removed = 0;
-    let skipped = 0;
+    let summary: ImportSummary;
 
     if (mode === "replace") {
-      removed = existing ? (existing.findings?.length ?? 0) : 0;
-      added = importedFindings.length;
+      const removed = totalBefore;
+      const totalAfter = importedFindings.length;
       findings = importedFindings;
+      summary = {
+        mode: "replace",
+        created: !existing,
+        added: totalAfter,
+        updated: 0,
+        unchanged: 0,
+        removed,
+        total_before: totalBefore,
+        total_after: totalAfter,
+      };
     } else {
-      // Merge by finding_id: add new, skip duplicates (existing findings are preserved as-is)
       const existingFindings = existing?.findings ?? [];
-      const existingById = new Map(existingFindings.map((f) => [f.finding_id, f]));
-      for (const f of importedFindings) {
-        if (!existingById.has(f.finding_id)) {
-          existingById.set(f.finding_id, f);
-          added += 1;
-        } else {
-          skipped += 1;
-        }
-      }
-      findings = [...existingById.values()];
+      const merged = mergeImportedFindings(existingFindings, importedFindings);
+      findings = merged.findings;
+      summary = {
+        mode: "merge",
+        created: !existing,
+        added: merged.added,
+        updated: merged.updated,
+        unchanged: merged.unchanged,
+        removed: 0,
+        total_before: totalBefore,
+        total_after: findings.length,
+      };
     }
 
     const project: Project = {
@@ -95,7 +106,12 @@ export async function POST(request: Request) {
           normalizeMaintenanceBacklog(project.name, project.findings)
         );
       }
-      return NextResponse.json({ project, created: false, mode, added, removed, skipped });
+      return NextResponse.json({
+        project,
+        created: false,
+        mode,
+        import_summary: summary,
+      });
     }
     await repo.create(project);
     if (hasSupabaseProjectsStore()) {
@@ -104,13 +120,18 @@ export async function POST(request: Request) {
         normalizeMaintenanceBacklog(project.name, project.findings)
       );
     }
-    return NextResponse.json({ project, created: true, mode, added, removed: 0, skipped: 0 });
+    return NextResponse.json({
+      project,
+      created: true,
+      mode,
+      import_summary: summary,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (message.includes("No findings array") || message.includes("JSON")) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-    console.error("POST /api/import", e);
-    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
+    console.error("POST /api/import", error);
+    return NextResponse.json({ error: apiErrorMessage(error) }, { status: 500 });
   }
 }

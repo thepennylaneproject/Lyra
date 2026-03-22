@@ -1,10 +1,15 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, type CSSProperties } from "react";
 import type { Project } from "@/lib/types";
+import type { ImportSummary } from "@/lib/import-summary";
+import { UI_COPY } from "@/lib/ui-copy";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+
+type OnboardMode = "repository" | "json";
 
 interface ImportModalProps {
-  onImport: (project: Project) => Promise<void>;
+  onImport: (project: Project) => Promise<ImportSummary>;
   onOnboardRepository: (input: {
     name?: string;
     repository_url?: string;
@@ -14,7 +19,19 @@ interface ImportModalProps {
   onClose:  () => void;
 }
 
+const modeBtn = (active: boolean): CSSProperties => ({
+  fontSize:     "11px",
+  fontFamily:   "var(--font-mono)",
+  padding:      "5px 12px",
+  borderRadius: "var(--radius-md)",
+  border:       active ? "0.5px solid var(--ink-border)" : "0.5px solid var(--ink-border-faint)",
+  background:   active ? "var(--ink-bg-raised)" : "transparent",
+  color:        active ? "var(--ink-text)" : "var(--ink-text-4)",
+  cursor:       "pointer",
+});
+
 export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportModalProps) {
+  const [mode, setMode] = useState<OnboardMode>("repository");
   const [name,      setName]      = useState("");
   const [repoUrl,   setRepoUrl]   = useState("");
   const [localPath, setLocalPath] = useState("");
@@ -23,9 +40,10 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
   const [error,     setError]     = useState("");
   const [dragging,  setDragging]  = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Warn on close if there is unsaved input
   const isDirty =
     name.trim().length > 0 ||
     repoUrl.trim().length > 0 ||
@@ -34,10 +52,13 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
     jsonText.trim().length > 0;
 
   const handleClose = () => {
+    if (importSummary) {
+      onClose();
+      return;
+    }
     if (isDirty && !submitting) {
-      if (!confirm("Discard unsaved form input?")) {
-        return;
-      }
+      setDiscardOpen(true);
+      return;
     }
     onClose();
   };
@@ -54,8 +75,8 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
   }
 
   function loadFile(file: File) {
-    const n = file.name.replace("open_findings", "").replace(".json", "").replace(/^[-_]/, "");
-    if (!name && n) setName(n);
+    const derivedName = file.name.replace("open_findings", "").replace(".json", "").replace(/^[-_]/, "");
+    if (!name && derivedName) setName(derivedName);
     const reader = new FileReader();
     reader.onload = (ev) => setJsonText((ev.target?.result as string) ?? "");
     reader.readAsText(file);
@@ -80,46 +101,93 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
     const trimmedJson = jsonText.trim();
     const projectName = trimmedName || (trimmedRepo ? deriveNameFromRepoUrl(trimmedRepo) : "");
 
-    // Require either: (repo or local path) OR (json findings)
-    if (!trimmedRepo && !trimmedPath && !trimmedJson) {
-      setError("Provide a repository URL, local path, or JSON findings");
-      return;
-    }
-
-    // If onboarding from repo/path, must have at least one
-    if ((trimmedRepo || trimmedPath) && !projectName) {
-      setError("Project name is required or will be derived from repository URL");
-      return;
-    }
-
-    setSubmitting(true);
     setError("");
-    try {
-      if (trimmedRepo || trimmedPath) {
+
+    if (mode === "repository") {
+      if (!trimmedRepo && !trimmedPath) {
+        setError("Provide a repository URL or local path");
+        return;
+      }
+      if (!projectName) {
+        setError("Project name is required or will be derived from repository URL");
+        return;
+      }
+      setSubmitting(true);
+      try {
         await onOnboardRepository({
           name: projectName || undefined,
           repository_url: trimmedRepo || undefined,
           local_path: trimmedPath || undefined,
           default_branch: defaultBranch.trim() || undefined,
         });
-        return;
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSubmitting(false);
       }
-      // Legacy JSON import path
-      const data = JSON.parse(trimmedJson);
-      const findings = data.open_findings ?? data.findings ?? [];
-      if (!Array.isArray(findings)) { setError("No findings array found"); setSubmitting(false); return; }
-      await onImport({
-        name: projectName,
+      return;
+    }
+
+    if (!trimmedJson) {
+      setError("Load or paste an open_findings JSON payload");
+      return;
+    }
+    if (!trimmedName) {
+      setError("Enter a project name (or load a file; the name may be inferred from the filename)");
+      return;
+    }
+    let data: { open_findings?: unknown; findings?: unknown };
+    try {
+      data = JSON.parse(trimmedJson) as { open_findings?: unknown; findings?: unknown };
+    } catch {
+      setError("Invalid JSON");
+      return;
+    }
+    const findings = data.open_findings ?? data.findings ?? [];
+    if (!Array.isArray(findings)) {
+      setError("No findings array found");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const summary = await onImport({
+        name: trimmedName,
         findings,
-        repositoryUrl: trimmedRepo || undefined,
+        repositoryUrl: undefined,
       });
+      setImportSummary(summary);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
       setSubmitting(false);
     }
   }
 
+  const submitLabel =
+    mode === "repository"
+      ? submitting
+        ? "onboarding…"
+        : "Start onboarding"
+      : submitting
+        ? "importing…"
+        : "Import findings";
+
   return (
+    <>
+      <ConfirmDialog
+        open={discardOpen}
+        title={UI_COPY.confirmDiscardImportTitle}
+        body={UI_COPY.confirmDiscardImportBody}
+        confirmLabel={UI_COPY.confirmDiscard}
+        cancelLabel={UI_COPY.confirmCancel}
+        danger
+        onCancel={() => setDiscardOpen(false)}
+        onConfirm={() => {
+          setDiscardOpen(false);
+          onClose();
+        }}
+      />
     <div
       style={{
         background:   "var(--ink-bg-raised)",
@@ -130,7 +198,6 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
       }}
       className="animate-fade-in"
     >
-      {/* Header */}
       <div
         style={{
           display:        "flex",
@@ -152,159 +219,249 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
         </button>
       </div>
 
-      {/* Section 1: Project Identity (Required) */}
-      <div style={{ marginBottom: "1.5rem", paddingBottom: "1rem", borderBottom: "0.5px solid var(--ink-border-faint)" }}>
-        <div
-          style={{
-            fontSize: "9px",
-            fontFamily: "var(--font-mono)",
-            fontWeight: 500,
-            color: "var(--ink-text)",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            marginBottom: "0.75rem",
-          }}
-        >
-          ① Project identity <span style={{ color: "var(--ink-red)" }}>required</span>
-        </div>
-
-        <div style={{ marginBottom: "0.75rem" }}>
-          <label
+      {importSummary ? (
+        <div>
+          <div
             style={{
-              display: "block",
               fontSize: "9px",
               fontFamily: "var(--font-mono)",
               fontWeight: 500,
-              color: "var(--ink-text-4)",
-              letterSpacing: "0.08em",
+              color: "var(--ink-text)",
+              letterSpacing: "0.1em",
               textTransform: "uppercase",
-              marginBottom: "0.375rem",
+              marginBottom: "0.65rem",
             }}
           >
-            Repository URL or local path
-          </label>
-          <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.5rem" }}>
-            Provide a repository URL or local path to generate draft onboarding artifacts. Repository URL auto-derives the project name if blank. Project name is optional.
+            {UI_COPY.importSummaryHeading}
+          </div>
+          <p
+            style={{
+              margin: "0 0 0.75rem 0",
+              fontSize: "10px",
+              fontFamily: "var(--font-mono)",
+              color: "var(--ink-text-4)",
+              lineHeight: 1.5,
+            }}
+          >
+            {importSummary.mode === "replace"
+              ? UI_COPY.importSummaryReplaceHint
+              : UI_COPY.importSummaryMergeHint}
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              gap: "0.35rem 1.25rem",
+              fontSize: "11px",
+              fontFamily: "var(--font-mono)",
+              color: "var(--ink-text-2)",
+              marginBottom: "0.75rem",
+              maxWidth: "22rem",
+            }}
+          >
+            {importSummary.mode === "merge" && (
+              <>
+                <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.importSummaryAdded}</span>
+                <span>{importSummary.added}</span>
+                <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.importSummaryUpdated}</span>
+                <span>{importSummary.updated}</span>
+                <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.importSummaryUnchanged}</span>
+                <span>{importSummary.unchanged}</span>
+              </>
+            )}
+            {importSummary.mode === "replace" && (
+              <>
+                <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.importSummaryRemoved}</span>
+                <span>{importSummary.removed}</span>
+                <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.importSummaryAdded}</span>
+                <span>{importSummary.added}</span>
+              </>
+            )}
+            <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.importSummaryTotals}</span>
+            <span>
+              {importSummary.total_before} → {importSummary.total_after}
+            </span>
+          </div>
+          <button type="button" onClick={() => onClose()} style={{ padding: "5px 16px" }}>
+            {UI_COPY.importSummaryDone}
+          </button>
+        </div>
+      ) : (
+        <>
+      <div
+        role="tablist"
+        aria-label="Onboarding mode"
+        style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "repository"}
+          onClick={() => {
+            setMode("repository");
+            setError("");
+          }}
+          style={modeBtn(mode === "repository")}
+        >
+          From repository
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "json"}
+          onClick={() => {
+            setMode("json");
+            setError("");
+          }}
+          style={modeBtn(mode === "json")}
+        >
+          Import findings JSON
+        </button>
+      </div>
+
+      {mode === "repository" && (
+        <div style={{ marginBottom: "1.5rem" }}>
+          <div
+            style={{
+              fontSize: "9px",
+              fontFamily: "var(--font-mono)",
+              fontWeight: 500,
+              color: "var(--ink-text)",
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              marginBottom: "0.75rem",
+            }}
+          >
+            Repository <span style={{ color: "var(--ink-red)" }}>required</span>
+          </div>
+          <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.75rem", lineHeight: 1.45 }}>
+            Generate draft onboarding artifacts from a Git URL or local path. Project name is optional if the URL contains the repo name.
           </div>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Project name (e.g. relevnt)"
-            style={{ marginBottom: "0.5rem" }}
+            style={{ marginBottom: "0.5rem", display: "block", width: "100%", maxWidth: "480px" }}
           />
           <input
             type="text"
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             placeholder="Repository URL (https://github.com/owner/repo)"
-            style={{ marginBottom: "0.5rem" }}
+            style={{ marginBottom: "0.5rem", display: "block", width: "100%", maxWidth: "480px" }}
           />
           <input
             type="text"
             value={localPath}
             onChange={(e) => setLocalPath(e.target.value)}
             placeholder="Local path (/Users/you/project)"
-            style={{ marginBottom: "0.5rem" }}
+            style={{ marginBottom: "0.5rem", display: "block", width: "100%", maxWidth: "480px" }}
           />
           <input
             type="text"
             value={defaultBranch}
             onChange={(e) => setDefaultBranch(e.target.value)}
             placeholder="Default branch (optional)"
+            style={{ display: "block", width: "100%", maxWidth: "480px" }}
           />
         </div>
-      </div>
+      )}
 
-      {/* Section 2: Audit Findings (Optional) */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <div
-          style={{
-            fontSize: "9px",
-            fontFamily: "var(--font-mono)",
-            fontWeight: 500,
-            color: "var(--ink-text)",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            marginBottom: "0.75rem",
-          }}
-        >
-          ② Audit findings <span style={{ color: "var(--ink-text-4)" }}>optional</span>
-        </div>
-
-        <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.75rem" }}>
-          Legacy mode only. If you provide a repository URL or local path above, Lyra will generate draft onboarding artifacts instead of importing findings JSON.
-        </div>
-
-        {/* File upload */}
-        <div style={{ marginBottom: "1rem" }}>
-          <label
+      {mode === "json" && (
+        <div style={{ marginBottom: "1.5rem" }}>
+          <div
             style={{
-              display: "block",
               fontSize: "9px",
               fontFamily: "var(--font-mono)",
               fontWeight: 500,
-              color: "var(--ink-text-4)",
-              letterSpacing: "0.08em",
+              color: "var(--ink-text)",
+              letterSpacing: "0.1em",
               textTransform: "uppercase",
-              marginBottom: "0.375rem",
+              marginBottom: "0.75rem",
             }}
           >
-            Load from file
-          </label>
-          <div
-            onClick={() => fileRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={handleDrop}
-            style={{
-              border: `0.5px dashed ${dragging ? "var(--ink-border)" : "var(--ink-border-faint)"}`,
-              borderRadius: "var(--radius-md)",
-              padding: "1.25rem",
-              textAlign: "center",
-              cursor: "pointer",
-              background: dragging ? "var(--ink-bg-sunken)" : "transparent",
-              transition: "background 0.12s ease, border-color 0.12s ease",
-            }}
-          >
-            <span style={{ fontSize: "11px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
-              {jsonText ? "✓ file loaded" : "drag & drop open_findings.json or click to browse"}
-            </span>
+            Findings file
+          </div>
+          <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.75rem", lineHeight: 1.45 }}>
+            Import an existing <code style={{ fontSize: "10px" }}>open_findings.json</code> into the portfolio. Merges by{" "}
+            <code style={{ fontSize: "10px" }}>finding_id</code> (updates rows when key fields differ from the snapshot).
+            After import, a summary shows added / updated / unchanged counts.
           </div>
           <input
-            ref={fileRef}
-            type="file"
-            accept=".json"
-            onChange={handleFile}
-            style={{ display: "none" }}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Project name"
+            style={{ marginBottom: "1rem", display: "block", width: "100%", maxWidth: "480px" }}
           />
+          <div style={{ marginBottom: "1rem" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "9px",
+                fontFamily: "var(--font-mono)",
+                fontWeight: 500,
+                color: "var(--ink-text-4)",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                marginBottom: "0.375rem",
+              }}
+            >
+              Load from file
+            </label>
+            <div
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={handleDrop}
+              style={{
+                border: `0.5px dashed ${dragging ? "var(--ink-border)" : "var(--ink-border-faint)"}`,
+                borderRadius: "var(--radius-md)",
+                padding: "1.25rem",
+                textAlign: "center",
+                cursor: "pointer",
+                background: dragging ? "var(--ink-bg-sunken)" : "transparent",
+                transition: "background 0.12s ease, border-color 0.12s ease",
+              }}
+            >
+              <span style={{ fontSize: "11px", color: "var(--ink-text-4)", fontFamily: "var(--font-mono)" }}>
+                {jsonText ? "✓ file loaded" : "drag & drop open_findings.json or click to browse"}
+              </span>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json"
+              onChange={handleFile}
+              style={{ display: "none" }}
+            />
+          </div>
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "9px",
+                fontFamily: "var(--font-mono)",
+                fontWeight: 500,
+                color: "var(--ink-text-4)",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                marginBottom: "0.375rem",
+              }}
+            >
+              Or paste JSON
+            </label>
+            <textarea
+              value={jsonText}
+              onChange={(e) => setJsonText(e.target.value)}
+              rows={6}
+              placeholder='{"open_findings": [...]}'
+              style={{ fontFamily: "var(--font-mono)", fontSize: "11px", width: "100%", maxWidth: "520px" }}
+            />
+          </div>
         </div>
-
-        {/* Paste alternative */}
-        <div>
-          <label
-            style={{
-              display: "block",
-              fontSize: "9px",
-              fontFamily: "var(--font-mono)",
-              fontWeight: 500,
-              color: "var(--ink-text-4)",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              marginBottom: "0.375rem",
-            }}
-          >
-            Or paste JSON directly
-          </label>
-          <textarea
-            value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
-            rows={4}
-            placeholder='{"open_findings": [...]}'
-            style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
-          />
-        </div>
-      </div>
+      )}
 
       {error && (
         <div style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-red)", marginBottom: "0.75rem" }}>
@@ -318,8 +475,11 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
         disabled={submitting}
         style={{ padding: "5px 16px" }}
       >
-        {submitting ? "onboarding…" : "Start onboarding"}
+        {submitLabel}
       </button>
+        </>
+      )}
     </div>
+    </>
   );
 }

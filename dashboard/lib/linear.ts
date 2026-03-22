@@ -132,10 +132,10 @@ export async function pingLinearApi(): Promise<{ ok: boolean; error?: string }> 
   try {
     await gql<{ viewer?: { id?: string } }>(`query { viewer { id } }`);
     return { ok: true };
-  } catch (e) {
+  } catch (error) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : String(e),
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -234,8 +234,8 @@ export async function createIssue(params: {
 
   try {
     return await runCreate(params.labelIds);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
     if (params.labelIds?.length && isLinearLabelIdsAccessError(msg)) {
       console.warn(
         "[linear] LINEAR_LABEL_ID rejected by Linear (wrong workspace, deleted label, or no access). Creating issue without labels. Fix or remove LINEAR_LABEL_ID.",
@@ -243,7 +243,7 @@ export async function createIssue(params: {
       );
       return runCreate(undefined);
     }
-    throw e;
+    throw error;
   }
 }
 
@@ -327,9 +327,12 @@ export function getLinearPriority(finding: Finding): number {
   return PRIORITY_MAP[finding.priority] ?? 4;
 }
 
-export function getEnvLabelId(): string | null {
-  const id = getEnv("LINEAR_LABEL_ID");
-  return id || null;
+export function getEnvLabelId(cluster?: string): string | null {
+  if (cluster) {
+    const clusterLabel = getEnv(`LINEAR_LABEL_ID_${cluster.toUpperCase()}`);
+    if (clusterLabel) return clusterLabel;
+  }
+  return getEnv("LINEAR_LABEL_ID") || null;
 }
 
 export function getEnvProjectId(projectName?: string): string | null {

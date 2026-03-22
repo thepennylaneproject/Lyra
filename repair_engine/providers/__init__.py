@@ -1,5 +1,6 @@
 from .anthropic_client import AnthropicClient, build_anthropic_client
 from .aimlapi_client import build_aimlapi_client
+from .base import CompletionMixin
 from .cost_tracker import CostTracker
 from .gateway import GatewayResult, GatewayRouter
 from .gemini_client import build_gemini_client
@@ -13,7 +14,7 @@ from .router import (
     build_router,
 )
 from .routing_config import RouteEntry, RoutingConfig, RoutingRules
-from .vllm_client import VLLMClient
+from .vllm_client import VLLMClient, build_vllm_tier_client
 
 __all__ = [
     # Gateway (primary entry point)
@@ -35,6 +36,8 @@ __all__ = [
     # Provider clients
     "VLLMClient",
     "AnthropicClient",
+    # Base classes / mixins
+    "CompletionMixin",
     # Provider factories
     "build_aimlapi_client",
     "build_anthropic_client",
@@ -42,5 +45,6 @@ __all__ = [
     "build_huggingface_client",
     "build_huggingface_nano_client",
     "build_openai_client",
+    "build_vllm_tier_client",
 ]
 

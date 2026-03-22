@@ -135,9 +135,9 @@ export function readDatabaseConfig(): DatabaseConfig {
 /** Supabase pooler (session mode, port 5432) caps total clients at pool_size — one shared pool avoids exhausting it. */
 function resolvePoolMax(): number {
   const raw = process.env.PG_POOL_MAX ?? process.env.LYRA_PG_POOL_MAX ?? "5";
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 1) return 5;
-  return Math.min(n, 30);
+  const maxPoolSize = Number.parseInt(raw, 10);
+  if (!Number.isFinite(maxPoolSize) || maxPoolSize < 1) return 5;
+  return Math.min(maxPoolSize, 30);
 }
 
 export class PostgresPool {

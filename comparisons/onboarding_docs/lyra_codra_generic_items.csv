@@ -1,0 +1,7 @@
+Domain,Item ID,Item,Type,Purpose
+Process,1,Project Identity,procedural,metadata capture
+Process,2,Audit Scope Defaults,procedural,file path listing
+Process,3,Stack Constraints,generic,generic dependency list
+Process,4,Validation Commands,procedural,npm script names
+Process,5,Review before activation,procedural,approval gate
+Process,6,Operator notes,procedural,template reminder

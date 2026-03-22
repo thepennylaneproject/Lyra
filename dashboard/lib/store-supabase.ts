@@ -26,10 +26,10 @@ async function findCanonicalProjectRow(
   name: string,
   repositoryUrl?: string | null
 ): Promise<Record<string, unknown> | null> {
-  const p = pool();
+  const db = pool();
   const normalizedName = normalizeProjectName(name);
   const normalizedRepo = normalizeRepositoryUrl(repositoryUrl);
-  const rows = await p.query(
+  const rows = await db.query(
     `SELECT name, repository_url, project_json, updated_at
        FROM ${TABLE}
       WHERE lower(name) = $1
@@ -68,21 +68,21 @@ async function findCanonicalProjectRow(
 
 function rowToProject(row: Record<string, unknown>): Project {
   const raw = row.project_json;
-  const j =
+  const projectJson =
     typeof raw === "string"
       ? (JSON.parse(raw) as Project)
       : (raw as Project);
-  const name = String(row.name ?? j.name ?? "");
+  const name = String(row.name ?? projectJson.name ?? "");
   return withNormalizedBacklog({
-    ...applyProjectDefaults(j),
+    ...applyProjectDefaults(projectJson),
     name,
-    findings: Array.isArray(j.findings) ? j.findings : [],
+    findings: Array.isArray(projectJson.findings) ? projectJson.findings : [],
     repositoryUrl:
-      (row.repository_url as string) || j.repositoryUrl,
+      (row.repository_url as string) || projectJson.repositoryUrl,
     lastUpdated:
       row.updated_at instanceof Date
         ? row.updated_at.toISOString()
-        : String(row.updated_at ?? j.lastUpdated ?? ""),
+        : String(row.updated_at ?? projectJson.lastUpdated ?? ""),
   });
 }
 
@@ -91,10 +91,10 @@ export function hasSupabaseProjectsStore(): boolean {
 }
 
 export function createSupabaseRepository(): ProjectsRepository {
-  const p = pool();
+  const db = pool();
   return {
     async list() {
-      const rows = await p.query(
+      const rows = await db.query(
         `SELECT name, repository_url, project_json, updated_at FROM ${TABLE} ORDER BY name ASC`
       );
       return rows.map(rowToProject);
@@ -120,7 +120,7 @@ export function createSupabaseRepository(): ProjectsRepository {
         lastUpdated: now,
         repositoryUrl: repositoryUrl ?? undefined,
       };
-      await p.query(
+      await db.query(
         `INSERT INTO ${TABLE} (name, repository_url, project_json, updated_at)
          VALUES ($1, $2, $3::jsonb, now())`,
         [
@@ -159,7 +159,7 @@ export function createSupabaseRepository(): ProjectsRepository {
         lastUpdated: now,
         repositoryUrl: repositoryUrl ?? undefined,
       };
-      const result = await p.query(
+      const result = await db.query(
         `UPDATE ${TABLE}
          SET repository_url = $2, project_json = $3::jsonb, updated_at = now()
          WHERE name = $1
@@ -192,7 +192,7 @@ export function createSupabaseRepository(): ProjectsRepository {
       if (!existing) {
         throw new Error(`Project ${name} not found`);
       }
-      const result = await p.query(
+      const result = await db.query(
         `DELETE FROM ${TABLE} WHERE name = $1 RETURNING name`,
         [String(existing.name)]
       );

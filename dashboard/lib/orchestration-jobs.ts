@@ -131,8 +131,8 @@ export async function insertAuditJob(
   } = {}
 ): Promise<LyraAuditJobRow> {
   const id = randomUUID();
-  const p = pool();
-  const rows = await p.query(
+  const db = pool();
+  const rows = await db.query(
     `INSERT INTO lyra_audit_jobs (
        id,
        job_type,
@@ -161,8 +161,8 @@ export async function insertAuditJob(
 }
 
 export async function listRecentAuditJobs(limit = 25): Promise<LyraAuditJobRow[]> {
-  const p = pool();
-  const rows = await p.query(
+  const db = pool();
+  const rows = await db.query(
     `SELECT * FROM lyra_audit_jobs ORDER BY created_at DESC LIMIT $1`,
     [limit]
   );
@@ -170,8 +170,8 @@ export async function listRecentAuditJobs(limit = 25): Promise<LyraAuditJobRow[]
 }
 
 export async function listRecentAuditRuns(limit = 15): Promise<LyraAuditRunRow[]> {
-  const p = pool();
-  const rows = await p.query(
+  const db = pool();
+  const rows = await db.query(
     `SELECT * FROM lyra_audit_runs ORDER BY created_at DESC LIMIT $1`,
     [limit]
   );
@@ -183,8 +183,8 @@ export async function listAuditRunsForProject(
   projectName: string,
   limit = 30
 ): Promise<LyraAuditRunRow[]> {
-  const p = pool();
-  const rows = await p.query(
+  const db = pool();
+  const rows = await db.query(
     `SELECT * FROM lyra_audit_runs
      WHERE project_name IS NOT NULL
        AND LOWER(TRIM(project_name)) = LOWER(TRIM($1))
@@ -200,8 +200,8 @@ export async function listAuditJobsForProject(
   projectName: string,
   limit = 20
 ): Promise<LyraAuditJobRow[]> {
-  const p = pool();
-  const rows = await p.query(
+  const db = pool();
+  const rows = await db.query(
     `SELECT * FROM lyra_audit_jobs
      WHERE project_name IS NOT NULL
        AND LOWER(TRIM(project_name)) = LOWER(TRIM($1))
@@ -213,8 +213,8 @@ export async function listAuditJobsForProject(
 }
 
 export async function getAuditJob(id: string): Promise<LyraAuditJobRow | null> {
-  const p = pool();
-  const rows = await p.query(`SELECT * FROM lyra_audit_jobs WHERE id = $1`, [
+  const db = pool();
+  const rows = await db.query(`SELECT * FROM lyra_audit_jobs WHERE id = $1`, [
     id,
   ]);
   return rows[0] ? rowJob(rows[0]) : null;
@@ -222,8 +222,8 @@ export async function getAuditJob(id: string): Promise<LyraAuditJobRow | null> {
 
 /** Mark every queued job failed (e.g. operator cancelled / queue reset). */
 export async function failAllQueuedJobs(errorMessage: string): Promise<number> {
-  const p = pool();
-  const rows = await p.query(
+  const db = pool();
+  const rows = await db.query(
     `UPDATE lyra_audit_jobs
      SET status = 'failed', finished_at = now(), error = $1
      WHERE status = 'queued'
@@ -239,8 +239,8 @@ export async function updateAuditJobStatus(
   status: LyraJobStatus,
   error?: string
 ): Promise<void> {
-  const p = pool();
-  await p.query(
+  const db = pool();
+  await db.query(
     `UPDATE lyra_audit_jobs
      SET status = $2, finished_at = CASE WHEN $2 IN ('completed','failed') THEN now() ELSE finished_at END, error = $3
      WHERE id = $1`,

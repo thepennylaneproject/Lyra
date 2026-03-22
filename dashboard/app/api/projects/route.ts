@@ -8,10 +8,10 @@ export async function GET() {
     const repo = getRepository();
     const projects = await repo.list();
     return NextResponse.json(projects);
-  } catch (e) {
-    console.error("GET /api/projects", e);
+  } catch (error) {
+    console.error("GET /api/projects", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -48,12 +48,12 @@ export async function POST(request: Request) {
     };
     const created = await repo.create(project);
     return NextResponse.json(created);
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     if (message.includes("already exists")) {
       return NextResponse.json({ error: message }, { status: 409 });
     }
-    console.error("POST /api/projects", e);
-    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
+    console.error("POST /api/projects", error);
+    return NextResponse.json({ error: apiErrorMessage(error) }, { status: 500 });
   }
 }
