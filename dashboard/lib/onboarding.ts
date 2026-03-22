@@ -30,8 +30,10 @@ const TEXT_EXTENSIONS = new Set([
   ".html",
 ]);
 
-const MAX_SAMPLE_FILES = 40;
-const MAX_FILE_PREVIEW = 2400;
+// Onboarding prioritises accuracy over speed — see sampleFiles() for strategy.
+const MAX_SAMPLE_FILES = 200;
+const MAX_FILE_PREVIEW = 6000;  // chars for general source files
+const MAX_KEY_FILE_SIZE = 40_000; // chars — netlify functions, migrations, entry points read in full
 
 const SKIP_DIRS = new Set([
   ".git",
@@ -90,6 +92,7 @@ interface RepoSnapshot {
   dependencyGroups: Record<string, string[]>;
   envVars: string[];
   testFiles: string[];
+  allFilePaths: string[];
   topLevelTree: Array<{ path: string; note: string }>;
   fileSamples: Array<{ path: string; excerpt: string }>;
   commands: {
@@ -219,10 +222,12 @@ function resolveRepoAccess(input: OnboardRepositoryInput): RepoAccess {
   const target = mkdtempSync(join(tmpdir(), "lyra-onboard-"));
   cloneArgs.push(target);
   try {
-    execFileSync("git", cloneArgs, {
+    // Full clone — no depth limit so commit history, count, and dates are accurate.
+    // This takes longer than --depth 1 but onboarding correctness is worth it.
+    execFileSync("git", ["clone", repoUrl, target], {
       stdio: "pipe",
       encoding: "utf8",
-      timeout: 120_000,
+      timeout: 180_000,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -307,6 +312,7 @@ function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string, provide
     dependencyGroups,
     envVars,
     testFiles,
+    allFilePaths: files,
     topLevelTree,
     fileSamples: sampleFiles(files, root),
     commands: {
@@ -618,22 +624,42 @@ function extractReadmeQuote(text: string): string | undefined {
   return line || undefined;
 }
 
+// Files that define actual runtime behaviour — read in full so signal detection
+// isn't cut off mid-function.
+function isKeyFile(file: string): boolean {
+  return (
+    /^netlify\/functions\//i.test(file) ||
+    /^supabase\/migrations\//i.test(file) ||
+    /^supabase\/functions\//i.test(file) ||
+    /\/(src|app)\/(main|index|App)\.(ts|tsx|js|jsx)$/i.test(file) ||
+    /^(src|app)\/(main|index|App)\.(ts|tsx|js|jsx)$/i.test(file) ||
+    /^(src|app)\/.*\/(index|route|server)\.(ts|js)$/i.test(file)
+  );
+}
+
 function sampleFiles(files: string[], root: string): Array<{ path: string; excerpt: string }> {
   const textFiles = files.filter((file) => TEXT_EXTENSIONS.has(extname(file).toLowerCase()));
-  // Prioritize actual source files over config/build artifacts
+
+  // Tier 0 — always read in full: serverless functions, DB migrations, entry points
+  // Tier 1 — primary source trees (read up to MAX_FILE_PREVIEW each)
+  // Tier 2 — other .ts/.js/.py files
+  // Tier 3 — config, docs, everything else
   const priority = (file: string): number => {
-    if (/^(src|app|lib|server|api|pages|components|features|hooks|domain|services|modules)\//i.test(file)) return 0;
-    if (/^(netlify\/functions|supabase\/migrations|scripts)\//i.test(file)) return 1;
+    if (isKeyFile(file)) return 0;
+    if (/^(src|app|lib|server|api|pages|components|features|hooks|domain|services|modules)\//i.test(file)) return 1;
     if (/\.(ts|tsx|js|jsx|py)$/.test(file)) return 2;
     return 3;
   };
+
   const sorted = [...textFiles].sort((a, b) => priority(a) - priority(b) || a.localeCompare(b));
   const picked = sorted.slice(0, MAX_SAMPLE_FILES);
+
   return picked.map((file) => {
     const text = readTextIfExists(join(root, file));
+    const limit = isKeyFile(file) ? MAX_KEY_FILE_SIZE : MAX_FILE_PREVIEW;
     return {
       path: file,
-      excerpt: text.slice(0, MAX_FILE_PREVIEW) || "(empty file)",
+      excerpt: text.slice(0, limit) || "(empty file)",
     };
   });
 }
@@ -769,12 +795,33 @@ function detectDeploymentSignals(files: string[], root: string): string[] {
   return out;
 }
 
+// Domains that are always service dashboards / documentation, never a live app URL
+const SERVICE_DOMAINS = [
+  "app.supabase.com", "supabase.com", "dashboard.stripe.com", "stripe.com",
+  "platform.openai.com", "console.anthropic.com", "aimlapi.com",
+  "aistudio.google.com", "platform.deepseek.com", "console.mistral.ai",
+  "dashboard.cohere.com", "cohere.com", "openai.com", "anthropic.com",
+  "github.com", "npmjs.com", "docs.github.com", "developer.mozilla.org",
+  "tailwindcss.com", "reactjs.org", "nextjs.org", "vitejs.dev",
+  "cloudinary.com", "posthog.com", "linear.app",
+];
+
+function isServiceUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return SERVICE_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  } catch {
+    return true; // malformed URLs are not live app URLs
+  }
+}
+
 function extractUrls(files: string[], root: string): string[] {
   const urls = new Set<string>();
   for (const file of files.slice(0, 100)) {
     const text = readTextIfExists(join(root, file));
-    for (const match of text.matchAll(/https?:\/\/[^\s'")]+/g)) {
-      urls.add(match[0]);
+    for (const match of text.matchAll(/https?:\/\/[^\s'")<>]+/g)) {
+      const url = match[0].replace(/[.,;]+$/, ""); // strip trailing punctuation
+      if (!isServiceUrl(url)) urls.add(url);
     }
   }
   return [...urls];
@@ -870,8 +917,10 @@ function buildApiLayerSection(snapshot: RepoSnapshot): string {
   const apiFunctions = snapshot.fileSamples.filter((s) =>
     /^(netlify\/functions|api|app\/api|pages\/api|server\/api|src\/api)/i.test(s.path)
   );
+  // Match files named exactly route.ts / route.js (Next.js App Router convention),
+  // not components whose name contains "Route" (e.g. ProtectedRoute.tsx)
   const routeFiles = snapshot.fileSamples.filter((s) =>
-    /route\.(ts|js)|endpoint\.(ts|js)/i.test(s.path)
+    /[/\\]route\.(ts|js)$|[/\\]endpoint\.(ts|js)$/i.test(s.path)
   );
   const allApiFiles = [...apiFunctions, ...routeFiles];
 
@@ -1098,7 +1147,9 @@ This profile was generated from static repository analysis. Sections marked [NOT
 }
 
 function buildFeatureInventory(snapshot: RepoSnapshot): string {
-  const files = snapshot.fileSamples.map((s) => s.path);
+  // Use all file paths for categorization — fileSamples only covers 40 files
+  // out of potentially hundreds, which makes large repos look nearly empty.
+  const files = snapshot.allFilePaths;
   // Group files into feature areas by path pattern
   const areas: Record<string, { files: string[]; signals: Set<string> }> = {};
   const categorize = (file: string): string => {
