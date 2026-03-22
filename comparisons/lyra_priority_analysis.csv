@@ -1,0 +1,8 @@
+Project,Priority,Missing Count,Extra Count,Top Missing Categories,Top Extra Categories
+codra,P0,1,18,type-error(1),"logic(10), ux(7), accessibility(1)"
+codra,P1,1,46,missing-validation(1),"ux(36), logic(7), cognitive-load(1)"
+codra,P2,17,6,"synth-debt(16), constraint-violation(1)","ux(5), logic(1)"
+relevnt,P0,1,14,type-error(1),"ux(8), logic(5), security(1)"
+relevnt,P1,33,36,"migration-gap(5), schema-violation(5), n-plus-one(3)","ux(30), logic(6)"
+relevnt,P2,32,3,"copy-mismatch(5), api-cost(3), constraint-violation(2)",ux(3)
+relevnt,P3,16,0,"nav-dead-end(2), code-quality(2), error-handling(1)",

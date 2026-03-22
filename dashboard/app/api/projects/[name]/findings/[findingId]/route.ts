@@ -106,10 +106,10 @@ export async function PATCH(request: Request, { params }: Params) {
       );
     }
     return NextResponse.json(updatedFinding);
-  } catch (e) {
-    console.error("PATCH /api/projects/[name]/findings/[findingId]", e);
+  } catch (error) {
+    console.error("PATCH /api/projects/[name]/findings/[findingId]", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

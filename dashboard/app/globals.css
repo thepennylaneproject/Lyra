@@ -173,6 +173,29 @@ textarea::placeholder {
   color: var(--ink-text-4);
 }
 
+/* ─── Project findings split (list + detail) ──────────────── */
+.project-findings-split {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+@media (min-width: 900px) {
+  .project-findings-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 38%);
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .project-findings-split-detail {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+  }
+}
+
 /* ─── Animations ─────────────────────────────────────────── */
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.5; }

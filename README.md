@@ -45,6 +45,7 @@ audits/                   # LYRA audit system — multi-agent quality assurance
 
 - **Dashboard:** Next.js in `dashboard/` — **canonical host: Netlify** (see root `netlify.toml`). `dashboard/vercel.json` is optional/alternate; prefer one host to avoid divergent config.
 - **API auth (production):** Set **`DASHBOARD_API_SECRET`** or reuse **`ORCHESTRATION_ENQUEUE_SECRET`**. When set, all `/api/*` routes except **`GET /api/health`** require either a browser login (unlock screen) or `Authorization: Bearer <secret>` / `x-lyra-api-secret`. Netlify scheduled `enqueue-weekly-audit` already sends Bearer for orchestration POST.
+- **Production without a secret:** In `NODE_ENV=production`, if neither secret is set, the dashboard returns **503** on `/api/*` (except **`GET /api/health`**) so the host is never accidentally wide open. Local `next dev` still allows open APIs without a secret. To deliberately allow unauthenticated APIs in a production-like build (e.g. staging), set **`LYRA_ALLOW_OPEN_API=true`** (or `1`).
 - **Health:** `GET /api/health` — public JSON `{ ok: true }` for uptime checks.
 - **Observability (optional):** Set **`SENTRY_DSN`** (and **`NEXT_PUBLIC_SENTRY_DSN`** for client) for error monitoring; no DSN = no-op. Optionally set `SENTRY_ORG` and `SENTRY_PROJECT` for source map uploads in CI.
 - **Data:** **Supabase Postgres** — run migrations in `supabase/migrations/` (core tables + RLS). RLS locks `lyra_*` for anon/authenticated PostgREST; the app server using `DATABASE_URL` (owner/service role) keeps full access.

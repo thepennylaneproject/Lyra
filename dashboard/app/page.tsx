@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import type { Project, FindingStatus } from "@/lib/types";
 import { apiFetch } from "@/lib/api-fetch";
@@ -13,118 +13,128 @@ import { ImportModal } from "@/components/ImportModal";
 import { NextActionCard } from "@/components/NextActionCard";
 import { PatternPanel } from "@/components/PatternPanel";
 import { EngineView } from "@/components/EngineView";
-import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { Shell, type NavView } from "@/components/Shell";
-import { STATUS_GROUPS, PRIORITY_ORDER, SEVERITY_ORDER } from "@/lib/constants";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { STATUS_GROUPS } from "@/lib/constants";
 import { isInQueuedSet } from "@/lib/finding-validation";
+import { fragileShortPathSet, overlappingFragileShortPaths } from "@/lib/fragile-files";
+import { resolveNextAction } from "@/lib/resolve-next-action";
+import { usePortfolioProjects } from "@/hooks/use-portfolio-projects";
+import { useEngineQueue } from "@/hooks/use-engine-queue";
+import { useQueueRepair } from "@/hooks/use-queue-repair";
+import { useSyncUrlToPortfolioState, useSyncPortfolioUrl } from "@/hooks/use-portfolio-url";
+import { UI_COPY } from "@/lib/ui-copy";
+import type { ImportSummary } from "@/lib/import-summary";
+
+const PATTERN_PANEL_STORAGE_KEY = "lyra_portfolio_patterns_open";
 
 export default function Home() {
   const router = useRouter();
   const pathname = usePathname() ?? "/";
 
-  const [projects,         setProjects]         = useState<Project[]>([]);
+  const {
+    projects,
+    setProjects,
+    loading,
+    setLoading,
+    needsAuth,
+    projectsError,
+    hostMisconfigured,
+    setHostMisconfigured,
+    loginHint,
+    setLoginHint,
+    fetchProjects,
+  } = usePortfolioProjects();
+
+  const {
+    queuedFindingIds,
+    setQueuedFindingIds,
+    queueError,
+    setQueueError,
+    fetchQueue,
+  } = useEngineQueue();
+
+  const {
+    queueRepair,
+    runQueueRepair,
+    ledgerQueueError,
+    setLedgerQueueError,
+    ledgerQueueing,
+  } = useQueueRepair({ fetchQueue });
+
   const [activeProject,   setActiveProject]     = useState<string | null>(null);
   const [activeView,      setActiveView]        = useState<NavView>("portfolio");
   const [showImport,       setShowImport]        = useState(false);
-  const [loading,          setLoading]           = useState(true);
-  const [needsAuth,        setNeedsAuth]         = useState(false);
-  const [projectsError,    setProjectsError]     = useState<string | null>(null);
-  const [queuedFindingIds, setQueuedFindingIds] = useState<Set<string>>(new Set());
-  const [queueError,       setQueueError]       = useState<string | null>(null);
   const [removeError,      setRemoveError]      = useState<string | null>(null);
-
-  const fetchProjects = useCallback(async () => {
-    setProjectsError(null);
-    try {
-      const res = await apiFetch("/api/projects");
-      if (res.status === 401) {
-        setNeedsAuth(true);
-        setProjects([]);
-        return;
-      }
-      setNeedsAuth(false);
-      if (!res.ok) {
-        setProjectsError(`Could not load projects (${res.status}). Try again.`);
-        setProjects([]);
-        return;
-      }
-      const data = await res.json();
-      setProjects(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error("Failed to fetch projects", e);
-      setProjectsError(
-        e instanceof Error ? e.message : "Network error loading projects."
-      );
-      setProjects([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchQueue = useCallback(async () => {
-    setQueueError(null);
-    try {
-      const res = await apiFetch("/api/engine/queue");
-      if (res.ok) {
-        const data = await res.json();
-        setQueuedFindingIds(
-          new Set(
-            (data.queue ?? []).map((j: { finding_id: string; project_name: string }) =>
-              j.project_name ? `${j.project_name}:${j.finding_id}` : j.finding_id
-            )
-          )
-        );
-        return;
-      }
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      const msg =
-        typeof body.error === "string"
-          ? body.error
-          : `Repair queue could not be loaded (${res.status}). “Queued” badges may be wrong.`;
-      setQueueError(msg);
-    } catch (e) {
-      setQueueError(
-        e instanceof Error ? e.message : "Network error loading repair queue."
-      );
-    }
-  }, []);
+  const [pendingRemoveName, setPendingRemoveName] = useState<string | null>(null);
+  const [deepLinkWarning,  setDeepLinkWarning]  = useState<string | null>(null);
+  const [patternsOpen, setPatternsOpen] = useState(false);
 
   useEffect(() => {
     fetchProjects();
     fetchQueue();
   }, [fetchProjects, fetchQueue]);
 
-  useLayoutEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const p = q.get("project");
-    if (p) setActiveProject(p);
-    if (q.get("view") === "engine") setActiveView("engine");
+  useEffect(() => {
+    try {
+      setPatternsOpen(sessionStorage.getItem(PATTERN_PANEL_STORAGE_KEY) === "1");
+    } catch {
+      setPatternsOpen(false);
+    }
   }, []);
 
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (activeView === "engine") params.set("view", "engine");
-    if (activeProject) params.set("project", activeProject);
-    const qs = params.toString();
-    const next = qs ? `${pathname}?${qs}` : pathname;
-    if (typeof window !== "undefined") {
-      const cur = `${window.location.pathname}${window.location.search}`;
-      if (cur !== next) router.replace(next, { scroll: false });
+  const setPatternsOpenPersist = (open: boolean) => {
+    setPatternsOpen(open);
+    try {
+      if (open) sessionStorage.setItem(PATTERN_PANEL_STORAGE_KEY, "1");
+      else sessionStorage.removeItem(PATTERN_PANEL_STORAGE_KEY);
+    } catch {
+      /* ignore */
     }
-  }, [activeView, activeProject, pathname, router]);
+  };
 
-  const refetchProject = useCallback(async (): Promise<Project | null> => {
-    if (!activeProject) return null;
+  useEffect(() => {
+    if (loading) return;
+    if (!activeProject) return;
+    if (projects.some((p) => p.name === activeProject)) return;
+    const missing = activeProject;
+    setDeepLinkWarning(`Project “${missing}” was not found. Showing portfolio.`);
+    setActiveProject(null);
+  }, [loading, activeProject, projects]);
+
+  useSyncUrlToPortfolioState(setActiveProject, setActiveView);
+  useSyncPortfolioUrl(activeView, activeProject, pathname, router);
+
+  const shellNavHighlight: NavView = activeProject ? "portfolio" : activeView;
+
+  const onAuditSynced = useCallback(() => {
+    void fetchProjects();
+  }, [fetchProjects]);
+
+  const refetchProject = useCallback(async (): Promise<{
+    project: Project | null;
+    refreshError: string | null;
+  }> => {
+    if (!activeProject) return { project: null, refreshError: null };
     try {
       const res = await apiFetch(`/api/projects/${encodeURIComponent(activeProject)}`);
-      if (!res.ok) return null;
+      if (!res.ok) {
+        return {
+          project: null,
+          refreshError: `Could not refresh project (${res.status}).`,
+        };
+      }
       const p = await res.json();
       setProjects((prev) => prev.map((x) => (x.name === activeProject ? p : x)));
-      return p;
-    } catch {
-      return null;
+      return { project: p, refreshError: null };
+    } catch (e) {
+      return {
+        project: null,
+        refreshError:
+          e instanceof Error ? e.message : "Network error refreshing project.",
+      };
     }
-  }, [activeProject]);
+  }, [activeProject, setProjects]);
 
   const onUpdateFinding = useCallback(
     async (projectName: string, findingId: string, status: FindingStatus) => {
@@ -148,7 +158,7 @@ export default function Home() {
     []
   );
 
-  const handleImport = useCallback(async (project: Project) => {
+  const handleImport = useCallback(async (project: Project): Promise<ImportSummary> => {
     // QA-008: Use /api/import which handles both create and update so that
     // re-importing an existing project merges findings instead of returning 409.
     const res = await apiFetch("/api/import", {
@@ -160,18 +170,25 @@ export default function Home() {
         repositoryUrl: project.repositoryUrl,
       }),
     });
+    const data = (await res.json().catch(() => ({}))) as {
+      import_summary?: ImportSummary;
+      error?: string;
+    };
     if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
-      throw new Error(error.error ?? "Failed to import project");
+      throw new Error(
+        typeof data.error === "string" ? data.error : "Failed to import project"
+      );
+    }
+    if (!data.import_summary) {
+      throw new Error("Import response missing summary");
     }
     await fetchProjects();
-    setShowImport(false);
+    return data.import_summary;
   }, [fetchProjects]);
 
   const handleOnboardRepository = useCallback(async (input: {
     name?: string;
     repository_url?: string;
-    local_path?: string;
     default_branch?: string;
   }) => {
     const res = await apiFetch("/api/onboarding", {
@@ -187,36 +204,28 @@ export default function Home() {
     setShowImport(false);
   }, [fetchProjects]);
 
-  const handleRemove = useCallback(async (name: string) => {
-    if (!confirm(`Remove ${name}?`)) return;
-    setRemoveError(null);
-    try {
-      const res = await apiFetch(`/api/projects/${encodeURIComponent(name)}`, { method: "DELETE" });
-      if (res.ok) {
-        setProjects((prev) => prev.filter((p) => p.name !== name));
-        if (activeProject === name) setActiveProject(null);
-        return;
+  const executeRemoveProject = useCallback(
+    async (name: string) => {
+      setRemoveError(null);
+      try {
+        const res = await apiFetch(`/api/projects/${encodeURIComponent(name)}`, { method: "DELETE" });
+        if (res.ok) {
+          setProjects((prev) => prev.filter((p) => p.name !== name));
+          if (activeProject === name) setActiveProject(null);
+          return;
+        }
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setRemoveError(
+          typeof body.error === "string"
+            ? body.error
+            : `Could not remove project (${res.status}). Try again.`
+        );
+      } catch (e) {
+        setRemoveError(e instanceof Error ? e.message : "Network error while removing project.");
       }
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setRemoveError(
-        typeof body.error === "string"
-          ? body.error
-          : `Could not remove project (${res.status}). Try again.`
-      );
-    } catch (e) {
-      setRemoveError(e instanceof Error ? e.message : "Network error while removing project.");
-    }
-  }, [activeProject]);
-
-  const handleQueueRepair = useCallback(async (findingId: string, projectName: string) => {
-    const res = await apiFetch("/api/engine/queue", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ finding_id: findingId, project_name: projectName }),
-    });
-    if (!res.ok) throw new Error("Failed to queue");
-    setQueuedFindingIds((prev) => new Set([...prev, `${projectName}:${findingId}`]));
-  }, []);
+    },
+    [activeProject, setProjects]
+  );
 
   const handleExport = useCallback((project: Project) => {
     const data = JSON.stringify({ schema_version: "1.1.0", open_findings: project.findings ?? [] }, null, 2);
@@ -230,12 +239,89 @@ export default function Home() {
   const handleNavigate = useCallback((view: NavView) => {
     setActiveView(view);
     setActiveProject(null); // Return to view root when navigating
+    setPendingRemoveName(null);
   }, []);
+
+  const nextAction = useMemo(() => resolveNextAction(projects), [projects]);
+  const fragilePaths = useMemo(() => fragileShortPathSet(projects), [projects]);
+  const nextActionFinding = useMemo(() => {
+    if (!nextAction) return undefined;
+    const proj = projects.find((p) => p.name === nextAction.projectName);
+    return proj?.findings?.find((f) => f.finding_id === nextAction.findingId);
+  }, [projects, nextAction]);
+  const fragileLabels = useMemo(
+    () => overlappingFragileShortPaths(nextActionFinding, fragilePaths, 4),
+    [nextActionFinding, fragilePaths]
+  );
+  const fragileHint =
+    fragileLabels.length > 0
+      ? `Hotspot overlap — other active findings share: ${fragileLabels.join(", ")}`
+      : null;
+
+  if (hostMisconfigured) {
+    return (
+      <div
+        style={{
+          minHeight:      "100vh",
+          display:        "flex",
+          alignItems:     "center",
+          justifyContent: "center",
+          padding:        "2rem",
+          background:     "var(--ink-bg)",
+          fontFamily:     "var(--font-mono), ui-monospace, monospace",
+        }}
+      >
+        <div style={{ maxWidth: "440px" }}>
+          <div
+            style={{
+              fontSize:       "9px",
+              letterSpacing:  "0.1em",
+              textTransform:  "uppercase",
+              color:          "var(--ink-text-4)",
+              marginBottom:   "0.5rem",
+            }}
+          >
+            Lyra dashboard
+          </div>
+          <h1 style={{ fontSize: "15px", fontWeight: 500, margin: "0 0 0.75rem", color: "var(--ink-text)" }}>
+            Host misconfigured
+          </h1>
+          <p style={{ fontSize: "12px", color: "var(--ink-text-3)", lineHeight: 1.55, marginBottom: "1rem" }}>
+            {hostMisconfigured}
+          </p>
+          <details style={{ fontSize: "12px", color: "var(--ink-text-3)", marginBottom: "1.25rem" }}>
+            <summary style={{ cursor: "pointer", marginBottom: "0.5rem", color: "var(--ink-text-2)" }}>
+              {UI_COPY.hostMisconfigDetailsSummary}
+            </summary>
+            <p style={{ lineHeight: 1.55, margin: "0.5rem 0 0" }}>
+              Add <code style={{ fontSize: "11px" }}>DASHBOARD_API_SECRET</code> or{" "}
+              <code style={{ fontSize: "11px" }}>ORCHESTRATION_ENQUEUE_SECRET</code> in Netlify or your host
+              environment (see repository README). For staging only, you can set{" "}
+              <code style={{ fontSize: "11px" }}>LYRA_ALLOW_OPEN_API=true</code>.
+            </p>
+          </details>
+          <button
+            type="button"
+            onClick={() => {
+              setHostMisconfigured(null);
+              setLoading(true);
+              void fetchProjects();
+            }}
+            style={{ fontSize: "12px", padding: "6px 14px" }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (needsAuth) {
     return (
       <DashboardLogin
+        sessionHint={loginHint ?? undefined}
         onSuccess={() => {
+          setLoginHint(null);
           setLoading(true);
           void fetchProjects();
           void fetchQueue();
@@ -248,13 +334,21 @@ export default function Home() {
   const currentProject = activeProject ? projects.find((p) => p.name === activeProject) : null;
   if (currentProject && activeProject) {
     return (
-      <Shell activeView={activeView} onNavigate={handleNavigate}>
+      <Shell
+        activeView={activeView}
+        navHighlightView={shellNavHighlight}
+        onNavigate={handleNavigate}
+        onAuditSynced={onAuditSynced}
+      >
         <ProjectView
           project={currentProject}
-          onBack={() => setActiveProject(null)}
+          onBack={() => {
+            setLedgerQueueError(null);
+            setActiveProject(null);
+          }}
           onUpdateFinding={onUpdateFinding}
           refetchProject={refetchProject}
-          onQueueRepair={handleQueueRepair}
+          onQueueRepair={queueRepair}
           queuedFindingIds={queuedFindingIds}
         />
       </Shell>
@@ -264,7 +358,12 @@ export default function Home() {
   // ── Engine view ──
   if (activeView === "engine") {
     return (
-      <Shell activeView={activeView} onNavigate={handleNavigate}>
+      <Shell
+        activeView={activeView}
+        navHighlightView={shellNavHighlight}
+        onNavigate={handleNavigate}
+        onAuditSynced={onAuditSynced}
+      >
         <EngineView />
       </Shell>
     );
@@ -273,64 +372,35 @@ export default function Home() {
   // ── Portfolio view ──
 
   // Compute portfolio totals
-  const totalFindings = projects.reduce((s, p) => s + (p.findings?.length ?? 0), 0);
-  const totalBacklog = projects.reduce((s, p) => s + (p.maintenanceBacklog?.length ?? 0), 0);
+  const totalFindings = projects.reduce((acc, project) => acc + (project.findings?.length ?? 0), 0);
+  const totalBacklog = projects.reduce((acc, project) => acc + (project.maintenanceBacklog?.length ?? 0), 0);
   const totalBlockers = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => f.severity === "blocker" && STATUS_GROUPS.active.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => f.severity === "blocker" && STATUS_GROUPS.active.includes(f.status)).length,
     0
   );
   const totalActive   = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => STATUS_GROUPS.active.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => STATUS_GROUPS.active.includes(f.status)).length,
     0
   );
   const totalResolved = projects.reduce(
-    (s, p) => s + (p.findings ?? []).filter((f) => STATUS_GROUPS.resolved.includes(f.status)).length,
+    (acc, project) => acc + (project.findings ?? []).filter((f) => STATUS_GROUPS.resolved.includes(f.status)).length,
     0
   );
-  const shippable = projects.filter((p) => {
-    const f = p.findings ?? [];
-    const b = f.filter((x) => x.severity === "blocker" && STATUS_GROUPS.active.includes(x.status)).length;
-    const q = f.filter((x) => x.type === "question" && STATUS_GROUPS.active.includes(x.status)).length;
-    return f.length > 0 && b === 0 && q === 0;
+  const shippable = projects.filter((project) => {
+    const findings = project.findings ?? [];
+    const blockerCount = findings.filter((x) => x.severity === "blocker" && STATUS_GROUPS.active.includes(x.status)).length;
+    const questionCount = findings.filter((x) => x.type === "question" && STATUS_GROUPS.active.includes(x.status)).length;
+    return findings.length > 0 && blockerCount === 0 && questionCount === 0;
   }).length;
-
-  // Compute next action across all projects
-  type NextAction = {
-    _project: string;
-    title?: string;
-    finding_id?: string;
-    severity?: string;
-    priority?: string;
-  };
-  let nextAction: NextAction | null = null;
-  for (const p of projects) {
-    const backlog = [...(p.maintenanceBacklog ?? [])].filter(
-      (item) => !["done", "deferred"].includes(item.canonical_status)
-    );
-    if (backlog.length > 0) {
-      const first = backlog[0];
-      const pa    = PRIORITY_ORDER[first.priority ?? ""] ?? 9;
-      const sa    = SEVERITY_ORDER[first.severity  ?? ""] ?? 9;
-      if (
-        !nextAction ||
-        (PRIORITY_ORDER[nextAction.priority ?? ""] ?? 9) > pa ||
-        ((PRIORITY_ORDER[nextAction.priority ?? ""] ?? 9) === pa &&
-          (SEVERITY_ORDER[nextAction.severity ?? ""] ?? 9) > sa)
-        ) {
-        nextAction = {
-          title: first.title,
-          finding_id: first.finding_ids[0],
-          severity: first.severity,
-          priority: first.priority,
-          _project: p.name,
-        };
-      }
-    }
-  }
 
   if (loading) {
     return (
-      <Shell activeView={activeView} onNavigate={handleNavigate}>
+      <Shell
+        activeView={activeView}
+        navHighlightView={shellNavHighlight}
+        onNavigate={handleNavigate}
+        onAuditSynced={onAuditSynced}
+      >
         <span style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
           loading…
         </span>
@@ -340,7 +410,12 @@ export default function Home() {
 
   if (projectsError && projects.length === 0) {
     return (
-      <Shell activeView={activeView} onNavigate={handleNavigate}>
+      <Shell
+        activeView={activeView}
+        navHighlightView={shellNavHighlight}
+        onNavigate={handleNavigate}
+        onAuditSynced={onAuditSynced}
+      >
         <div style={{ maxWidth: "420px" }}>
           <p style={{ fontSize: "13px", color: "var(--ink-red)", marginBottom: "1rem" }}>{projectsError}</p>
           <button
@@ -359,7 +434,30 @@ export default function Home() {
   }
 
   return (
-    <Shell activeView={activeView} onNavigate={handleNavigate}>
+    <Shell
+      activeView={activeView}
+      navHighlightView={shellNavHighlight}
+      onNavigate={handleNavigate}
+      onAuditSynced={onAuditSynced}
+    >
+      <ConfirmDialog
+        open={pendingRemoveName !== null}
+        title={UI_COPY.confirmRemoveProjectTitle}
+        body={
+          pendingRemoveName
+            ? `${UI_COPY.confirmRemoveProjectBody} (${pendingRemoveName})`
+            : ""
+        }
+        confirmLabel={UI_COPY.confirmRemove}
+        cancelLabel={UI_COPY.confirmCancel}
+        danger
+        onCancel={() => setPendingRemoveName(null)}
+        onConfirm={() => {
+          const n = pendingRemoveName;
+          setPendingRemoveName(null);
+          if (n) void executeRemoveProject(n);
+        }}
+      />
       {/* Import modal */}
           {showImport && (
             <ImportModal
@@ -368,6 +466,36 @@ export default function Home() {
               onClose={() => setShowImport(false)}
             />
           )}
+
+      {deepLinkWarning && (
+        <div
+          style={{
+            marginBottom: "1rem",
+            padding: "0.65rem 0.85rem",
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-text-3)",
+            background: "var(--ink-bg-sunken)",
+            border: "0.5px solid var(--ink-border-faint)",
+            borderRadius: "var(--radius-md)",
+            lineHeight: 1.45,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: "0.5rem",
+          }}
+        >
+          <span>{deepLinkWarning}</span>
+          <button
+            type="button"
+            onClick={() => setDeepLinkWarning(null)}
+            aria-label="Dismiss"
+            style={{ border: "none", background: "none", color: "inherit", cursor: "pointer", opacity: 0.85 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {(queueError || removeError) && (
         <div
@@ -480,19 +608,64 @@ export default function Home() {
       {/* Next action hero */}
       {nextAction && (
         <NextActionCard
-          title={nextAction.title ?? ""}
-          findingId={nextAction.finding_id ?? ""}
-          priority={nextAction.priority ?? ""}
-          severity={nextAction.severity ?? "nit"}
-          projectName={nextAction._project}
-          isQueued={isInQueuedSet(queuedFindingIds, nextAction._project, nextAction.finding_id ?? "")}
-          onQueue={() => handleQueueRepair(nextAction!.finding_id ?? "", nextAction!._project)}
-          onOpen={() => setActiveProject(nextAction!._project)}
+          source={nextAction.source}
+          title={nextAction.title}
+          findingId={nextAction.findingId}
+          priority={nextAction.priority}
+          severity={nextAction.severity}
+          projectName={nextAction.projectName}
+          isQueued={isInQueuedSet(queuedFindingIds, nextAction.projectName, nextAction.findingId)}
+          onQueue={() =>
+            void runQueueRepair(nextAction.findingId, nextAction.projectName)
+          }
+          onOpen={() => {
+            setLedgerQueueError(null);
+            setActiveProject(nextAction.projectName);
+          }}
+          queueError={ledgerQueueError}
+          onDismissQueueError={() => setLedgerQueueError(null)}
+          queueing={ledgerQueueing}
+          backlogRiskClass={
+            nextAction.source === "backlog" ? nextAction.backlogRiskClass : undefined
+          }
+          backlogNextStepKey={
+            nextAction.source === "backlog" ? nextAction.backlogNextAction : undefined
+          }
+          backlogSummary={nextAction.source === "backlog" ? nextAction.backlogSummary : undefined}
+          fragileHint={fragileHint}
+          onOpenPatterns={
+            fragileHint
+              ? () => {
+                  setPatternsOpenPersist(true);
+                  requestAnimationFrame(() => {
+                    document
+                      .getElementById("lyra-pattern-panel")
+                      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                  });
+                }
+              : undefined
+          }
         />
       )}
 
-      {/* Orchestration summary */}
-      <OrchestrationPanel />
+      <div style={{ marginBottom: "1.75rem" }}>
+        <button
+          type="button"
+          onClick={() => handleNavigate("engine")}
+          style={{
+            fontSize:     "11px",
+            fontFamily:   "var(--font-mono)",
+            border:       "none",
+            background:   "transparent",
+            padding:      0,
+            color:        "var(--ink-text-3)",
+            cursor:       "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          Open {UI_COPY.navRepairLedger.toLowerCase()} & worker operations →
+        </button>
+      </div>
 
       {/* Empty state */}
       {projects.length === 0 && !showImport && (
@@ -533,7 +706,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); handleRemove(p.name); }}
+                onClick={(e) => { e.stopPropagation(); setPendingRemoveName(p.name); }}
                 title="Remove"
                 style={{ fontSize: "9px", padding: "1px 5px", fontFamily: "var(--font-mono)", background: "var(--ink-bg)" }}
               >
@@ -544,8 +717,27 @@ export default function Home() {
         ))}
       </div>
 
-      {/* Pattern intelligence — below project grid */}
-      <PatternPanel projects={projects} />
+      {projects.length > 0 && (
+        <div style={{ marginTop: "2.5rem", marginBottom: patternsOpen ? "1rem" : 0 }}>
+          <button
+            type="button"
+            onClick={() => setPatternsOpenPersist(!patternsOpen)}
+            style={{
+              fontSize:       "11px",
+              fontFamily:     "var(--font-mono)",
+              border:         "none",
+              background:     "transparent",
+              padding:        0,
+              color:          "var(--ink-text-3)",
+              cursor:         "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            {patternsOpen ? "Hide portfolio patterns" : "Show portfolio patterns"}
+          </button>
+        </div>
+      )}
+      {patternsOpen && projects.length > 0 ? <PatternPanel projects={projects} /> : null}
 
       {/* Footer */}
       {projects.length > 0 && (

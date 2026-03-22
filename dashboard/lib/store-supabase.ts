@@ -4,7 +4,7 @@
 
 import type { Project } from "./types";
 import type { ProjectsRepository } from "./repository";
-import { createPostgresPool, readDatabaseConfig } from "./postgres";
+import { createPostgresPool, quoteIdent, readDatabaseConfig } from "./postgres";
 import { applyProjectDefaults } from "./project-defaults";
 import { withNormalizedBacklog } from "./maintenance-backlog";
 import {
@@ -26,10 +26,10 @@ async function findCanonicalProjectRow(
   name: string,
   repositoryUrl?: string | null
 ): Promise<Record<string, unknown> | null> {
-  const p = pool();
+  const db = pool();
   const normalizedName = normalizeProjectName(name);
   const normalizedRepo = normalizeRepositoryUrl(repositoryUrl);
-  const rows = await p.query(
+  const rows = await db.query(
     `SELECT name, repository_url, project_json, updated_at
        FROM ${TABLE}
       WHERE lower(name) = $1
@@ -68,21 +68,21 @@ async function findCanonicalProjectRow(
 
 function rowToProject(row: Record<string, unknown>): Project {
   const raw = row.project_json;
-  const j =
+  const projectJson =
     typeof raw === "string"
       ? (JSON.parse(raw) as Project)
       : (raw as Project);
-  const name = String(row.name ?? j.name ?? "");
+  const name = String(row.name ?? projectJson.name ?? "");
   return withNormalizedBacklog({
-    ...applyProjectDefaults(j),
+    ...applyProjectDefaults(projectJson),
     name,
-    findings: Array.isArray(j.findings) ? j.findings : [],
+    findings: Array.isArray(projectJson.findings) ? projectJson.findings : [],
     repositoryUrl:
-      (row.repository_url as string) || j.repositoryUrl,
+      (row.repository_url as string) || projectJson.repositoryUrl,
     lastUpdated:
       row.updated_at instanceof Date
         ? row.updated_at.toISOString()
-        : String(row.updated_at ?? j.lastUpdated ?? ""),
+        : String(row.updated_at ?? projectJson.lastUpdated ?? ""),
   });
 }
 
@@ -91,10 +91,10 @@ export function hasSupabaseProjectsStore(): boolean {
 }
 
 export function createSupabaseRepository(): ProjectsRepository {
-  const p = pool();
+  const db = pool();
   return {
     async list() {
-      const rows = await p.query(
+      const rows = await db.query(
         `SELECT name, repository_url, project_json, updated_at FROM ${TABLE} ORDER BY name ASC`
       );
       return rows.map(rowToProject);
@@ -120,7 +120,7 @@ export function createSupabaseRepository(): ProjectsRepository {
         lastUpdated: now,
         repositoryUrl: repositoryUrl ?? undefined,
       };
-      await p.query(
+      await db.query(
         `INSERT INTO ${TABLE} (name, repository_url, project_json, updated_at)
          VALUES ($1, $2, $3::jsonb, now())`,
         [
@@ -159,7 +159,7 @@ export function createSupabaseRepository(): ProjectsRepository {
         lastUpdated: now,
         repositoryUrl: repositoryUrl ?? undefined,
       };
-      const result = await p.query(
+      const result = await db.query(
         `UPDATE ${TABLE}
          SET repository_url = $2, project_json = $3::jsonb, updated_at = now()
          WHERE name = $1
@@ -192,18 +192,31 @@ export function createSupabaseRepository(): ProjectsRepository {
       if (!existing) {
         throw new Error(`Project ${name} not found`);
       }
-      const result = await p.query(
-        `DELETE FROM ${TABLE} WHERE name = $1 RETURNING name`,
-        [String(existing.name)]
-      );
-      if (result.length === 0) {
-        throw new Error(`Project ${name} not found`);
-      }
+      const canonical = String(existing.name);
+      const cfg = readDatabaseConfig();
+      const eventsFqn = `${quoteIdent(cfg.schema)}.${quoteIdent(cfg.eventsTable)}`;
+      const snapshotsFqn = `${quoteIdent(cfg.schema)}.${quoteIdent(cfg.snapshotsTable)}`;
+
+      await db.transaction(async (q) => {
+        // FK on project is ON DELETE SET NULL — remove rows so the project leaves no audit/job history.
+        await q(`DELETE FROM public.lyra_audit_runs WHERE project_name = $1`, [canonical]);
+        await q(`DELETE FROM public.lyra_audit_jobs WHERE project_name = $1`, [canonical]);
+        await q(`DELETE FROM ${eventsFqn} WHERE project_name = $1`, [canonical]);
+        await q(`DELETE FROM ${snapshotsFqn} WHERE project_name = $1`, [canonical]);
+        const result = await q(
+          `DELETE FROM ${TABLE} WHERE name = $1 RETURNING name`,
+          [canonical]
+        );
+        if (result.length === 0) {
+          throw new Error(`Project ${name} not found`);
+        }
+      });
+
       await recordDurableEventBestEffort({
         event_type: "project_deleted",
-        project_name: String(existing.name),
+        project_name: canonical,
         source: "supabase_projects",
-        summary: `Deleted project ${String(existing.name)}`,
+        summary: `Deleted project ${canonical}`,
       });
     },
   };

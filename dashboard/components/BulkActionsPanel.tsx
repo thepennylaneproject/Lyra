@@ -64,8 +64,8 @@ export function BulkActionsPanel({
         if (onActionComplete) {
           onActionComplete();
         }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
         setActionError(msg);
       } finally {
         setActionInProgress(null);

@@ -58,10 +58,10 @@ export function resolveModel(): { primary: string; fallback: string | undefined 
   const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
   const registry = getRegistry();
 
+  // Escape hatch: explicit model override (rarely needed)
   if (configuredModel) {
-    // If explicitly configured, use it with a fallback
     if (configuredModel.includes(":")) {
-      return { primary: configuredModel, fallback: "openai:mini" };
+      return { primary: configuredModel, fallback: undefined };
     }
     // Infer provider from model name
     const inferred = registry.inferProvider(configuredModel);
