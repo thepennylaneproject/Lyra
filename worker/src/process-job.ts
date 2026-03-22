@@ -10,7 +10,7 @@ import {
   resolveScopeFiles,
   type AuditScope,
 } from "./context.js";
-import { auditWithLlm } from "./llm.js";
+import { auditWithLlm, resolveModel } from "./llm.js";
 import {
   claimJob,
   completeJob,
@@ -20,6 +20,7 @@ import {
   listAllProjects,
   upsertMaintenanceBacklogFromFindings,
 } from "./db.js";
+import { getRegistry } from "./providers/registry.js";
 import {
   buildProjectManifest,
   resolveScopePathsFromManifest,
@@ -759,34 +760,26 @@ async function runSynthesize(
     )
   );
   const blob = lines.slice(0, 200).join("\n") || "No findings yet.";
-  const key = process.env.OPENAI_API_KEY?.trim();
   const scopeLabel = job.project_name ? `project "${job.project_name}"` : "portfolio";
   let summary = `${scopeLabel}: ${projects.length} project(s), ${lines.length} finding lines.`;
-  if (key) {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: process.env.LYRA_AUDIT_MODEL?.trim() || "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs.`,
-          },
-          { role: "user", content: blob },
-        ],
+  const registry = getRegistry();
+  const { primary, fallback } = resolveModel();
+  const anyConfigured =
+    registry.getProvider("openai")?.isConfigured() ||
+    registry.getProvider("anthropic")?.isConfigured() ||
+    registry.getProvider("deepseek")?.isConfigured();
+  if (anyConfigured) {
+    try {
+      const res = await registry.call(primary, fallback, {
+        systemPrompt: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs.`,
+        userPrompt: blob,
+        responseFormat: "text",
         temperature: 0.3,
-        max_tokens: 500,
-      }),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      summary = data.choices?.[0]?.message?.content ?? summary;
+        maxTokens: 500,
+      });
+      summary = res.content || summary;
+    } catch (e) {
+      console.warn(`[lyra-worker] synthesize LLM call failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   await completeJob(pool, job.id, null, {

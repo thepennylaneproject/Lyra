@@ -44,10 +44,19 @@ export interface AuditLlmResult {
  *   - "openai:mini" (explicit provider:model format)
  *   - "gpt-4o-mini" (inferred as openai:mini)
  *   - "claude-3.5-sonnet" (inferred as anthropic:sonnet)
+ *
+ * Auto-select logic: for each strategy, picks the best *configured* provider
+ * so you automatically get cheap DeepSeek when the key is set, and fall back
+ * to Sonnet (quality) or mini (safe default) otherwise.
+ *
+ *   aggressive  →  haiku  → mini          (cheapest)
+ *   balanced    →  deepseek:chat → sonnet → mini  (best value; cost-efficient default)
+ *   precision   →  sonnet → balanced      (highest quality)
  */
-function resolveModel(): { primary: string; fallback: string | undefined } {
+export function resolveModel(): { primary: string; fallback: string | undefined } {
   const configuredModel = process.env.LYRA_AUDIT_MODEL?.trim();
   const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
+  const registry = getRegistry();
 
   if (configuredModel) {
     // If explicitly configured, use it with a fallback
@@ -55,19 +64,32 @@ function resolveModel(): { primary: string; fallback: string | undefined } {
       return { primary: configuredModel, fallback: "openai:mini" };
     }
     // Infer provider from model name
-    const inferred = getRegistry().inferProvider(configuredModel);
+    const inferred = registry.inferProvider(configuredModel);
     return { primary: `${inferred.provider}:${inferred.modelId}`, fallback: "openai:mini" };
   }
 
-  // Use strategy-based defaults
+  // Auto-select best configured provider per strategy
+  const deepseekOk = registry.getProvider("deepseek")?.isConfigured() ?? false;
+  const anthropicOk = registry.getProvider("anthropic")?.isConfigured() ?? false;
+
   switch (strategy) {
     case "aggressive":
-      return { primary: "anthropic:haiku", fallback: "openai:mini" };
+      // Cheapest: haiku > mini
+      if (anthropicOk) return { primary: "anthropic:haiku", fallback: "openai:mini" };
+      return { primary: "openai:mini", fallback: undefined };
+
     case "precision":
-      return { primary: "anthropic:sonnet", fallback: "openai:balanced" };
+      // Highest quality: sonnet > balanced
+      if (anthropicOk) return { primary: "anthropic:sonnet", fallback: "openai:balanced" };
+      return { primary: "openai:balanced", fallback: "openai:mini" };
+
     case "balanced":
     default:
-      return { primary: "openai:mini", fallback: "anthropic:haiku" };
+      // Best value: deepseek:chat (~10x cheaper than sonnet, strong code analysis)
+      // → fall back to sonnet if no DeepSeek key, then mini as last resort
+      if (deepseekOk) return { primary: "deepseek:chat", fallback: anthropicOk ? "anthropic:haiku" : "openai:mini" };
+      if (anthropicOk) return { primary: "anthropic:sonnet", fallback: "openai:mini" };
+      return { primary: "openai:mini", fallback: undefined };
   }
 }
 
@@ -139,7 +161,7 @@ ${extras?.checklistId ? `Checklist: ${extras.checklistId}\n` : ""}
 ## Scope files
 ${(extras?.filesInScope ?? []).length > 0 ? extras?.filesInScope?.join("\n") : "(scope file list unavailable)"}
 
-## Already-known findings
+## Already-known findings (do NOT re-report these IDs unless you have new evidence)
 ${(extras?.knownFindingIds ?? []).length > 0 ? extras?.knownFindingIds?.join("\n") : "(none provided)"}
 
 ## Expectations document
@@ -147,6 +169,12 @@ ${expectations}
 
 ## Repository context
 ${codeContext}
+
+## Output rules
+- Each finding_id MUST be unique within this response. Never emit duplicate IDs.
+- Cover a DIVERSE mix of finding types (bug, security, performance, ux, debt, config, etc.) — do not cluster all findings under one type.
+- Do NOT repeat findings whose IDs appear in the "already-known findings" list above, unless you have new evidence that meaningfully changes the description or severity.
+- Emit findings only for issues you can substantiate with specific file or line references in the code context above.
 
 Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output contract.`;
 
@@ -157,7 +185,7 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
       userPrompt: user,
       responseFormat: "json_object",
       temperature: 0.2,
-      maxTokens: 4096,
+      maxTokens: 12288,
     });
   } catch (error) {
     console.error("[lyra-worker] LLM call failed:", error);

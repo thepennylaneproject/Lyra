@@ -1,6 +1,7 @@
 import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
 import { OpenAIProvider } from "./openai.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { DeepSeekProvider } from "./deepseek.js";
 
 /**
  * Registry for LLM providers with fallback logic.
@@ -13,6 +14,7 @@ export class ProviderRegistry {
     this.logger = logger || console.log;
     this.registerProvider(new OpenAIProvider());
     this.registerProvider(new AnthropicProvider());
+    this.registerProvider(new DeepSeekProvider());
   }
 
   registerProvider(provider: LLMProvider): void {
@@ -105,6 +107,11 @@ export class ProviderRegistry {
       if (modelName.includes("sonnet")) return { provider: "anthropic", modelId: "sonnet" };
       if (modelName.includes("opus")) return { provider: "anthropic", modelId: "opus" };
       return { provider: "anthropic", modelId: "sonnet" };
+    }
+
+    if (modelName.includes("deepseek")) {
+      if (modelName.includes("reasoner")) return { provider: "deepseek", modelId: "reasoner" };
+      return { provider: "deepseek", modelId: "chat" };
     }
 
     // Default to openai
