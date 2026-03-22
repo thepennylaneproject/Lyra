@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 import json
 import urllib.error
 import urllib.request
 
+from .base import CompletionMixin
 
-class VLLMClient:
+
+class VLLMClient(CompletionMixin):
     def __init__(self, base_url: str, model: str, api_key: str | None = None, timeout: int = 120) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -41,26 +42,40 @@ class VLLMClient:
             return ""
         return choices[0].get("message", {}).get("content", "")
 
-    def complete_many(
-        self,
-        prompts: list[str],
-        temperature: float = 0.4,
-        max_tokens: int = 1500,
-        concurrency: int = 8,
-    ) -> list[str]:
-        if not prompts:
-            return []
-        results = [""] * len(prompts)
-        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as executor:
-            futures = {
-                executor.submit(self.complete, prompt, temperature, max_tokens): idx
-                for idx, prompt in enumerate(prompts)
-            }
-            for fut in as_completed(futures):
-                idx = futures[fut]
-                try:
-                    results[idx] = fut.result()
-                except Exception:
-                    results[idx] = ""
-        return results
 
+
+def build_vllm_tier_client(
+    tier: str,
+    api_key: str,
+    models: dict[str, str],
+    base_url: str,
+    provider_name: str,
+    model_overrides: dict[str, str] | None = None,
+) -> VLLMClient:
+    """Generic factory that constructs a :class:`VLLMClient` for a named tier.
+
+    All OpenAI-compatible provider factories (OpenAI, Gemini, aimlapi, …) share
+    the same tier-lookup-then-construct pattern.  This helper centralises that
+    logic so each provider module only needs to supply its own *models* dict and
+    *base_url*.
+
+    Args:
+        tier: The requested cost/capability tier (e.g. ``'mini'``, ``'flash'``).
+        api_key: Provider API key forwarded to :class:`VLLMClient`.
+        models: Canonical tier → model-name mapping for this provider.
+        base_url: Provider OpenAI-compatible base URL.
+        provider_name: Human-readable name used in error messages.
+        model_overrides: Optional per-tier overrides merged over *models*.
+
+    Returns:
+        A :class:`VLLMClient` pointed at *base_url* with the resolved model.
+
+    Raises:
+        ValueError: If *tier* is not present in the merged models dict.
+    """
+    merged = {**models, **(model_overrides or {})}
+    if tier not in merged:
+        raise ValueError(
+            f"Unknown {provider_name} tier '{tier}'. Valid tiers: {list(merged.keys())}"
+        )
+    return VLLMClient(base_url=base_url, model=merged[tier], api_key=api_key)

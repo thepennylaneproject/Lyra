@@ -136,8 +136,8 @@ class RepairOrchestrator:
 
         depth = 0
         while depth < self.config.search.max_depth and eval_count < self.config.search.max_evals_per_finding:
-            parents = [node for node in tree.best_nodes(self.config.search.beam_width) if not node.pruned]
-            parents = [node for node in parents if node.depth == depth]
+            parents = [node for node in tree.best_nodes(self.config.search.beam_width)
+                       if not node.pruned and node.depth == depth]
             if not parents:
                 break
 

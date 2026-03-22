@@ -434,11 +434,12 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
             }
           );
           auditModel = llm.model || auditModel;
+          const mappedFindings = llm.findings.map((finding) => ({
+            ...finding,
+            repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
+          }));
           passResults.push({
-            findings: llm.findings.map((finding) => ({
-              ...finding,
-              repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
-            })),
+            findings: mappedFindings,
             coverage: {
               coverage_complete: Boolean(llm.coverage.coverage_complete),
               confidence: llm.coverage.confidence ?? "medium",
@@ -458,12 +459,7 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
             },
             raw_response: llm.raw_response,
           });
-          findings = findings.concat(
-            llm.findings.map((finding) => ({
-              ...finding,
-              repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
-            })) as Array<Record<string, unknown>>
-          );
+          findings = findings.concat(mappedFindings as Array<Record<string, unknown>>);
         }
 
         const { merged, added } = mergeFindings2(existing, findings, execution.manifestRevision);

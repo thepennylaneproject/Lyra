@@ -27,7 +27,8 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from .base import CompletionMixin
 
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_API_VERSION = "2023-06-01"
@@ -39,7 +40,7 @@ ANTHROPIC_MODELS: dict[str, str] = {
 }
 
 
-class AnthropicClient:
+class AnthropicClient(CompletionMixin):
     """Anthropic Messages API client implementing the CompletionProvider protocol."""
 
     def __init__(self, model: str, api_key: str, timeout: int = 120) -> None:
