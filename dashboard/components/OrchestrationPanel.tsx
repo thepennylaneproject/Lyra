@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { apiFetch } from "@/lib/api-fetch";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { apiFetchWithEnqueueSecret } from "@/lib/api-fetch";
 import { LYRA_ENQUEUE_SECRET_STORAGE_KEY } from "@/lib/auth-constants";
 import type { PortfolioOrchestrationState, OrchestrationActionKind } from "@/lib/orchestration";
 import type { DurableStateSummary } from "@/lib/durable-state";
 import type { LyraAuditJobRow, LyraAuditRunRow } from "@/lib/orchestration-jobs";
+import { UI_COPY } from "@/lib/ui-copy";
 
 const STAGE_LABELS: Record<string, string> = {
   onboarding: "onboarding",
@@ -24,7 +25,8 @@ const DISPATCHABLE_ACTIONS = new Set<OrchestrationActionKind>([
 ]);
 
 const ORCHESTRATION_CACHE_MS = 15_000;
-let orchestrationCache: {
+
+type OrchestrationLoadCache = {
   data: PortfolioOrchestrationState | null;
   jobs: LyraAuditJobRow[];
   runs: LyraAuditRunRow[];
@@ -33,7 +35,7 @@ let orchestrationCache: {
   durable: DurableStateSummary | null;
   jobsLoadError: string | null;
   at: number;
-} | null = null;
+};
 
 function actionToJob(
   action: OrchestrationActionKind,
@@ -68,6 +70,8 @@ function actionToJob(
 }
 
 export function OrchestrationPanel() {
+  const cacheRef = useRef<OrchestrationLoadCache | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [data, setData] = useState<PortfolioOrchestrationState | null>(null);
   const [jobs, setJobs] = useState<LyraAuditJobRow[]>([]);
   const [runs, setRuns] = useState<LyraAuditRunRow[]>([]);
@@ -87,18 +91,18 @@ export function OrchestrationPanel() {
 
   useEffect(() => {
     try {
-      const s = sessionStorage.getItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
-      if (s) setEnqueueSecret(s);
+      const storedSecret = sessionStorage.getItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
+      if (storedSecret) setEnqueueSecret(storedSecret);
     } catch {
       /* ignore */
     }
   }, []);
 
-  const persistSecret = (v: string) => {
-    setEnqueueSecret(v);
+  const persistSecret = (secretValue: string) => {
+    setEnqueueSecret(secretValue);
     try {
-      if (v.trim())
-        sessionStorage.setItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY, v.trim());
+      if (secretValue.trim())
+        sessionStorage.setItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY, secretValue.trim());
       else sessionStorage.removeItem(LYRA_ENQUEUE_SECRET_STORAGE_KEY);
     } catch {
       /* ignore */
@@ -111,26 +115,28 @@ export function OrchestrationPanel() {
   ) => {
     setLoadError(null);
     const now = Date.now();
+    const cached = cacheRef.current;
     if (
       !opts?.bypassCache &&
-      orchestrationCache &&
-      now - orchestrationCache.at < ORCHESTRATION_CACHE_MS
+      cached &&
+      now - cached.at < ORCHESTRATION_CACHE_MS
     ) {
-      setData(orchestrationCache.data);
-      setJobs(orchestrationCache.jobs);
-      setRuns(orchestrationCache.runs);
-      setJobsConfigured(orchestrationCache.jobsConfigured);
-      setRedisConfigured(orchestrationCache.redisConfigured);
-      setDurable(orchestrationCache.durable);
-      setJobsLoadError(orchestrationCache.jobsLoadError ?? null);
+      setData(cached.data);
+      setJobs(cached.jobs);
+      setRuns(cached.runs);
+      setJobsConfigured(cached.jobsConfigured);
+      setRedisConfigured(cached.redisConfigured);
+      setDurable(cached.durable);
+      setJobsLoadError(cached.jobsLoadError ?? null);
+      setLoadedAt(cached.at);
       setLoading(false);
       return;
     }
 
     const [orchestrationRes, jobsRes, durableRes] = await Promise.all([
-      apiFetch("/api/orchestration"),
-      apiFetch("/api/orchestration/jobs"),
-      apiFetch("/api/durable-state"),
+      apiFetchWithEnqueueSecret("/api/orchestration"),
+      apiFetchWithEnqueueSecret("/api/orchestration/jobs"),
+      apiFetchWithEnqueueSecret("/api/durable-state"),
     ]);
 
     if (signal?.aborted) return;
@@ -149,14 +155,14 @@ export function OrchestrationPanel() {
     let redisConfiguredVal = false;
     let jobsErr: string | null = null;
     if (jobsRes.ok) {
-      const j = await jobsRes.json();
-      jobsConfiguredVal = Boolean(j.configured);
-      redisConfiguredVal = Boolean(j.redis_configured);
+      const jobsPayload = await jobsRes.json();
+      jobsConfiguredVal = Boolean(jobsPayload.configured);
+      redisConfiguredVal = Boolean(jobsPayload.redis_configured);
       setJobsConfigured(jobsConfiguredVal);
       setRedisConfigured(redisConfiguredVal);
-      setEnqueueAuthOptional(Boolean(j.enqueue_auth_optional));
-      jobsVal = Array.isArray(j.jobs) ? j.jobs : [];
-      runsVal = Array.isArray(j.runs) ? j.runs : [];
+      setEnqueueAuthOptional(Boolean(jobsPayload.enqueue_auth_optional));
+      jobsVal = Array.isArray(jobsPayload.jobs) ? jobsPayload.jobs : [];
+      runsVal = Array.isArray(jobsPayload.runs) ? jobsPayload.runs : [];
       setJobs(jobsVal);
       setRuns(runsVal);
       setJobsLoadError(null);
@@ -178,7 +184,7 @@ export function OrchestrationPanel() {
       setDurable(null);
     }
     if (signal?.aborted) return;
-    orchestrationCache = {
+    cacheRef.current = {
       data: dataVal,
       jobs: jobsVal,
       runs: runsVal,
@@ -188,6 +194,7 @@ export function OrchestrationPanel() {
       jobsLoadError: jobsErr,
       at: Date.now(),
     };
+    setLoadedAt(Date.now());
     setLoading(false);
   }, []);
 
@@ -205,12 +212,12 @@ export function OrchestrationPanel() {
   }, [load]);
 
   const authHeaders = useCallback((): HeadersInit => {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
-    const s = enqueueSecret.trim();
-    if (s) {
-      h.Authorization = `Bearer ${s}`;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const trimmedSecret = enqueueSecret.trim();
+    if (trimmedSecret) {
+      headers.Authorization = `Bearer ${trimmedSecret}`;
     }
-    return h;
+    return headers;
   }, [enqueueSecret]);
 
   const dispatchAction = useCallback(
@@ -219,7 +226,7 @@ export function OrchestrationPanel() {
       setDispatching(projectName ? `${action}:${projectName}` : action);
       try {
         const body = actionToJob(action, projectName);
-        const res = await apiFetch("/api/orchestration/jobs", {
+        const res = await apiFetchWithEnqueueSecret("/api/orchestration/jobs", {
           method: "POST",
           headers: authHeaders(),
           body: JSON.stringify(body),
@@ -228,7 +235,7 @@ export function OrchestrationPanel() {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error ?? `Failed (${res.status})`);
         }
-        await load();
+        await load(undefined, { bypassCache: true });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         setDispatchError(msg);
@@ -244,7 +251,7 @@ export function OrchestrationPanel() {
     setDispatchError(null);
     setDispatching("clear_queue");
     try {
-      const res = await apiFetch("/api/orchestration/queue/clear", {
+      const res = await apiFetchWithEnqueueSecret("/api/orchestration/queue/clear", {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({}),
@@ -254,8 +261,8 @@ export function OrchestrationPanel() {
         throw new Error(err.error ?? `Failed (${res.status})`);
       }
       await load(undefined, { bypassCache: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       setDispatchError(msg);
     } finally {
       setDispatching(null);
@@ -266,7 +273,7 @@ export function OrchestrationPanel() {
     setDispatchError(null);
     setDispatching("weekly_audit");
     try {
-      const res = await apiFetch("/api/orchestration/jobs", {
+      const res = await apiFetchWithEnqueueSecret("/api/orchestration/jobs", {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({ job_type: "weekly_audit" }),
@@ -275,7 +282,7 @@ export function OrchestrationPanel() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? `Failed (${res.status})`);
       }
-      await load();
+      await load(undefined, { bypassCache: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setDispatchError(msg);
@@ -306,15 +313,23 @@ export function OrchestrationPanel() {
         marginBottom: "1.5rem",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", marginBottom: "0.75rem", alignItems: "baseline" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", marginBottom: "0.75rem", alignItems: "baseline", flexWrap: "wrap" }}>
         <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-text-4)" }}>
           Orchestration (Supabase + BullMQ)
         </div>
-        {data && (
-          <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: jobsConfigured ? "var(--ink-green)" : "var(--ink-amber)" }}>
-            {jobsConfigured ? `jobs DB · redis ${redisConfigured ? "on" : "poll mode"}` : "DATABASE_URL + migrations required"}
-          </div>
-        )}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.2rem" }}>
+          {data && (
+            <div style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: jobsConfigured ? "var(--ink-green)" : "var(--ink-amber)" }}>
+              {jobsConfigured ? `jobs DB · redis ${redisConfigured ? "on" : "poll mode"}` : "DATABASE_URL + migrations required"}
+            </div>
+          )}
+          {loadedAt != null && (
+            <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+              {UI_COPY.orchestrationUpdatedPrefix}{" "}
+              {new Date(loadedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </div>
+          )}
+        </div>
       </div>
 
       {!data && loadError && (
@@ -359,6 +374,18 @@ export function OrchestrationPanel() {
           onChange={(e) => persistSecret(e.target.value)}
           style={{ width: "100%", maxWidth: "320px", fontSize: "11px", fontFamily: "var(--font-mono)" }}
         />
+        <div
+          style={{
+            fontSize: "10px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-text-4)",
+            marginTop: "0.35rem",
+            maxWidth: "420px",
+            lineHeight: 1.45,
+          }}
+        >
+          When set, requests from this panel send this secret. The rest of the dashboard uses your sign-in cookie only.
+        </div>
       </div>
 
       {data && (

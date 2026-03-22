@@ -48,10 +48,10 @@ export async function GET() {
       jobs,
       runs,
     });
-  } catch (e) {
-    console.error("GET /api/orchestration/jobs", e);
+  } catch (error) {
+    console.error("GET /api/orchestration/jobs", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -152,10 +152,10 @@ export async function POST(request: Request) {
       { job: row, bullmq_queued: connection != null },
       { status: 202 }
     );
-  } catch (e) {
-    console.error("POST /api/orchestration/jobs", e);
+  } catch (error) {
+    console.error("POST /api/orchestration/jobs", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

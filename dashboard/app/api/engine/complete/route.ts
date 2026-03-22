@@ -126,10 +126,10 @@ export async function POST(request: Request) {
       job: updatedJob,
       message: `Repair job updated to status: ${status}`,
     });
-  } catch (e) {
-    console.error("POST /api/engine/complete", e);
+  } catch (error) {
+    console.error("POST /api/engine/complete", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

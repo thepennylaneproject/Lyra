@@ -1,0 +1,130 @@
+Project,Source,Finding ID,Title,Type,Priority,Category,Description
+Codra,Manual Only,SYNTH-DEBT-008,Schema Violation in runtime-bug-hunter output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-010,Schema Violation in runtime-bug-hunter output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-011,Schema Violation in runtime-bug-hunter output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-012,Schema Violation in ux-flow-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-013,Schema Violation in ux-flow-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-014,Schema Violation in ux-flow-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-015,Schema Violation in ux-flow-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-016,Schema Violation in ux-flow-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-017,Schema Violation in ux-flow-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-018,Schema Violation in ux-flow-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-019,Schema Violation in performance-cost-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-020,Schema Violation in performance-cost-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-021,Schema Violation in performance-cost-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-022,Schema Violation in security-privacy-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-023,Schema Violation in security-privacy-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,SYNTH-DEBT-024,Schema Violation in security-privacy-auditor output,debt,P2,synth-debt,Normalized placeholder description.
+Codra,Manual Only,f-4e388587,tsc fails: missing generated assets-index-enriched.json import,bug,P0,type-error,`canonical-registry.ts` dynamically imports `../../../out/assets-index-enriched.
+Codra,Manual Only,f-7f705a16,"Pipeline AI enrichment calls Anthropic API directly, not via AIRouter",debt,P1,missing-validation,Expectations 2.2 requires AI provider calls to go through the AIRouter abstracti
+Codra,Manual Only,f-foreign-keys-missing-on-delete-01,Foreign Keys Missing ON DELETE Behaviors,debt,P2,constraint-violation,Multiple foreign key constraints are defined without explicit ON DELETE behavior
+Codra,Dashboard Only,codra-a11y-alt-text-missing,Missing Alt Text for Images,bug,P0,accessibility,"Some image assets do not have appropriate alt text defined, which violates acces"
+Codra,Dashboard Only,codra-accent-color-usage,Accent Color Misuse,bug,P1,ux,The usage of coral accent color does not adhere to the governance principle that
+Codra,Dashboard Only,codra-activity-strip-alerts,Missing accessibility attributes for alerts,bug,P1,ux,The ActivityStrip component does not provide appropriate ARIA roles or propertie
+Codra,Dashboard Only,codra-activity-strip-ui-issues,Activity Strip UI Issues,bug,P1,ux,The ActivityStrip component does not adhere to visual/UI/UX expectations as ther
+Codra,Dashboard Only,codra-alert-segment-ui-issues,Alert Segment UI Issues,bug,P1,ux,The AlertSegment component lacks sufficient visual differentiation between alert
+Codra,Dashboard Only,codra-auth-callback-loading-state-ux,Loading State UX Issues,bug,P1,ux,The LoadingState component does not provide adequate visual indication of progre
+Codra,Dashboard Only,codra-auth-inconsistent-button-styles,Inconsistent Button Styles Across Forms,bug,P2,ux,"The button styles across different forms are inconsistent, which violates the ex"
+Codra,Dashboard Only,codra-auth-missing-expected-validation,Missing Validation for Password Reset,bug,P1,logic,The ForgotPasswordForm does not validate the email format before submission. Thi
+Codra,Dashboard Only,codra-auth-missing-visual-feedback,Missing Visual Feedback on Form Submission,bug,P1,ux,"The forms do not provide adequate visual feedback during submission, which viola"
+Codra,Dashboard Only,codra-auth-weak-password-requirements,Weak Password Requirements in Signup,bug,P1,security,The SignupForm does not enforce strong password requirements effectively. This v
+Codra,Dashboard Only,codra-authenticity-panel-ux-issues,Authenticity Panel UX Issues,bug,P1,ux,The AuthenticityPanel component lacks clear visual feedback for users when the a
+Codra,Dashboard Only,codra-button-contrast-issue,Button Contrast Issue,bug,P1,ux,The primary button does not meet the minimum contrast ratio of 4.5:1 against its
+Codra,Dashboard Only,codra-button-hover-state,Missing Button Hover State,bug,P1,ux,"Buttons do not have a defined hover state, which can lead to a poor user experie"
+Codra,Dashboard Only,codra-confirm-dialog-focus-trap,Confirm Dialog Focus Trap Issue,bug,P1,ux,"The ConfirmDialog component does not properly trap focus, allowing users to tab "
+Codra,Dashboard Only,codra-decision-points-exceed-target,Excessive Decision Points,bug,P1,ux,"The application exceeds the target of 10 total decisions across all flows, which"
+Codra,Dashboard Only,codra-deploy-history-empty-state,Deploy History Empty State Design,bug,P2,ux,The empty state design in DeployHistory does not provide sufficient guidance or 
+Codra,Dashboard Only,codra-draft-expectations,Draft Expectations Document,bug,P1,logic,"The expectations document is in draft status and has not been activated, which m"
+Codra,Dashboard Only,codra-draft-expectations-document,Draft Expectations Document,bug,P0,logic,"The expectations document is in draft status and has not been activated, which v"
+Codra,Dashboard Only,codra-expectations-draft,Expectations Document Not Activated,bug,P0,logic,The expectations document for the project is in draft status and requires review
+Codra,Dashboard Only,codra-expectations-draft-status,Expectations Document Not Activated,bug,P0,logic,The expectations document for the project is in draft status and requires review
+Codra,Dashboard Only,codra-expectations-not-activated,Expectations Document Not Activated,bug,P0,logic,"The expectations document indicates that review is required before activation, w"
+Codra,Dashboard Only,codra-inconsistent-ui-elements,Inconsistent UI Elements,bug,P1,ux,"There are inconsistencies in the UI elements used across different components, w"
+Codra,Dashboard Only,codra-job-ingestion-logging,Inconsistent Logging in Job Ingestion,bug,P2,logic,The job ingestion process does not log errors consistently when fetching jobs fa
+Codra,Dashboard Only,codra-legacy-steps-not-removed,Legacy Onboarding Steps Not Removed,bug,P1,logic,The legacy onboarding steps are still present in the repository under src/new/ro
+Codra,Dashboard Only,codra-loading-spinner-visibility,Loading Spinner Visibility,bug,P1,ux,"The loading spinner does not have sufficient contrast against the background, ma"
+Codra,Dashboard Only,codra-missing-activation,Missing Activation of Draft Expectations,bug,P0,logic,The expectations document indicates that the generated profile and expectations 
+Codra,Dashboard Only,codra-missing-activation-gate,Missing Activation Gate for Expectations Document,bug,P0,logic,"The expectations document is in draft status and has not been activated, which v"
+Codra,Dashboard Only,codra-missing-expectations-doc,Missing Expectations Document,bug,P0,logic,"The expectations document for the project is missing, which is required for a co"
+Codra,Dashboard Only,codra-missing-expected-activation,Draft expectations remain unactivated,bug,P0,logic,The expectations document indicates that the generated profile and expectations 
+Codra,Dashboard Only,codra-missing-expected-commands,Missing Validation Commands,bug,P0,logic,"Validation commands are not available or fail to run, which is a violation of th"
+Codra,Dashboard Only,codra-missing-expected-docs,Missing Expectations Document,bug,P0,logic,The expectations document for the codra project is missing. All audits require a
+Codra,Dashboard Only,codra-missing-expected-elements,Missing Expected Elements in Fragments,bug,P1,logic,"The fragments do not mention key expected elements such as audience, purpose, sc"
+Codra,Dashboard Only,codra-missing-expected-ui-elements,Missing Expected UI Elements,bug,P1,ux,The expectations document does not specify required UI elements for the Conflict
+Codra,Dashboard Only,codra-missing-expected-validation-commands,Missing Validation Commands,bug,P1,logic,Validation commands are not available or have not been confirmed as operational.
+Codra,Dashboard Only,codra-missing-validation-commands,Missing Validation Commands,bug,P1,logic,"Validation commands are unavailable or fail to run, which prevents verification "
+Codra,Dashboard Only,codra-missing-visual-expectations,Missing Visual/UI/UX Expectations,bug,P0,ux,The audit did not find any visual/UI/UX expectations defined in the provided sco
+Codra,Dashboard Only,codra-missing-visual-expectations-doc,Missing Visual/UI/UX Expectations Document,bug,P0,ux,"The expectations document for visual/UI/UX standards is missing, which violates "
+Codra,Dashboard Only,codra-missing-visual-ux-expectations,Missing Visual/UI/UX Expectations Document,bug,P0,ux,"The expectations document for visual/UI/UX aspects is missing, which violates th"
+Codra,Dashboard Only,codra-panel-divider-accessibility,Missing accessibility attributes for PanelDivider,bug,P1,ux,The PanelDivider component does not have appropriate ARIA roles or properties fo
+Codra,Dashboard Only,codra-panel-header-contrast,Insufficient Contrast in Panel Headers,bug,P1,ux,The contrast between the header text and background in the ModelSelectorPanel is
+Codra,Dashboard Only,codra-project-info-ux-issues,UX Issues in Project Info Step,bug,P1,ux,"The Project Info step does not provide adequate feedback for user input errors, "
+Codra,Dashboard Only,codra-task-queue-undefined-status,Task Queue Status Undefined,bug,P1,logic,The task queue can have a status of 'undefined' which is not defined in the Task
+Codra,Dashboard Only,codra-typography-contrast,Insufficient Text Contrast,bug,P1,ux,The text color used in various components does not meet the minimum contrast rat
+Codra,Dashboard Only,codra-typography-inconsistent-styles,Inconsistent Typography Styles,bug,P1,ux,The Typography component does not adhere to the expected font sizes and weights 
+Codra,Dashboard Only,codra-ui-button-styling,Inconsistent Button Styling,bug,P2,ux,"Buttons across the application have inconsistent styling, failing to adhere to t"
+Codra,Dashboard Only,codra-ui-color-contrast,Insufficient Color Contrast,bug,P1,ux,The text color on several buttons does not meet the minimum contrast ratio of 4.
+Codra,Dashboard Only,codra-ui-color-contrast-issues,Color Contrast Issues,bug,P1,ux,"Some text elements do not meet accessibility contrast ratios, violating visual/U"
+Codra,Dashboard Only,codra-ui-font-size,Inconsistent Font Sizes,bug,P2,ux,"Font sizes across different pages are inconsistent, which may lead to a disjoint"
+Codra,Dashboard Only,codra-ui-inconsistency,Inconsistent UI Elements,bug,P1,visual-consistency,"The UI elements across different pages do not maintain a consistent style, leadi"
+Codra,Dashboard Only,codra-ui-inconsistent-button-styles,Inconsistent Button Styles,bug,P1,ux,"The button styles across components are inconsistent, violating the visual/UI ex"
+Codra,Dashboard Only,codra-ui-inconsistent-status-badges,Inconsistent Status Badges,bug,P1,ux,The status badges in the TaskQueuePanel component do not follow a consistent col
+Codra,Dashboard Only,codra-ui-lack-of-accessibility-features,Lack of Accessibility Features,bug,P0,ux,The application lacks essential accessibility features such as ARIA labels and k
+Codra,Dashboard Only,codra-ui-missing-accessibility-labels,Missing Accessibility Labels,bug,P0,ux,"Several interactive elements lack accessibility labels, violating accessibility "
+Codra,Dashboard Only,codra-ui-missing-loading-indicator,Missing Loading Indicator,bug,P1,ux,The TaskQueuePanel does not provide a loading indicator when tasks are being fet
+Codra,Dashboard Only,codra-unauthorized-page-ux,Unauthorized Page UX Issues,bug,P1,ux,The unauthorized page does not provide sufficient visual feedback for users. The
+Codra,Dashboard Only,codra-ux-cognitive-load,High Cognitive Load in Navigation,bug,P1,cognitive-load,"The navigation structure is complex, which may overwhelm users, especially new o"
+Codra,Dashboard Only,codra-ux-inconsistent-button-styles,Inconsistent Button Styles,bug,P1,ux,"Buttons in the application do not follow a consistent style guide, leading to a "
+Codra,Dashboard Only,codra-ux-modal-backdrop-click,Modal Backdrop Click Functionality,bug,P2,ux,The modal backdrop in ImportContextModal.tsx does not close the modal when click
+Codra,Dashboard Only,codra-validated-input-visual-feedback,Missing Visual Feedback for Validation States,bug,P1,ux,The ValidatedInput component lacks sufficient visual feedback for validation sta
+Codra,Dashboard Only,codra-visual-accessibility-issues,Accessibility Issues in Color Contrast,bug,P0,ux,The text color used in 'LyraClarification' and 'LyraSuggestion' components does 
+Codra,Dashboard Only,codra-visual-design-consistency,Visual Design Consistency Issue,bug,P1,ux,"The UI components lack consistent styling and design patterns, which violates th"
+Codra,Dashboard Only,codra-visual-direction-incomplete,Incomplete Visual Direction Options,bug,P1,ux,The visual direction options do not fully align with the expected UI/UX guidelin
+Codra,Dashboard Only,codra-visual-expectations-not-defined,Visual/UI/UX Expectations Not Defined,bug,P1,ux,The expectations document lacks specific visual/UI/UX guidelines that are necess
+Codra,Dashboard Only,codra-visual-inconsistency-first-run-modal,Visual inconsistency in FirstRunModal,bug,P1,ux,The FirstRunModal component does not adhere to the expected visual design guidel
+Codra,Dashboard Only,codra-visual-inconsistency-idea-clusterer,Visual inconsistency in IdeaClusterer,bug,P1,ux,The IdeaClusterer component does not follow the expected visual hierarchy and sp
+Codra,Dashboard Only,codra-visual-inconsistent-button-styles,Inconsistent Button Styles,bug,P1,ux,Buttons in 'LyraInput' and 'LyraSuggestion' components have inconsistent hover e
+Codra,Dashboard Only,codra-visual-progress-bar-visibility,Progress Bar Visibility Issues,bug,P1,ux,The progress bar in 'OnboardingProgress' does not provide sufficient contrast ag
+Codra,Dashboard Only,codra-visual-ux-guidelines-missing,Missing Visual/UI/UX Guidelines,bug,P0,ux,The expectations document does not contain specific visual/UI/UX guidelines that
+Codra,Dashboard Only,codra-visual-ux-inconsistency,Inconsistent Button Styles,bug,P1,ux,The button styles in 'ResumeProjectDialog' do not match the expected UI guidelin
+Codra,Dashboard Only,codra-visual-ux-issues,Visual Hierarchy Inconsistency,bug,P1,ux,The visual hierarchy in the execution desk does not consistently follow the defi
+Relevnt,Manual Only,CONSTRAINT-VIOLATION-001,ai_usage_log.user_id has duplicate FK constraints with conflicting ON DELETE behaviour,bug,P2,constraint-violation,Two FK constraints exist on ai_usage_log.user_id: one with ON DELETE CASCADE and
+Relevnt,Manual Only,MIGRATION-GAP-001,market_snapshots table referenced in code but no migration exists,bug,P1,migration-gap,netlify/functions/jobs/marketSnapshotGenerator.ts:331 attempts to write to publi
+Relevnt,Manual Only,MIGRATION-GAP-002,admin_config table referenced in code but no migration exists,bug,P1,migration-gap,netlify/functions/admin/admin_config.ts reads and writes to public.admin_config 
+Relevnt,Manual Only,MIGRATION-GAP-003,signal_classifications table referenced in code but no migration exists,bug,P1,migration-gap,netlify/functions/jobs/jobClassifier.ts:163 writes classification results to pub
+Relevnt,Manual Only,MIGRATION-GAP-004,cache_invalidation_log table referenced in code but no migration exists,bug,P1,migration-gap,netlify/functions/utils/cacheInvalidation.ts:161 and netlify/functions/jobs/get_
+Relevnt,Manual Only,ORPHANED-DATA-001,job_matches.persona_id FK dropped in 20260203090500 with no replacement,bug,P2,orphaned-data,Migration 20260203090500 dropped the persona_id FK constraint on job_matches. Pe
+Relevnt,Manual Only,VALIDATION-GAP-001,detect-ats.ts upserts platform without validating against CHECK constraint enum,bug,P3,validation-gap,netlify/functions/jobs/detect-ats.ts:249 upserts a platform value without checki
+Relevnt,Manual Only,data-constraint-violation-001,Conflicting auto_apply_queue status CHECK constraints across migrations can make valid states invalid,bug,P1,constraint-violation,Multiple migrations added CHECK constraints on auto_apply_queue.status with non-
+Relevnt,Manual Only,data-constraint-violation-002,ai_usage_log has duplicate user_id FKs with conflicting ON DELETE behavior,bug,P2,constraint-violation,The baseline migration defines two foreign key constraints on ai_usage_log.user_
+Relevnt,Manual Only,data-migration-gap-001,"provider_health and ats_detection_cache still only in netlify/functions migration track, not in supabase/migrations",bug,P2,migration-gap,Migration 20260305220000 resolved the missing-migration gap for cache_invalidati
+Relevnt,Manual Only,data-migration-gap-002,Phase-4 and phase-5 verification migrations reference renamed/dropped tables,debt,P2,migration-gap,Migrations 20260131006000_monitoring_verification_phase4.sql and 20260131007000_
+Relevnt,Manual Only,data-migration-gap-003,supabase/config.toml configures seed.sql but the file is absent,debt,P3,migration-gap,"supabase/config.toml enables db.seed with sql_paths=[""./seed.sql""], but supabase"
+Relevnt,Manual Only,data-missing-rls-001,provider_health and ats_detection_cache still only defined in netlify/functions/migrations without RLS,bug,P1,missing-rls,Migration 20260305180000 fixed auto_apply_queue and resume_versions_history (MIS
+Relevnt,Manual Only,data-missing-rls-003,aggregate_daily_analytics SECURITY DEFINER function missing REVOKE FROM PUBLIC — callable by any authenticated user,bug,P2,missing-rls,Migration 20260305223000_add_aggregate_daily_analytics_rpc.sql creates aggregate
+Relevnt,Manual Only,data-orphaned-data-001,Cross-owner reference risk for application and cover-letter linkages,bug,P2,orphaned-data,FKs on job_applications and cover_letters enforce existence but not same-owner r
+Relevnt,Manual Only,data-schema-mismatch-001,"cover_letters app contract expects resume_id, job_description, company_name columns absent from canonical schema",bug,P1,schema-mismatch,"Frontend hook/component/types use cover_letters fields resume_id, job_descriptio"
+Relevnt,Manual Only,data-type-drift-001,"saved_jobs.job_id nullability drift: DB allows NULL, app type still requires string",debt,P2,type-drift,Migration 20260205170000 dropped NOT NULL on saved_jobs.job_id and changed the F
+Relevnt,Manual Only,data-type-drift-002,Four tables added by 20260305220000 absent from src/types/supabase.ts,bug,P1,type-drift,Migration 20260305220000_create_missing_shared_tables.sql creates market_snapsho
+Relevnt,Manual Only,data-validation-gap-001,Netlify functions apply manual ad-hoc validation without DB-aligned schema contracts,debt,P2,validation-gap,netlify/functions/utils/validation.ts and netlify/functions/utils/jobValidation.
+Relevnt,Manual Only,data-validation-gap-002,No schema-first validation layer (Zod/Yup/Joi) for DB-facing payloads,debt,P2,validation-gap,"A repository-wide search found no Zod, Yup, or Joi imports. All validation is ad"
+Relevnt,Dashboard Only,embr-activation-gate-draft-expectations,Draft Expectations Not Activated,bug,P0,logic,"The audit expectations are in draft status and have not been activated, which pr"
+Relevnt,Dashboard Only,embr-auth-missing-validation-commands,Missing Validation Commands,bug,P1,logic,"Validation commands for testing, linting, and typechecking are not found in the "
+Relevnt,Dashboard Only,embr-draft-expectations,Draft Expectations Document,bug,P0,logic,"The expectations document is in draft status and has not been activated, which v"
+Relevnt,Dashboard Only,embr-draft-expectations-document,Draft Expectations Document,bug,P1,logic,The expectations document is in draft status and requires review before activati
+Relevnt,Dashboard Only,embr-draft-expectations-not-activated,Draft Expectations Document Not Activated,bug,P0,logic,"The expectations document is in draft status and has not been activated, which v"
+Relevnt,Dashboard Only,embr-expectations-document-draft,Draft Expectations Document,bug,P0,logic,The expectations document is in draft status and requires review before activati
+Relevnt,Dashboard Only,embr-expected-validation-commands-not-found,Missing Validation Commands,bug,P1,logic,"Validation commands for testing, linting, and typechecking are not found in the "
+Relevnt,Dashboard Only,embr-groups-members-loading-state,Loading State Not Handled Properly,bug,P1,ux,"The Group Members page does not handle loading states effectively, leading to po"
+Relevnt,Dashboard Only,embr-groups-settings-unauthorized-access,Unauthorized Access to Group Settings,bug,P0,security,The Group Settings page allows access to users who are not admins or the creator
+Relevnt,Dashboard Only,embr-incomplete-coverage,Incomplete Coverage of UI/UX Expectations,bug,P1,ux,The audit did not cover all relevant UI/UX expectations as the draft expectation
+Embr,Manual Only,f-schema-nullable-walletid-001,Transaction and Payout tables have walletId foreign key field but schema marks as nullable,bug,P1,N/A,
+Embr,Manual Only,f-schema-monetary-cents-001,Track.price and ArtistStat.revenue were migrated to integer cents but may have pre-existing inconsistencies,enhancement,P2,N/A,
+Embr,Manual Only,f-schema-nullable-refs-001,"Multiple tables allow nullable foreign key references with SetNull cascade, risking orphaned parent-only records",debt,P2,N/A,
+Embr,Manual Only,f-schema-rls-coverage-001,Database uses PostgreSQL but no RLS (Row-Level Security) policies defined,question,P0,N/A,
+Embr,Manual Only,f-schema-validation-amount-001,"Monetary amount fields (Wallet, Transaction, Tip, Payout) lack NOT NULL or CHECK constraints in schema",bug,P1,N/A,
+Embr,Manual Only,f-schema-orphaned-refs-transaction-user-001,"Transaction.userId is optional (nullable) with onDelete: SetNull, risking orphaned transactions",debt,P2,N/A,
+Embr,Manual Only,f-schema-wallet-unique-index-001,"Wallet.userId has @unique constraint, but index at line 388 is redundant",enhancement,P2,N/A,
+Embr,Manual Only,f-deploy-build-failure-nestjs-001,NestJS API build fails with TypeScript compilation errors in messaging service,bug,P0,N/A,
+Embr,Manual Only,f-deploy-ci-build-api-missing-001,CI/CD pipeline does not build or test the API; only web typecheck and build are validated,bug,P1,N/A,
+Embr,Manual Only,f-deploy-typescript-strict-api-001,API TypeScript strict mode enabled but hundreds of pre-existing type errors prevent clean builds,debt,P1,N/A,

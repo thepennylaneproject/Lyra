@@ -131,7 +131,14 @@ export type OnboardingStage =
   | "operator_review"
   | "activate_project"
   | "completed";
+export type AuditCluster =
+  | "standard"   // 6 specialist agents: logic, security, performance, ux, data, deploy
+  | "investor"   // investor-readiness, code-debt, intelligence extraction
+  | "domain"     // exhaustive domain-by-domain audit with module manifest
+  | "visual";    // UI consistency, color, typography, components, layout, polish
+
 export type AuditKind =
+  // Standard cluster — individual agent passes
   | "logic"
   | "security"
   | "performance"
@@ -139,8 +146,35 @@ export type AuditKind =
   | "visual"
   | "data"
   | "deploy"
-  | "full"
-  | "synthesize";
+  | "full"                    // all 6 standard agents in sequence
+  // Investor cluster
+  | "investor_readiness"      // investor-readiness.md
+  | "code_debt"               // code-debt.md
+  | "intelligence"            // intelligence_extraction_prompt.md
+  // Domain cluster
+  | "domain_manifest"         // generate module manifest (domain_audits.md Strategy 1)
+  | "domain_pass"             // audit one domain against manifest
+  // Synthesizers
+  | "synthesize"              // standard cluster synthesis (synthesizer.md)
+  | "visual_synthesize"       // visual cluster synthesis (visual-synthesizer.md)
+  | "cluster_synthesize"      // per-cluster synthesizer
+  | "meta_synthesize"         // per-project: reads all cluster summaries
+  | "portfolio_synthesize";   // portfolio: reads all project meta summaries
+
+export type ClusterOnboardingStage =
+  // Standard (already exists)
+  | "generate_intelligence_report"
+  | "generate_expectations"
+  // Investor cluster prerequisites
+  | "collect_git_history"         // last 100 commits, contributors, commit quality
+  | "collect_dependency_manifest" // npm audit output, major version gaps
+  | "generate_investor_profile"   // investor-readiness pre-scan
+  // Domain cluster prerequisites
+  | "generate_module_manifest"    // Strategy 1 from domain_audits.md
+  | "assign_domain_audit_order"   // complexity + impact ranked order
+  // Visual cluster prerequisites
+  | "collect_screenshot_set"      // screenshots of all main routes
+  | "generate_css_token_map";     // design token extraction
 export type ScopeType =
   | "project"
   | "domain"
@@ -287,6 +321,7 @@ export interface Finding {
   status: FindingStatus;
   confidence?: string;
   category?: string;
+  cluster?: AuditCluster;
   /** Extra fields from import payloads (audit agents, scanners) */
   metadata?: Record<string, unknown>;
   proof_hooks?: ProofHook[];
@@ -305,6 +340,26 @@ export interface Finding {
     decision: string;
     metadata?: Record<string, unknown>;
   }>;
+}
+
+export interface ClusterSummary {
+  cluster: AuditCluster;
+  project: string;
+  generatedAt: string;
+  findingCount: number;
+  topFindings: string[];
+  synthesisText: string;
+  score?: number;
+  clusterSpecific?: Record<string, unknown>;
+}
+
+export interface ProjectMetaSummary {
+  project: string;
+  generatedAt: string;
+  clustersRun: AuditCluster[];
+  crossClusterP0s: string[];
+  todaysTop5: string[];
+  narrativeSummary: string;
 }
 
 export interface Project {
@@ -334,6 +389,8 @@ export interface Project {
   manifest?: ProjectManifest;
   maintenanceBacklog?: MaintenanceBacklogItem[];
   maintenanceTasks?: MaintenanceTask[];
+  clusterSummaries?: Partial<Record<AuditCluster, ClusterSummary>>;
+  metaSummary?: ProjectMetaSummary;
 }
 
 export interface SyncMapping {

@@ -20,7 +20,7 @@ Use Gemini when:
 
 from __future__ import annotations
 
-from .vllm_client import VLLMClient
+from .vllm_client import VLLMClient, build_vllm_tier_client
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
@@ -46,9 +46,11 @@ def build_gemini_client(
     Returns:
         A VLLMClient pointed at the Gemini OpenAI-compatible endpoint.
     """
-    merged = {**GEMINI_MODELS, **(model_overrides or {})}
-    if tier not in merged:
-        raise ValueError(
-            f"Unknown Gemini tier '{tier}'. Valid tiers: {list(merged.keys())}"
-        )
-    return VLLMClient(base_url=GEMINI_BASE_URL, model=merged[tier], api_key=api_key)
+    return build_vllm_tier_client(
+        tier=tier,
+        api_key=api_key,
+        models=GEMINI_MODELS,
+        base_url=GEMINI_BASE_URL,
+        provider_name="Gemini",
+        model_overrides=model_overrides,
+    )

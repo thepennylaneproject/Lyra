@@ -3,56 +3,47 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api-fetch";
 import type { EngineStatus } from "@/lib/audit-reader";
+import { UI_COPY } from "@/lib/ui-copy";
+import { workflowsDocHref } from "@/lib/docs-links";
 
-const AGENTS = [
-  { key: "audit",       label: "Audit agent" },
-  { key: "patch",       label: "Patch agent" },
-  { key: "synthesizer", label: "Synthesizer" },
-];
-
-type AgentState = "idle" | "active" | "error";
 export type NavView = "portfolio" | "engine";
 
 interface ShellProps {
   children:    React.ReactNode;
   activeView:  NavView;
+  /** Which nav item is highlighted; defaults to `activeView`. Use `"portfolio"` while a project is open so sidebar matches portfolio context. */
+  navHighlightView?: NavView;
   onNavigate:  (view: NavView) => void;
+  /** After a successful `POST /api/sync/audit`, refresh portfolio data from the parent. */
+  onAuditSynced?: () => void;
 }
 
-function AgentDot({ state }: { state: AgentState }) {
-  const colors: Record<AgentState, string> = {
-    idle:   "var(--ink-text-4)",
-    active: "var(--ink-green)",
-    error:  "var(--ink-red)",
-  };
-  return (
-    <span
-      style={{
-        display:      "inline-block",
-        width:        6,
-        height:       6,
-        borderRadius: "50%",
-        background:   colors[state],
-        flexShrink:   0,
-        animation:    state === "active" ? "pulse-dot 2s ease-in-out infinite" : undefined,
-      }}
-    />
-  );
-}
-
-export function Shell({ children, activeView, onNavigate }: ShellProps) {
+export function Shell({ children, activeView, navHighlightView, onNavigate, onAuditSynced }: ShellProps) {
+  const highlightView = navHighlightView ?? activeView;
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
+  const [engineStatusError, setEngineStatusError] = useState<string | null>(null);
   const [syncing,      setSyncing]      = useState(false);
   const [syncMsg,      setSyncMsg]      = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
+    setEngineStatusError(null);
     try {
       const res = await apiFetch("/api/engine/status");
-      if (res.ok) setEngineStatus(await res.json());
-    } catch {}
+      if (res.ok) {
+        setEngineStatus(await res.json());
+        return;
+      }
+      setEngineStatus(null);
+      setEngineStatusError(`Could not load engine status (${res.status}).`);
+    } catch (e) {
+      setEngineStatus(null);
+      setEngineStatusError(
+        e instanceof Error ? e.message : "Network error loading engine status."
+      );
+    }
   }, []);
 
-  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => { void fetchStatus(); }, [fetchStatus]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -61,13 +52,14 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
       const res = await apiFetch("/api/sync/audit", { method: "POST" });
       await res.json().catch(() => null);
       if (res.ok) {
-        setSyncMsg("✓ Synced");
+        setSyncMsg(UI_COPY.auditSyncOkShort);
         await fetchStatus();
+        onAuditSynced?.();
       } else {
-        setSyncMsg("✗ Sync failed");
+        setSyncMsg(UI_COPY.auditSyncFailedShort);
       }
     } catch {
-      setSyncMsg("✗ Sync failed");
+      setSyncMsg(UI_COPY.auditSyncFailedShort);
     } finally {
       setSyncing(false);
     }
@@ -81,14 +73,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
   }, [syncMsg]);
 
   const queueSize  = engineStatus?.queue_size ?? 0;
-  const auditRuns  = engineStatus?.audit_run_count ?? 0;
-  const repairRuns = engineStatus?.repair_run_count ?? 0;
-
-  const agentStates: Record<string, AgentState> = {
-    audit:       syncing ? "active" : auditRuns  > 0 ? "idle" : "idle",
-    patch:       queueSize > 0 ? "active" : repairRuns > 0 ? "idle" : "idle",
-    synthesizer: "idle",
-  };
+  const workflowsHref = workflowsDocHref();
 
   function fmtDate(d: string | null): string {
     if (!d) return "never";
@@ -98,8 +83,8 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
   }
 
   const NAV_ITEMS: { key: NavView; label: string }[] = [
-    { key: "portfolio", label: "Portfolio" },
-    { key: "engine",    label: "Repair queue" },
+    { key: "portfolio", label: UI_COPY.navPortfolio },
+    { key: "engine",    label: UI_COPY.navRepairLedger },
   ];
 
   return (
@@ -134,40 +119,6 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
           </span>
         </div>
 
-        {/* Agents */}
-        <div style={{ padding: "0 1.25rem", marginBottom: "1.5rem" }}>
-          <div
-            style={{
-              fontSize:      "9px",
-              fontFamily:    "var(--font-mono)",
-              fontWeight:    500,
-              color:         "var(--ink-text-4)",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              marginBottom:  "0.625rem",
-            }}
-          >
-            Agents
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {AGENTS.map(({ key, label }) => (
-              <div key={key} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <AgentDot state={agentStates[key] ?? "idle"} />
-                <span style={{ fontSize: "12px", color: "var(--ink-text-3)" }}>{label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div
-          style={{
-            height:     "0.5px",
-            background: "var(--ink-border-faint)",
-            margin:     "0 1.25rem 1.25rem",
-          }}
-        />
-
         {/* Nav */}
         <nav
           style={{
@@ -178,7 +129,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
           }}
         >
           {NAV_ITEMS.map(({ key, label }) => {
-            const isActive = activeView === key;
+            const isActive = highlightView === key;
             return (
               <button
                 key={key}
@@ -204,6 +155,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
                 {label}
                 {key === "engine" && queueSize > 0 && (
                   <span
+                    title={UI_COPY.navLedgerCountTitle}
                     style={{
                       fontSize:     "9px",
                       fontFamily:   "var(--font-mono)",
@@ -226,18 +178,93 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
+        <div
+          style={{
+            padding: "0 1.25rem 0.75rem",
+            borderTop: "0.5px solid var(--ink-border-faint)",
+            marginTop: "0.5rem",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "9px",
+              fontFamily: "var(--font-mono)",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--ink-text-4)",
+              marginBottom: "0.35rem",
+            }}
+          >
+            {UI_COPY.sourceTruthTitle}
+          </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "10px",
+              fontFamily: "var(--font-mono)",
+              color: "var(--ink-text-4)",
+              lineHeight: 1.5,
+            }}
+          >
+            {UI_COPY.sourceTruthBody}{" "}
+            {workflowsHref ? (
+              <a
+                href={workflowsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--ink-blue)" }}
+              >
+                {UI_COPY.sourceTruthDocLink}
+              </a>
+            ) : (
+              <code style={{ fontSize: "9px", color: "var(--ink-text-3)" }}>
+                {UI_COPY.sourceTruthDocPath}
+              </code>
+            )}
+          </p>
+        </div>
+
         {/* Engine footer */}
         <div style={{ padding: "0 1.25rem" }}>
           {syncMsg && (
             <div
               style={{
                 fontSize:     "11px",
-                color:        syncMsg.includes("✓") ? "var(--ink-green)" : "var(--ink-red)",
+                color:        syncMsg.includes("✓") || syncMsg.startsWith("✓") ? "var(--ink-green)" : "var(--ink-red)",
                 marginBottom: "0.375rem",
                 fontFamily:   "var(--font-mono)",
               }}
             >
               {syncMsg}
+            </div>
+          )}
+          {engineStatusError && (
+            <div
+              style={{
+                fontSize:     "10px",
+                fontFamily:   "var(--font-mono)",
+                color:        "var(--ink-amber)",
+                marginBottom: "0.5rem",
+                lineHeight:   1.45,
+              }}
+            >
+              <span>{engineStatusError}</span>
+              {" "}
+              <button
+                type="button"
+                onClick={() => void fetchStatus()}
+                style={{
+                  fontSize:       "10px",
+                  border:         "none",
+                  background:     "none",
+                  color:          "inherit",
+                  cursor:         "pointer",
+                  textDecoration: "underline",
+                  padding:        0,
+                }}
+              >
+                Retry
+              </button>
             </div>
           )}
           {engineStatus && (
@@ -254,8 +281,8 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
               {" · "}
               <span>{engineStatus.repair_run_count} repairs</span>
               {queueSize > 0 && (
-                <span style={{ color: "var(--ink-amber)" }}>
-                  {" · "}{queueSize} queued
+                <span style={{ color: "var(--ink-amber)" }} title={UI_COPY.navLedgerCountTitle}>
+                  {" · "}{queueSize} on ledger
                 </span>
               )}
               <br />
@@ -266,6 +293,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
             type="button"
             onClick={handleSync}
             disabled={syncing}
+            title={UI_COPY.syncAuditImportTitle}
             style={{
               fontSize:   "11px",
               fontFamily: "var(--font-mono)",
@@ -276,7 +304,7 @@ export function Shell({ children, activeView, onNavigate }: ShellProps) {
               cursor:     syncing ? "default" : "pointer",
             }}
           >
-            {syncing ? "syncing…" : "sync now"}
+            {syncing ? "importing…" : UI_COPY.syncAuditImportLabel}
           </button>
         </div>
       </aside>

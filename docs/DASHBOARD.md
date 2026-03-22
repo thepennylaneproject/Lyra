@@ -35,6 +35,10 @@ The TypeScript worker processes **audit** jobs, not `lyra_repair_jobs`; there is
 
 Maintenance backlog is also updated from **audit completion** in the worker (`upsertMaintenanceBacklogFromFindings`). Backlog items can link to repair jobs via `backlog_id` / `maintenance_task_id` where the schema supports it.
 
+## Optional: link workflows doc in the UI
+
+The sidebar can show a clickable “Workflows table” link if you set **`NEXT_PUBLIC_LYRA_WORKFLOWS_DOC_URL`** at build time (e.g. a GitHub blob URL for `docs/LYRA_NEAR_TERM_THEMES.md`). Otherwise the UI shows the repo path as plain text.
+
 ## Related docs
 
 - [`audits/WORKFLOW.md`](../audits/WORKFLOW.md) — Session commands (`triage`, `fix`, `reaudit`, `canship`).
