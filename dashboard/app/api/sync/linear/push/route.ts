@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
   const syncState = await getProjectSyncState(canonicalProjectName);
   const mappings = { ...syncState.mappings };
-  const labelIds = getEnvLabelId() ? [getEnvLabelId()!] : undefined;
+
   const projectId = getEnvProjectId(canonicalProjectName) ?? undefined;
 
   let created = 0;
@@ -120,12 +120,13 @@ export async function POST(request: Request) {
         created += 1;
       } else {
         const description = findingToDescription(f);
+        const labelId = getEnvLabelId(f.cluster);
         const issue = await createIssue({
           title,
           description,
           priority,
           stateId: stateId || undefined,
-          labelIds,
+          labelIds: labelId ? [labelId] : undefined,
           projectId,
         });
         if (issue) {

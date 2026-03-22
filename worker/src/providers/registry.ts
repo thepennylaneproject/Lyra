@@ -1,6 +1,10 @@
 import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
 import { OpenAIProvider } from "./openai.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { DeepSeekProvider } from "./deepseek.js";
+import { GeminiProvider } from "./gemini.js";
+import { HuggingFaceProvider } from "./huggingface.js";
+import { AimlapiProvider } from "./aimlapi.js";
 
 /**
  * Registry for LLM providers with fallback logic.
@@ -13,6 +17,10 @@ export class ProviderRegistry {
     this.logger = logger || console.log;
     this.registerProvider(new OpenAIProvider());
     this.registerProvider(new AnthropicProvider());
+    this.registerProvider(new DeepSeekProvider());
+    this.registerProvider(new GeminiProvider());
+    this.registerProvider(new HuggingFaceProvider());
+    this.registerProvider(new AimlapiProvider());
   }
 
   registerProvider(provider: LLMProvider): void {
@@ -105,6 +113,28 @@ export class ProviderRegistry {
       if (modelName.includes("sonnet")) return { provider: "anthropic", modelId: "sonnet" };
       if (modelName.includes("opus")) return { provider: "anthropic", modelId: "opus" };
       return { provider: "anthropic", modelId: "sonnet" };
+    }
+
+    if (modelName.includes("deepseek")) {
+      if (modelName.includes("reasoner") || modelName.includes("r1")) return { provider: "deepseek", modelId: "r1" };
+      return { provider: "deepseek", modelId: "v3" };
+    }
+
+    if (modelName.includes("gemini")) {
+      if (modelName.includes("pro")) return { provider: "gemini", modelId: "pro" };
+      if (modelName.includes("8b")) return { provider: "gemini", modelId: "flash8b" };
+      return { provider: "gemini", modelId: "flash" };
+    }
+
+    if (modelName.includes("llama") || modelName.includes("aimlapi")) {
+      if (modelName.includes("405")) return { provider: "aimlapi", modelId: "expensive" };
+      if (modelName.includes("70"))  return { provider: "aimlapi", modelId: "mid" };
+      if (modelName.includes("8"))   return { provider: "aimlapi", modelId: "cheap" };
+      return { provider: "aimlapi", modelId: "mid" };
+    }
+
+    if (modelName.includes("qwen") || modelName.includes("huggingface") || modelName.includes("hf-")) {
+      return { provider: "huggingface", modelId: "nano" };
     }
 
     // Default to openai

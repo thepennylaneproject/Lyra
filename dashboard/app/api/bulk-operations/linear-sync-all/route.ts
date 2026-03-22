@@ -76,10 +76,19 @@ export async function POST(request: Request) {
 
       if (findingIds.length === 0) continue;
 
-      for (const fId of findingIds) {
-        allProjectNames.push(projectName);
-        allFindingIds.push(fId);
-      }
+      // Create/update sync mappings for each finding
+      const syncPromises = findingIds.map((fId: string) =>
+        pool.query(
+          `INSERT INTO lyra_linear_sync_new (project_name, finding_id, linear_issue_id, linear_team_key)
+           VALUES ($1, $2, '', $3)
+           ON CONFLICT (project_name, finding_id) DO UPDATE SET
+             linear_team_key = COALESCE($3, lyra_linear_sync_new.linear_team_key),
+             updated_at = now()`,
+          [projectName, fId, teamKey]
+        )
+      );
+
+      await Promise.all(syncPromises);
 
       projectSummaries.push({
         project_name: projectName,

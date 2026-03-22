@@ -2,6 +2,7 @@
 
 import type { Project, FindingType, Severity } from "@/lib/types";
 import { STATUS_GROUPS } from "@/lib/constants";
+import { topFragileShortPaths } from "@/lib/fragile-files";
 
 interface PatternPanelProps {
   projects: Project[];
@@ -114,27 +115,12 @@ export function PatternPanel({ projects }: PatternPanelProps) {
   }
   const maxSev = Math.max(...Object.values(sevCount), 1);
 
-  // ── Fragile files — files appearing in >1 finding's proof_hooks ──
-  const fileCount: Record<string, number> = {};
-  for (const f of activeFindings) {
-    const files = new Set(
-      (f.proof_hooks ?? [])
-        .map((h) => h.file)
-        .filter((x): x is string => !!x)
-        .map((x) => x.split("/").slice(-2).join("/")) // last two path segments
-    );
-    for (const file of files) {
-      fileCount[file] = (fileCount[file] ?? 0) + 1;
-    }
-  }
-  const fragileFiles = Object.entries(fileCount)
-    .filter(([, v]) => v > 1)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
+  const fragileFiles = topFragileShortPaths(projects, 5);
   const maxFile = fragileFiles[0]?.[1] ?? 1;
 
   return (
     <div
+      id="lyra-pattern-panel"
       style={{
         marginTop:     "2.5rem",
         paddingTop:    "2rem",

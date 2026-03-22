@@ -35,20 +35,113 @@ function repoRoot(): string {
   return join(__dirname, "..", "..");
 }
 
-function loadPrompts(): { core: string; auditAgent: string } {
+/**
+ * Maps audit_kind to the prompt file(s) that should be loaded for that pass.
+ *
+ * Standard cluster: individual per-domain agent files when they exist, fallback to audit-agent.md
+ * Investor cluster: investor-readiness.md, code-debt.md, intelligence_extraction_prompt.md
+ * Domain cluster:   domain_audits.md (manifest generation + domain passes)
+ * Visual cluster:   visual-*.md files + visual-synthesizer.md
+ * Synthesizers:     synthesizer.md (standard), visual-synthesizer.md (visual)
+ */
+function loadClusterPrompts(auditKind?: string): { core: string; auditAgent: string } {
   const root = repoRoot();
   const corePath = join(root, "core_system_prompt.md");
-  const auditPath = join(root, "audits", "prompts", "audit-agent.md");
   if (!existsSync(corePath)) {
     throw new Error(`core_system_prompt.md not found at ${corePath}`);
   }
   const core = readFileSync(corePath, "utf-8");
-  const auditAgent = existsSync(auditPath)
-    ? readFileSync(auditPath, "utf-8")
-    : "";
-  console.log(`[lyra-worker] prompts loaded: core=${corePath} audit=${auditPath || "(missing)"}`);
+
+  const promptsDir = join(root, "audits", "prompts");
+
+  /**
+   * Resolve a prompt file relative to prompts dir.
+   * Returns empty string if the file doesn't exist (never throws).
+   */
+  function prompt(filename: string): string {
+    const p = join(promptsDir, filename);
+    return existsSync(p) ? readFileSync(p, "utf-8") : "";
+  }
+
+  // Map audit_kind → prompt file(s), concatenated
+  // When a domain has a dedicated agent file it provides tighter scope;
+  // always prepend audit-agent.md as the output contract anchor.
+  const base = prompt("audit-agent.md");
+
+  let agentBody: string;
+  switch (auditKind) {
+    // ── Standard cluster — individual domain agent files ─────────────────
+    case "logic":       agentBody = prompt("agent-logic.md")       || base; break;
+    case "security":    agentBody = prompt("agent-security.md")    || base; break;
+    case "performance": agentBody = prompt("agent-performance.md") || base; break;
+    case "ux":          agentBody = prompt("agent-ux.md")          || base; break;
+    case "data":        agentBody = prompt("agent-data.md")        || base; break;
+    case "deploy":      agentBody = prompt("agent-deploy.md")      || base; break;
+
+    // ── Standard cluster synthesizer ─────────────────────────────────────
+    case "synthesize":  agentBody = prompt("synthesizer.md")       || base; break;
+
+    // ── Visual cluster ───────────────────────────────────────────────────
+    case "visual":
+      // Combine all visual sub-agents so a single pass covers the full visual suite.
+      // The visual-synthesizer handles rollup in a subsequent synthesize pass.
+      agentBody = [
+        prompt("visual-color.md"),
+        prompt("visual-typography.md"),
+        prompt("visual-components.md"),
+        prompt("visual-layout.md"),
+        prompt("visual-polish.md"),
+        prompt("visual-tokens.md"),
+      ].filter(Boolean).join("\n\n---\n\n") || base;
+      break;
+
+    case "visual_synthesize":
+      agentBody = prompt("visual-synthesizer.md") || prompt("synthesizer.md") || base;
+      break;
+
+    // ── Investor cluster ─────────────────────────────────────────────────
+    case "investor_readiness":
+      agentBody = prompt("investor-readiness.md") || base;
+      break;
+
+    case "code_debt":
+      agentBody = prompt("code-debt.md") || base;
+      break;
+
+    case "intelligence":
+      agentBody = prompt("intelligence_extraction_prompt.md") || base;
+      break;
+
+    // ── Domain cluster ───────────────────────────────────────────────────
+    case "domain_manifest":
+    case "domain_pass":
+      agentBody = prompt("domain_audits.md") || base;
+      break;
+
+    // ── Meta synthesizers ────────────────────────────────────────────────
+    case "cluster_synthesize":
+    case "meta_synthesize":
+    case "portfolio_synthesize":
+      agentBody = prompt("synthesizer.md") || base;
+      break;
+
+    // ── Full / default ───────────────────────────────────────────────────
+    case "full":
+    default:
+      agentBody = base;
+      break;
+  }
+
+  const auditAgent = [base, agentBody !== base ? agentBody : ""].filter(Boolean).join("\n\n");
+  console.log(`[lyra-worker] cluster prompt loaded: kind=${auditKind ?? "full"}`);
   return { core, auditAgent };
 }
+
+/** @deprecated Use loadClusterPrompts() */
+function loadPrompts(): { core: string; auditAgent: string } {
+  return loadClusterPrompts("full");
+}
+
 
 const ACTIVE_FINDING_STATUSES = new Set([
   "open",
@@ -336,6 +429,31 @@ async function executeProjectAudit(
   };
 }
 
+function getClusterFromAuditKind(auditKind?: string): string {
+  switch (auditKind) {
+    case "investor_readiness":
+    case "code_debt":
+    case "intelligence":
+      return "investor";
+    case "domain_manifest":
+    case "domain_pass":
+      return "domain";
+    case "visual":
+    case "visual_synthesize":
+      return "visual";
+    case "logic":
+    case "security":
+    case "performance":
+    case "ux":
+    case "data":
+    case "deploy":
+    case "synthesize":
+    case "full":
+    default:
+      return "standard";
+  }
+}
+
 export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> {
   const job = await claimJob(pool, dbJobId);
   if (!job) {
@@ -349,7 +467,9 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
   const visualOnly = Boolean(payload.visual_only);
 
   try {
-    ({ core, auditAgent } = loadPrompts());
+    ({ core, auditAgent } = loadClusterPrompts(
+      typeof payload.audit_kind === "string" ? payload.audit_kind : undefined
+    ));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[lyra-worker] job ${dbJobId} prep failed`, e);
@@ -367,6 +487,24 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
   }
 
   try {
+    if (job.job_type === "cluster_synthesize") {
+      const cluster = getClusterFromAuditKind(typeof payload.audit_kind === "string" ? payload.audit_kind : undefined);
+      await runClusterSynthesize(pool, job, core, auditAgent, cluster);
+      return;
+    }
+    if (job.job_type === "cluster_synthesize") {
+      const cluster = getClusterFromAuditKind(typeof payload.audit_kind === "string" ? payload.audit_kind : undefined);
+      await runClusterSynthesize(pool, job, core, auditAgent, cluster);
+      return;
+    }
+    if (job.job_type === "meta_synthesize") {
+      await runMetaSynthesize(pool, job, core, auditAgent);
+      return;
+    }
+    if (job.job_type === "portfolio_synthesize") {
+      await runPortfolioSynthesize(pool, job, core, auditAgent);
+      return;
+    }
     if (job.job_type === "synthesize_project") {
       await runSynthesize(pool, job, core, auditAgent);
       return;
@@ -439,7 +577,11 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
             repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
           }));
           passResults.push({
-            findings: mappedFindings,
+            findings: llm.findings.map((finding) => ({
+              ...finding,
+              cluster: getClusterFromAuditKind(typeof payload.audit_kind === "string" ? payload.audit_kind : undefined),
+              repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
+            })),
             coverage: {
               coverage_complete: Boolean(llm.coverage.coverage_complete),
               confidence: llm.coverage.confidence ?? "medium",
@@ -459,7 +601,13 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
             },
             raw_response: llm.raw_response,
           });
-          findings = findings.concat(mappedFindings as Array<Record<string, unknown>>);
+          findings = findings.concat(
+            llm.findings.map((finding) => ({
+              ...finding,
+              cluster: getClusterFromAuditKind(typeof payload.audit_kind === "string" ? payload.audit_kind : undefined),
+              repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
+            })) as Array<Record<string, unknown>>
+          );
         }
 
         const { merged, added } = mergeFindings2(existing, findings, execution.manifestRevision);
@@ -562,6 +710,14 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       }
     }
 
+    const jobExhaustiveness = projectAuditDetails.some(
+      (d) => String((d as { exhaustiveness?: string }).exhaustiveness ?? "") === "sampled"
+    )
+      ? "sampled"
+      : projectAuditDetails.length > 0
+        ? "exhaustive"
+        : "exhaustive";
+
     await completeJob(pool, dbJobId, null, {
       job_type: job.job_type,
       project_name: job.project_name,
@@ -571,7 +727,7 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       checklist_id: jobChecklistId,
       coverage_complete: jobCoverageComplete,
       completion_confidence: jobConfidence,
-      exhaustiveness: "exhaustive",
+      exhaustiveness: jobExhaustiveness,
       payload: {
         projects: projects.map((p) => p.name),
         visual_only: visualOnly,
@@ -738,6 +894,234 @@ function resolveProjectRepo(
   );
 }
 
+async function runClusterSynthesize(
+  pool: pg.Pool,
+  job: { id: string; job_type: string; project_name: string | null },
+  core: string,
+  auditAgent: string,
+  cluster: string
+): Promise<void> {
+  if (!job.project_name) throw new Error("cluster_synthesize requires a project_name");
+  const allProjects = await listAllProjects(pool);
+  const projects = allProjects.filter((p) => p.name === job.project_name);
+  if (projects.length === 0) throw new Error("Project not found");
+  
+  const project = projects[0];
+  const findings = (project.findings as Array<{ title?: string; severity?: string; cluster?: string }>).filter(f => f.cluster === cluster);
+  const lines = findings.map(f => `- ${f.severity ?? "?"}: ${f.title ?? "?"}`);
+  const blob = lines.slice(0, 300).join("\n") || "No findings yet.";
+
+  const { getRegistry } = await import("./providers/registry.js");
+  const registry = getRegistry();
+  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
+  const synthModel = strategy === "aggressive" ? "openai:mini" : "anthropic:sonnet";
+  const synthFallback = "openai:balanced";
+
+  let voiceStr = "";
+  if (cluster === "standard") voiceStr = "Provide a technical summary of what's broken and how to fix it.";
+  if (cluster === "investor") voiceStr = "Provide an investor readiness score out of 10 and the top 3 actions before a diligence call.";
+  if (cluster === "domain") voiceStr = "Provide a summary of domain coverage exhaustion and remaining domains to audit. Score is percentage 0-100.";
+  if (cluster === "visual") voiceStr = "Provide a summary of component consistency, UI drift, and design tokens.";
+
+  let synthesisText = "No synthesis generated.";
+  let topFindings: string[] = [];
+  let score: number | undefined;
+
+  try {
+    const llmRes = await registry.call(synthModel, synthFallback, {
+      systemPrompt: `${core}\n\nYou are the ${cluster.toUpperCase()} Cluster Synthesizer.\n${voiceStr}\nRespond with ONLY valid JSON matching this schema:\n{\n  "topFindings": ["string"],\n  "synthesisText": "2-3 paragraphs narrative",\n  "score": 8.5\n}`,
+      userPrompt: blob,
+      temperature: 0.2,
+      maxTokens: 1000,
+    });
+    
+    let content = llmRes.content?.trim() || "{}";
+    if (content.startsWith("\`\`\`json")) content = content.replace(/^\`\`\`json/, "");
+    if (content.endsWith("\`\`\`")) content = content.replace(/\`\`\`$/, "");
+    content = content.trim();
+
+    const parsed = JSON.parse(content);
+    synthesisText = parsed.synthesisText || "Synthesis parsed incorrectly.";
+    topFindings = Array.isArray(parsed.topFindings) ? parsed.topFindings : [];
+    if (typeof parsed.score === "number") score = parsed.score;
+    
+    console.log(`[lyra-worker] ${cluster} synthesize via ${llmRes.provider}:${llmRes.model} cost=$${(llmRes.costUsd ?? 0).toFixed(4)}`);
+  } catch (synthErr) {
+    console.warn(`[lyra-worker] ${cluster} synthesize LLM failed: ${synthErr}`);
+    synthesisText = `Synthesis failed: ${synthErr instanceof Error ? synthErr.message : String(synthErr)}`;
+  }
+
+  const summaries = (project as any).clusterSummaries || {};
+  summaries[cluster] = {
+    cluster,
+    project: project.name,
+    generatedAt: new Date().toISOString(),
+    findingCount: findings.length,
+    topFindings,
+    synthesisText,
+    score,
+  };
+
+  await saveProject(pool, {
+    ...project,
+    clusterSummaries: summaries,
+  } as any);
+
+  await completeJob(pool, job.id, null, {
+    job_type: job.job_type,
+    project_name: job.project_name,
+    summary: `${cluster} synthesis complete. ${findings.length} findings analyzed.`,
+    findings_added: 0,
+    payload: { synthesized: true, cluster },
+  });
+}
+
+async function runMetaSynthesize(
+  pool: pg.Pool,
+  job: { id: string; job_type: string; project_name: string | null },
+  core: string,
+  auditAgent: string
+): Promise<void> {
+  if (!job.project_name) throw new Error("meta_synthesize requires a project_name");
+  const allProjects = await listAllProjects(pool);
+  const projects = allProjects.filter((p) => p.name === job.project_name);
+  if (projects.length === 0) throw new Error("Project not found");
+  
+  const project = projects[0];
+  const summaries = (project as any).clusterSummaries || {};
+  const clustersRun = Object.keys(summaries);
+  
+  const blobData = clustersRun.map((c) => {
+    const s = summaries[c];
+    return `Cluster: ${c}\nScore: ${s.score ?? "?"}\nSummary: ${s.synthesisText}\nTop Findings: ${s.topFindings.join(", ")}`;
+  }).join("\n\n");
+  
+  const blob = blobData || "No cluster summaries available.";
+
+  const { getRegistry } = await import("./providers/registry.js");
+  const registry = getRegistry();
+  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
+  const synthModel = strategy === "aggressive" ? "openai:mini" : "anthropic:sonnet";
+  const synthFallback = "openai:balanced";
+
+  let narrativeSummary = "No narrative summary generated.";
+  let crossClusterP0s: string[] = [];
+  let todaysTop5: string[] = [];
+
+  try {
+    const llmRes = await registry.call(synthModel, synthFallback, {
+      systemPrompt: `${core}\n\nYou are the Project Meta-Synthesizer. Your job is to read the outputs of all individual cluster synthesizers and output a single unified action plan for the project.\nCross-reference P0s across clusters to find systemic issues.\nRespond with ONLY valid JSON matching this schema:\n{\n  "crossClusterP0s": ["string"],\n  "todaysTop5": ["string"],\n  "narrativeSummary": "2-3 paragraphs narrative"\n}`,
+      userPrompt: blob,
+      temperature: 0.2,
+      maxTokens: 1200,
+    });
+    
+    let content = llmRes.content?.trim() || "{}";
+    if (content.startsWith("\`\`\`json")) content = content.replace(/^\`\`\`json/, "");
+    if (content.endsWith("\`\`\`")) content = content.replace(/\`\`\`$/, "");
+    content = content.trim();
+
+    const parsed = JSON.parse(content);
+    narrativeSummary = parsed.narrativeSummary || "Meta synthesis parsed incorrectly.";
+    crossClusterP0s = Array.isArray(parsed.crossClusterP0s) ? parsed.crossClusterP0s : [];
+    todaysTop5 = Array.isArray(parsed.todaysTop5) ? parsed.todaysTop5 : [];
+    
+    console.log(`[lyra-worker] meta synthesize via ${llmRes.provider}:${llmRes.model} cost=$${(llmRes.costUsd ?? 0).toFixed(4)}`);
+  } catch (synthErr) {
+    console.warn(`[lyra-worker] meta synthesize LLM failed: ${synthErr}`);
+    narrativeSummary = `Meta synthesis failed: ${synthErr instanceof Error ? synthErr.message : String(synthErr)}`;
+  }
+
+  const metaSummary = {
+    project: project.name,
+    generatedAt: new Date().toISOString(),
+    clustersRun,
+    crossClusterP0s,
+    todaysTop5,
+    narrativeSummary,
+  };
+
+  await saveProject(pool, {
+    ...project,
+    metaSummary,
+  } as any);
+
+  await completeJob(pool, job.id, null, {
+    job_type: job.job_type,
+    project_name: job.project_name,
+    summary: `Meta synthesis complete. Analyzed ${clustersRun.length} clusters.`,
+    findings_added: 0,
+    payload: { synthesized: true, meta: true },
+  });
+}
+
+async function runPortfolioSynthesize(
+  pool: pg.Pool,
+  job: { id: string; job_type: string; project_name: string | null },
+  core: string,
+  auditAgent: string
+): Promise<void> {
+  const allProjects = await listAllProjects(pool);
+  
+  const blobData = allProjects.map((p) => {
+    const meta = (p as any).metaSummary;
+    if (!meta) return `Project: ${p.name}\nNo meta summary available.`;
+    return `Project: ${p.name}
+Clusters Run: ${meta.clustersRun?.join(", ") ?? "none"}
+Cross-cluster P0s: ${meta.crossClusterP0s?.join("; ") ?? "none"}
+Today's Top 5: ${meta.todaysTop5?.join("; ") ?? "none"}
+Narrative: ${meta.narrativeSummary}`;
+  }).join("\n\n---\n\n");
+  
+  const blob = blobData || "No projects found.";
+
+  const { getRegistry } = await import("./providers/registry.js");
+  const registry = getRegistry();
+  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
+  const synthModel = strategy === "aggressive" ? "openai:mini" : "anthropic:sonnet";
+  const synthFallback = "openai:balanced";
+
+  let portfolioNarrative = "No narrative summary generated.";
+  let portfolioTop5: string[] = [];
+
+  try {
+    const llmRes = await registry.call(synthModel, synthFallback, {
+      systemPrompt: `${core}\n\nYou are the Portfolio Meta-Meta Synthesizer. Your job is to read the outputs of all Project Meta-Synthesizers and output a single unified action plan for the entire engineering portfolio.\nCross-reference P0s across ALL projects to find deeply systemic organizational or architectural issues.\nRespond with ONLY valid JSON matching this schema:\n{\n  "portfolioTop5": ["string (state the project name and the action)"],\n  "portfolioNarrative": "3-4 paragraphs of high-level portfolio analysis"\n}`,
+      userPrompt: blob,
+      temperature: 0.2,
+      maxTokens: 1500,
+    });
+    
+    let content = llmRes.content?.trim() || "{}";
+    if (content.startsWith("\`\`\`json")) content = content.replace(/^\`\`\`json/, "");
+    if (content.endsWith("\`\`\`")) content = content.replace(/\`\`\`$/, "");
+    content = content.trim();
+
+    const parsed = JSON.parse(content);
+    portfolioNarrative = parsed.portfolioNarrative || "Portfolio synthesis parsed incorrectly.";
+    portfolioTop5 = Array.isArray(parsed.portfolioTop5) ? parsed.portfolioTop5 : [];
+    
+    console.log(`[lyra-worker] portfolio synthesize via ${llmRes.provider}:${llmRes.model} cost=$${(llmRes.costUsd ?? 0).toFixed(4)}`);
+  } catch (synthErr) {
+    console.warn(`[lyra-worker] portfolio synthesize LLM failed: ${synthErr}`);
+    portfolioNarrative = `Portfolio synthesis failed: ${synthErr instanceof Error ? synthErr.message : String(synthErr)}`;
+  }
+
+  // Save the result as an overarching run
+  await completeJob(pool, job.id, null, {
+    job_type: job.job_type,
+    project_name: null, // Global scope
+    summary: `Portfolio synthesis complete. Analyzed ${allProjects.length} projects.`,
+    findings_added: 0,
+    payload: { 
+      synthesized: true, 
+      portfolio: true,
+      portfolioTop5,
+      portfolioNarrative
+    },
+  });
+}
+
 async function runSynthesize(
   pool: pg.Pool,
   job: { id: string; job_type: string; project_name: string | null },
@@ -755,35 +1139,29 @@ async function runSynthesize(
     )
   );
   const blob = lines.slice(0, 200).join("\n") || "No findings yet.";
-  const key = process.env.OPENAI_API_KEY?.trim();
   const scopeLabel = job.project_name ? `project "${job.project_name}"` : "portfolio";
   let summary = `${scopeLabel}: ${projects.length} project(s), ${lines.length} finding lines.`;
-  if (key) {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: process.env.LYRA_AUDIT_MODEL?.trim() || "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs.`,
-          },
-          { role: "user", content: blob },
-        ],
-        temperature: 0.3,
-        max_tokens: 500,
-      }),
+
+  // Use the routing layer instead of hardcoding OpenAI
+  const { getRegistry } = await import("./providers/registry.js");
+  const registry = getRegistry();
+  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
+  const synthModel = strategy === "aggressive" ? "openai:mini" : "anthropic:sonnet";
+  const synthFallback = "openai:balanced";
+
+  try {
+    const llmRes = await registry.call(synthModel, synthFallback, {
+      systemPrompt: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs. Be concise and specific.`,
+      userPrompt: blob,
+      temperature: 0.3,
+      maxTokens: 800,
     });
-    if (res.ok) {
-      const data = (await res.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      summary = data.choices?.[0]?.message?.content ?? summary;
+    if (llmRes.content?.trim()) {
+      summary = llmRes.content.trim();
     }
+    console.log(`[lyra-worker] synthesize via ${llmRes.provider}:${llmRes.model} cost=$${(llmRes.costUsd ?? 0).toFixed(4)}`);
+  } catch (synthErr) {
+    console.warn(`[lyra-worker] synthesize LLM failed, using fallback summary: ${synthErr}`);
   }
   await completeJob(pool, job.id, null, {
     job_type: job.job_type,
