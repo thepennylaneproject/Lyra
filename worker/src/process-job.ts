@@ -10,7 +10,7 @@ import {
   resolveScopeFiles,
   type AuditScope,
 } from "./context.js";
-import { auditWithLlm } from "./llm.js";
+import { auditWithLlm, resolveModel } from "./llm.js";
 import {
   claimJob,
   completeJob,
@@ -20,6 +20,7 @@ import {
   listAllProjects,
   upsertMaintenanceBacklogFromFindings,
 } from "./db.js";
+import { getRegistry } from "./providers/registry.js";
 import {
   buildProjectManifest,
   resolveScopePathsFromManifest,
@@ -1141,23 +1142,24 @@ async function runSynthesize(
   const blob = lines.slice(0, 200).join("\n") || "No findings yet.";
   const scopeLabel = job.project_name ? `project "${job.project_name}"` : "portfolio";
   let summary = `${scopeLabel}: ${projects.length} project(s), ${lines.length} finding lines.`;
-
-  // Use the routing layer instead of hardcoding OpenAI
-  const { getRegistry } = await import("./providers/registry.js");
   const registry = getRegistry();
-  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
-  const synthModel = strategy === "aggressive" ? "openai:mini" : "anthropic:sonnet";
-  const synthFallback = "openai:balanced";
-
-  try {
-    const llmRes = await registry.call(synthModel, synthFallback, {
-      systemPrompt: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs. Be concise and specific.`,
-      userPrompt: blob,
-      temperature: 0.3,
-      maxTokens: 800,
-    });
-    if (llmRes.content?.trim()) {
-      summary = llmRes.content.trim();
+  const { primary, fallback } = resolveModel();
+  const anyConfigured =
+    registry.getProvider("openai")?.isConfigured() ||
+    registry.getProvider("anthropic")?.isConfigured() ||
+    registry.getProvider("deepseek")?.isConfigured();
+  if (anyConfigured) {
+    try {
+      const res = await registry.call(primary, fallback, {
+        systemPrompt: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs.`,
+        userPrompt: blob,
+        responseFormat: "text",
+        temperature: 0.3,
+        maxTokens: 500,
+      });
+      summary = res.content || summary;
+    } catch (e) {
+      console.warn(`[lyra-worker] synthesize LLM call failed: ${e instanceof Error ? e.message : String(e)}`);
     }
     console.log(`[lyra-worker] synthesize via ${llmRes.provider}:${llmRes.model} cost=$${(llmRes.costUsd ?? 0).toFixed(4)}`);
   } catch (synthErr) {
