@@ -1150,20 +1150,22 @@ async function runSynthesize(
     registry.getProvider("deepseek")?.isConfigured();
   if (anyConfigured) {
     try {
-      const res = await registry.call(primary, fallback, {
+      const llmRes = await registry.call(primary, fallback, {
         systemPrompt: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs.`,
         userPrompt: blob,
         responseFormat: "text",
         temperature: 0.3,
         maxTokens: 500,
       });
-      summary = res.content || summary;
+      summary = llmRes.content || summary;
+      console.log(
+        `[lyra-worker] synthesize via ${llmRes.provider}:${llmRes.model} cost=$${(llmRes.costUsd ?? 0).toFixed(4)}`
+      );
     } catch (e) {
-      console.warn(`[lyra-worker] synthesize LLM call failed: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn(
+        `[lyra-worker] synthesize LLM call failed, using fallback summary: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
-    console.log(`[lyra-worker] synthesize via ${llmRes.provider}:${llmRes.model} cost=$${(llmRes.costUsd ?? 0).toFixed(4)}`);
-  } catch (synthErr) {
-    console.warn(`[lyra-worker] synthesize LLM failed, using fallback summary: ${synthErr}`);
   }
   await completeJob(pool, job.id, null, {
     job_type: job.job_type,
