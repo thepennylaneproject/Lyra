@@ -30,8 +30,10 @@ const TEXT_EXTENSIONS = new Set([
   ".html",
 ]);
 
-const MAX_SAMPLE_FILES = 40;
-const MAX_FILE_PREVIEW = 2400;
+// Onboarding prioritises accuracy over speed — see sampleFiles() for strategy.
+const MAX_SAMPLE_FILES = 200;
+const MAX_FILE_PREVIEW = 6000;  // chars for general source files
+const MAX_KEY_FILE_SIZE = 40_000; // chars — netlify functions, migrations, entry points read in full
 
 const SKIP_DIRS = new Set([
   ".git",
@@ -229,10 +231,12 @@ function resolveRepoAccess(input: OnboardRepositoryInput): RepoAccess {
 
   const target = mkdtempSync(join(tmpdir(), "lyra-onboard-"));
   try {
-    execFileSync("git", ["clone", "--depth", "1", repoUrl, target], {
+    // Full clone — no depth limit so commit history, count, and dates are accurate.
+    // This takes longer than --depth 1 but onboarding correctness is worth it.
+    execFileSync("git", ["clone", repoUrl, target], {
       stdio: "pipe",
       encoding: "utf8",
-      timeout: 60_000,
+      timeout: 180_000,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -629,22 +633,42 @@ function extractReadmeQuote(text: string): string | undefined {
   return line || undefined;
 }
 
+// Files that define actual runtime behaviour — read in full so signal detection
+// isn't cut off mid-function.
+function isKeyFile(file: string): boolean {
+  return (
+    /^netlify\/functions\//i.test(file) ||
+    /^supabase\/migrations\//i.test(file) ||
+    /^supabase\/functions\//i.test(file) ||
+    /\/(src|app)\/(main|index|App)\.(ts|tsx|js|jsx)$/i.test(file) ||
+    /^(src|app)\/(main|index|App)\.(ts|tsx|js|jsx)$/i.test(file) ||
+    /^(src|app)\/.*\/(index|route|server)\.(ts|js)$/i.test(file)
+  );
+}
+
 function sampleFiles(files: string[], root: string): Array<{ path: string; excerpt: string }> {
   const textFiles = files.filter((file) => TEXT_EXTENSIONS.has(extname(file).toLowerCase()));
-  // Prioritize actual source files over config/build artifacts
+
+  // Tier 0 — always read in full: serverless functions, DB migrations, entry points
+  // Tier 1 — primary source trees (read up to MAX_FILE_PREVIEW each)
+  // Tier 2 — other .ts/.js/.py files
+  // Tier 3 — config, docs, everything else
   const priority = (file: string): number => {
-    if (/^(src|app|lib|server|api|pages|components|features|hooks|domain|services|modules)\//i.test(file)) return 0;
-    if (/^(netlify\/functions|supabase\/migrations|scripts)\//i.test(file)) return 1;
+    if (isKeyFile(file)) return 0;
+    if (/^(src|app|lib|server|api|pages|components|features|hooks|domain|services|modules)\//i.test(file)) return 1;
     if (/\.(ts|tsx|js|jsx|py)$/.test(file)) return 2;
     return 3;
   };
+
   const sorted = [...textFiles].sort((a, b) => priority(a) - priority(b) || a.localeCompare(b));
   const picked = sorted.slice(0, MAX_SAMPLE_FILES);
+
   return picked.map((file) => {
     const text = readTextIfExists(join(root, file));
+    const limit = isKeyFile(file) ? MAX_KEY_FILE_SIZE : MAX_FILE_PREVIEW;
     return {
       path: file,
-      excerpt: text.slice(0, MAX_FILE_PREVIEW) || "(empty file)",
+      excerpt: text.slice(0, limit) || "(empty file)",
     };
   });
 }
