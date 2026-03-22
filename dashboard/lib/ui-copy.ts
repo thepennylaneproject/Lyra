@@ -70,7 +70,7 @@ export const UI_COPY = {
   /** Confirm dialog */
   confirmRemoveProjectTitle: "Remove project?",
   confirmRemoveProjectBody:
-    "This removes the project from the dashboard store. It does not delete your repository.",
+    "This removes the project from Lyra: dashboard record, durable snapshots and events for this project, and queued/completed audit jobs tied to it. Linear mappings and maintenance rows cascade with the project. Your git repository is not affected.",
   confirmDiscardImportTitle: "Discard form?",
   confirmDiscardImportBody: "You have unsaved text in the onboard form.",
   confirmCancel: "Cancel",

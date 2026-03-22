@@ -163,6 +163,31 @@ export class PostgresPool {
     return result.rows as Record<string, unknown>[];
   }
 
+  /**
+   * Run statements on one connection with BEGIN/COMMIT (or ROLLBACK on error).
+   * Use for multi-step deletes so partial cleanup cannot leave inconsistent state.
+   */
+  async transaction<T>(
+    fn: (query: (sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>) => Promise<T>
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const query = async (sql: string, params: unknown[] = []) => {
+        const result = await client.query(sql, params);
+        return result.rows as Record<string, unknown>[];
+      };
+      const out = await fn(query);
+      await client.query("COMMIT");
+      return out;
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   /** Close all pool clients. Use in scripts (e.g. migrations); avoid on the shared app pool during requests. */
   async end(): Promise<void> {
     await this.pool.end();

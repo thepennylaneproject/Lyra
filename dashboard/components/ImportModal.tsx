@@ -13,7 +13,6 @@ interface ImportModalProps {
   onOnboardRepository: (input: {
     name?: string;
     repository_url?: string;
-    local_path?: string;
     default_branch?: string;
   }) => Promise<void>;
   onClose:  () => void;
@@ -34,7 +33,6 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
   const [mode, setMode] = useState<OnboardMode>("repository");
   const [name,      setName]      = useState("");
   const [repoUrl,   setRepoUrl]   = useState("");
-  const [localPath, setLocalPath] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("");
   const [jsonText,  setJsonText]  = useState("");
   const [error,     setError]     = useState("");
@@ -47,7 +45,6 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
   const isDirty =
     name.trim().length > 0 ||
     repoUrl.trim().length > 0 ||
-    localPath.trim().length > 0 ||
     defaultBranch.trim().length > 0 ||
     jsonText.trim().length > 0;
 
@@ -97,15 +94,14 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
   async function handleSubmit() {
     const trimmedName = name.trim();
     const trimmedRepo = repoUrl.trim();
-    const trimmedPath = localPath.trim();
     const trimmedJson = jsonText.trim();
     const projectName = trimmedName || (trimmedRepo ? deriveNameFromRepoUrl(trimmedRepo) : "");
 
     setError("");
 
     if (mode === "repository") {
-      if (!trimmedRepo && !trimmedPath) {
-        setError("Provide a repository URL or local path");
+      if (!trimmedRepo) {
+        setError("Enter a repository URL (HTTPS or SSH). Lyra clones it on the server.");
         return;
       }
       if (!projectName) {
@@ -116,8 +112,7 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
       try {
         await onOnboardRepository({
           name: projectName || undefined,
-          repository_url: trimmedRepo || undefined,
-          local_path: trimmedPath || undefined,
+          repository_url: trimmedRepo,
           default_branch: defaultBranch.trim() || undefined,
         });
       } catch (e: unknown) {
@@ -335,7 +330,7 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
             Repository <span style={{ color: "var(--ink-red)" }}>required</span>
           </div>
           <div style={{ fontSize: "10px", color: "var(--ink-text-4)", marginBottom: "0.75rem", lineHeight: 1.45 }}>
-            Generate draft onboarding artifacts from a Git URL or local path. Project name is optional if the URL contains the repo name.
+            Lyra clones this URL on the server (no local checkout required). Project name is optional if the URL contains the repo name. Private repos need network access and credentials on the host running the dashboard.
           </div>
           <input
             type="text"
@@ -349,13 +344,6 @@ export function ImportModal({ onImport, onOnboardRepository, onClose }: ImportMo
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             placeholder="Repository URL (https://github.com/owner/repo)"
-            style={{ marginBottom: "0.5rem", display: "block", width: "100%", maxWidth: "480px" }}
-          />
-          <input
-            type="text"
-            value={localPath}
-            onChange={(e) => setLocalPath(e.target.value)}
-            placeholder="Local path (/Users/you/project)"
             style={{ marginBottom: "0.5rem", display: "block", width: "100%", maxWidth: "480px" }}
           />
           <input

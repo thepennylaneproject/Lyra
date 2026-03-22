@@ -189,7 +189,6 @@ export default function Home() {
   const handleOnboardRepository = useCallback(async (input: {
     name?: string;
     repository_url?: string;
-    local_path?: string;
     default_branch?: string;
   }) => {
     const res = await apiFetch("/api/onboarding", {

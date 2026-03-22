@@ -4,7 +4,7 @@
 
 import type { Project } from "./types";
 import type { ProjectsRepository } from "./repository";
-import { createPostgresPool, readDatabaseConfig } from "./postgres";
+import { createPostgresPool, quoteIdent, readDatabaseConfig } from "./postgres";
 import { applyProjectDefaults } from "./project-defaults";
 import { withNormalizedBacklog } from "./maintenance-backlog";
 import {
@@ -192,18 +192,31 @@ export function createSupabaseRepository(): ProjectsRepository {
       if (!existing) {
         throw new Error(`Project ${name} not found`);
       }
-      const result = await db.query(
-        `DELETE FROM ${TABLE} WHERE name = $1 RETURNING name`,
-        [String(existing.name)]
-      );
-      if (result.length === 0) {
-        throw new Error(`Project ${name} not found`);
-      }
+      const canonical = String(existing.name);
+      const cfg = readDatabaseConfig();
+      const eventsFqn = `${quoteIdent(cfg.schema)}.${quoteIdent(cfg.eventsTable)}`;
+      const snapshotsFqn = `${quoteIdent(cfg.schema)}.${quoteIdent(cfg.snapshotsTable)}`;
+
+      await db.transaction(async (q) => {
+        // FK on project is ON DELETE SET NULL — remove rows so the project leaves no audit/job history.
+        await q(`DELETE FROM public.lyra_audit_runs WHERE project_name = $1`, [canonical]);
+        await q(`DELETE FROM public.lyra_audit_jobs WHERE project_name = $1`, [canonical]);
+        await q(`DELETE FROM ${eventsFqn} WHERE project_name = $1`, [canonical]);
+        await q(`DELETE FROM ${snapshotsFqn} WHERE project_name = $1`, [canonical]);
+        const result = await q(
+          `DELETE FROM ${TABLE} WHERE name = $1 RETURNING name`,
+          [canonical]
+        );
+        if (result.length === 0) {
+          throw new Error(`Project ${name} not found`);
+        }
+      });
+
       await recordDurableEventBestEffort({
         event_type: "project_deleted",
-        project_name: String(existing.name),
+        project_name: canonical,
         source: "supabase_projects",
-        summary: `Deleted project ${String(existing.name)}`,
+        summary: `Deleted project ${canonical}`,
       });
     },
   };

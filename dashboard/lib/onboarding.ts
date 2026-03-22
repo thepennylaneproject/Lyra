@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, extname, join, resolve } from "node:path";
+import { basename, extname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import type {
   AuditKind,
@@ -36,7 +36,6 @@ const MAX_FILE_PREVIEW = 2400;
 export interface OnboardRepositoryInput {
   name?: string;
   repository_url?: string;
-  local_path?: string;
   default_branch?: string;
   actor?: string;
 }
@@ -93,9 +92,7 @@ export function deriveProjectName(input: OnboardRepositoryInput): string {
     const last = cleaned.split("/").filter(Boolean).pop();
     if (last) return last;
   }
-  const local = input.local_path?.trim();
-  if (local) return basename(local);
-  throw new Error("Project name, repository_url, or local_path is required");
+  throw new Error("Project name or repository_url is required");
 }
 
 export function createDraftProjectFromRepository(
@@ -188,31 +185,25 @@ export function makeDecisionEvent(
 }
 
 function resolveRepoAccess(input: OnboardRepositoryInput): RepoAccess {
-  const local = input.local_path?.trim();
-  if (local) {
-    const full = resolve(local);
-    if (!existsSync(full) || !statSync(full).isDirectory()) {
-      throw new Error(`Local path does not exist: ${full}`);
-    }
-    return {
-      path: full,
-      sourceType: "local_path",
-      sourceRef: full,
-      repositoryUrl: input.repository_url?.trim() || undefined,
-    };
-  }
-
   const repoUrl = input.repository_url?.trim();
   if (!repoUrl) {
-    throw new Error("repository_url or local_path is required");
+    throw new Error("repository_url is required");
   }
 
+  const branch = input.default_branch?.trim();
+  const cloneArgs = ["clone", "--depth", "1"];
+  if (branch) {
+    cloneArgs.push("-b", branch);
+  }
+  cloneArgs.push(repoUrl);
+
   const target = mkdtempSync(join(tmpdir(), "lyra-onboard-"));
+  cloneArgs.push(target);
   try {
-    execFileSync("git", ["clone", "--depth", "1", repoUrl, target], {
+    execFileSync("git", cloneArgs, {
       stdio: "pipe",
       encoding: "utf8",
-      timeout: 60_000,
+      timeout: 120_000,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
