@@ -6,7 +6,7 @@ import type { EngineStatus } from "@/lib/audit-reader";
 import { UI_COPY } from "@/lib/ui-copy";
 import { workflowsDocHref } from "@/lib/docs-links";
 
-export type NavView = "portfolio" | "engine";
+export type NavView = "portfolio" | "engine" | "jobs";
 
 interface ShellProps {
   children:    React.ReactNode;
@@ -72,8 +72,10 @@ export function Shell({ children, activeView, navHighlightView, onNavigate, onAu
     }
   }, [syncMsg]);
 
-  const queueSize  = engineStatus?.queue_size ?? 0;
-  const workflowsHref = workflowsDocHref();
+  const queueSize      = engineStatus?.queue_size ?? 0;
+  const activeAuditJobs = engineStatus?.active_audit_jobs ?? 0;
+  const activeJobCount  = queueSize + activeAuditJobs;
+  const workflowsHref  = workflowsDocHref();
 
   function fmtDate(d: string | null): string {
     if (!d) return "never";
@@ -85,6 +87,7 @@ export function Shell({ children, activeView, navHighlightView, onNavigate, onAu
   const NAV_ITEMS: { key: NavView; label: string }[] = [
     { key: "portfolio", label: UI_COPY.navPortfolio },
     { key: "engine",    label: UI_COPY.navRepairLedger },
+    { key: "jobs",      label: "Activity" },
   ];
 
   return (
@@ -168,6 +171,23 @@ export function Shell({ children, activeView, navHighlightView, onNavigate, onAu
                     }}
                   >
                     {queueSize}
+                  </span>
+                )}
+                {key === "jobs" && activeJobCount > 0 && (
+                  <span
+                    title={`${activeJobCount} active job${activeJobCount !== 1 ? "s" : ""}`}
+                    style={{
+                      fontSize:     "9px",
+                      fontFamily:   "var(--font-mono)",
+                      background:   "var(--ink-blue-bg, var(--ink-amber-bg))",
+                      color:        "var(--ink-blue, var(--ink-amber))",
+                      border:       "0.5px solid var(--ink-blue-border, var(--ink-amber-border))",
+                      borderRadius: "3px",
+                      padding:      "1px 5px",
+                      lineHeight:   1,
+                    }}
+                  >
+                    {activeJobCount}
                   </span>
                 )}
               </button>
