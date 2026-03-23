@@ -256,12 +256,20 @@ function resolveRepoAccess(input: OnboardRepositoryInput): RepoAccess {
 
 function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string, providedName?: string): RepoSnapshot {
   const root = access.path;
-  const pkg = readJsonIfExists(join(root, "package.json"));
+  const files = listFiles(root);
+  // In monorepos the root has no package.json — find the sub-package with the most deps
+  const pkg = readJsonIfExists(join(root, "package.json")) ?? findMonorepoPackageJson(root, files);
   const pyproject = readTextIfExists(join(root, "pyproject.toml"));
-  const requirements = readTextIfExists(join(root, "requirements.txt"));
+  // requirements.txt may live in a sub-package (e.g. repair_engine/)
+  const requirements =
+    readTextIfExists(join(root, "requirements.txt")) ||
+    files
+      .filter((f) => /^[^/]+\/requirements\.txt$/.test(f))
+      .map((f) => readTextIfExists(join(root, f)))
+      .find((t) => Boolean(t.trim())) ||
+    "";
   const readmePath = findReadme(root);
   const readmeText = readmePath ? readTextIfExists(readmePath) : "";
-  const files = listFiles(root);
   const scanRoots = detectScanRoots(files);
   const configFiles = detectConfigFiles(files);
   const topLevelTree = describeTopLevel(root);
@@ -422,10 +430,13 @@ function detectArchitectureDetail(
 
   // Build system / entry
   const hasIndexHtml = allFilePaths.includes("index.html");
+  // Detect Next.js from deps OR from presence of app/api/*/route.ts (monorepo: dashboard/app/...)
+  const hasNextDep = deps.has("next");
+  const hasAppRouterFiles = allFilePaths.some((f) => /(?:^|[^/]+\/)app\/.*\/route\.(ts|js)$/.test(f));
   if (deps.has("vite") && hasIndexHtml) {
     parts.push("**Build**: Vite SPA — `index.html` is the entry point, output bundled to `dist/`");
-  } else if (deps.has("next")) {
-    const hasAppDir = allFilePaths.some((f) => /^(src\/)?app\//.test(f));
+  } else if (hasNextDep || hasAppRouterFiles) {
+    const hasAppDir = allFilePaths.some((f) => /(?:^|[^/]+\/)app\//.test(f));
     parts.push(`**Build**: Next.js (${hasAppDir ? "App Router" : "Pages Router"})`);
   }
 
@@ -454,26 +465,27 @@ function detectArchitectureDetail(
     parts.push("**Server state**: TanStack React Query — async data fetching, caching, and background refetch");
   }
 
-  // Backend pattern
-  const netlifyFnTs = allFilePaths.filter((f) => /^netlify\/functions\/[^/]+\.ts$/.test(f));
-  const netlifyFnJs = allFilePaths.filter((f) => /^netlify\/functions\/[^/]+\.js$/.test(f));
-  const hasEdge = allFilePaths.some((f) => /^netlify\/edge-functions\//.test(f));
-  if (netlifyFnTs.length + netlifyFnJs.length > 0) {
+  // Backend pattern — handle both root-level and monorepo-prefixed netlify/functions/
+  const netlifyFnAll = allFilePaths.filter((f) => /(?:^|[^/]+\/)netlify\/functions\/[^/]+\.(ts|js)$/.test(f));
+  const hasEdge = allFilePaths.some((f) => /(?:^|[^/]+\/)netlify\/edge-functions\//.test(f));
+  if (netlifyFnAll.length > 0) {
     parts.push(
-      `**Backend**: ${netlifyFnTs.length + netlifyFnJs.length} Netlify serverless functions (TypeScript)` +
+      `**Backend**: ${netlifyFnAll.length} Netlify serverless functions (TypeScript)` +
       (hasEdge ? " + edge functions" : "") +
       " — each function verifies Supabase JWTs before processing"
     );
+  } else if (hasAppRouterFiles) {
+    const routeCount = allFilePaths.filter((f) => /(?:^|[^/]+\/)app\/api\/.*\/route\.(ts|js)$/.test(f)).length;
+    parts.push(`**Backend**: Next.js App Router — ${routeCount} API route handler${routeCount !== 1 ? "s" : ""} under \`app/api/\``);
   }
 
-  // Folder structure
+  // Folder structure — accept both root-level and one-level-deep monorepo paths
   const folders: string[] = [];
-  if (allFilePaths.some((f) => /^src\/domain\//.test(f))) folders.push("`src/domain/` — business types, domain logic, policy");
-  if (allFilePaths.some((f) => /^src\/features\//.test(f))) folders.push("`src/features/` — vertical feature slices");
-  if (allFilePaths.some((f) => /^src\/lib\//.test(f))) folders.push("`src/lib/` — shared utilities, API clients, design tokens");
-  if (allFilePaths.some((f) => /^src\/components\//.test(f))) folders.push("`src/components/` — shared UI components");
-  if (allFilePaths.some((f) => /^src\/hooks\//.test(f))) folders.push("`src/hooks/` — custom React hooks");
-  if (allFilePaths.some((f) => /^src\/new\//.test(f))) folders.push("`src/new/` — next-generation route/component tree");
+  if (allFilePaths.some((f) => /(?:^|[^/]+\/)domain\//.test(f))) folders.push("`domain/` — business types, domain logic, policy");
+  if (allFilePaths.some((f) => /(?:^|[^/]+\/)features\//.test(f))) folders.push("`features/` — vertical feature slices");
+  if (allFilePaths.some((f) => /(?:^|[^/]+\/)lib\//.test(f))) folders.push("`lib/` — shared utilities, API clients, design tokens");
+  if (allFilePaths.some((f) => /(?:^|[^/]+\/)components\//.test(f))) folders.push("`components/` — shared UI components");
+  if (allFilePaths.some((f) => /(?:^|[^/]+\/)hooks\//.test(f))) folders.push("`hooks/` — custom React hooks");
   if (folders.length > 0) parts.push(`**Folder structure**: ${folders.join(", ")}`);
 
   // Validation
@@ -487,20 +499,31 @@ function detectArchitectureDetail(
 function summarizeCriticalFiles(
   fileSamples: Array<{ path: string; excerpt: string }>
 ): Array<{ file: string; role: string; exports: string[]; behaviors: string[] }> {
+  // Patterns accept an optional leading monorepo subdirectory (e.g. dashboard/, src/)
+  // Each pattern includes both the canonical path and common alternates across architectures.
   const targets: Array<{ match: RegExp; role: string }> = [
-    { match: /src\/lib\/ai\/router/i, role: "AI provider router / fallback dispatch" },
-    { match: /src\/lib\/ai\/registry/i, role: "AI model registry" },
-    { match: /netlify\/functions\/providers\./i, role: "Provider configuration (endpoint + auth)" },
-    { match: /netlify\/functions\/ai-complete/i, role: "AI completion serverless endpoint" },
-    { match: /netlify\/functions\/ai-stream/i, role: "AI streaming serverless endpoint" },
+    // AI provider routing / gateway
+    { match: /(?:[^/]+\/)*(?:lib\/ai\/router|providers\/(?:router|gateway))\./i, role: "AI provider router / fallback dispatch" },
+    // AI model / provider registry
+    { match: /(?:[^/]+\/)*(?:lib\/ai\/registry|providers\/registry)\./i, role: "AI model registry / provider registry" },
+    // Netlify / serverless completion endpoints
+    { match: /(?:[^/]+\/)*netlify\/functions\/providers\./i, role: "Provider configuration (endpoint + auth)" },
+    { match: /(?:[^/]+\/)*(?:netlify\/functions\/ai-complete|app\/api\/engine\/complete\/route)\./i, role: "AI completion endpoint" },
+    { match: /(?:[^/]+\/)*(?:netlify\/functions\/ai-stream|app\/api\/engine\/routing\/route)\./i, role: "AI routing / streaming endpoint" },
     { match: /netlify\/functions\/utils\/credential/i, role: "Credential encryption + storage utilities" },
     { match: /netlify\/functions\/utils\/retrieval/i, role: "RAG / retrieval provider utilities" },
-    { match: /src\/domain\/pricing/i, role: "Pricing tiers and feature gating" },
-    { match: /src\/domain\/cost-policy/i, role: "Cost and budget enforcement" },
-    { match: /src\/domain\/model-selector/i, role: "Model selection strategy" },
-    { match: /src\/lib\/models\//i, role: "Model definitions and metadata" },
-    { match: /src\/domain\/task-queue/i, role: "Async task queue" },
-    { match: /src\/lib\/prompt-architect/i, role: "Prompt template engine" },
+    // Domain / pricing
+    { match: /(?:[^/]+\/)*domain\/pricing/i, role: "Pricing tiers and feature gating" },
+    { match: /(?:[^/]+\/)*domain\/cost-policy/i, role: "Cost and budget enforcement" },
+    { match: /(?:[^/]+\/)*domain\/model-selector/i, role: "Model selection strategy" },
+    // Model definitions (src/lib/models/ or repair_engine/models/)
+    { match: /(?:[^/]+\/)*(?:lib\/models\/(?!__tests__)|models\/types)\./i, role: "Model definitions and metadata" },
+    // Task queue / async work
+    { match: /(?:[^/]+\/)*(?:domain\/task-queue|queue\/worker)\./i, role: "Async task queue / worker" },
+    // Prompt template engine or base provider class
+    { match: /(?:[^/]+\/)*(?:lib\/prompt-architect|providers\/base)\./i, role: "Prompt template engine / base provider" },
+    // LLM client / orchestrator (top-level worker, repair_engine)
+    { match: /(?:[^/]+\/)*(?:src\/llm\.|orchestrator\.)/i, role: "LLM client / orchestrator" },
   ];
 
   const results: Array<{ file: string; role: string; exports: string[]; behaviors: string[] }> = [];
@@ -876,6 +899,27 @@ function readJsonIfExists(filePath: string): Record<string, unknown> | null {
   }
 }
 
+/** Monorepo fallback: find package.json exactly one level deep with the most combined deps. */
+function findMonorepoPackageJson(root: string, files: string[]): Record<string, unknown> | null {
+  const candidates = files.filter(
+    (f) => /^[^/]+\/package\.json$/.test(f) && !f.startsWith("node_modules/")
+  );
+  let best: Record<string, unknown> | null = null;
+  let bestScore = 0;
+  for (const f of candidates) {
+    const p = readJsonIfExists(join(root, f));
+    if (!p) continue;
+    const score =
+      Object.keys((p.dependencies as object) ?? {}).length +
+      Object.keys((p.devDependencies as object) ?? {}).length;
+    if (score > bestScore) {
+      best = p;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 function readTextIfExists(filePath: string): string {
   if (!existsSync(filePath)) return "";
   try {
@@ -905,19 +949,22 @@ function extractReadmeQuote(text: string): string | undefined {
 // isn't cut off mid-function.
 function isKeyFile(file: string): boolean {
   return (
-    /^netlify\/functions\//i.test(file) ||
+    // Netlify functions — root-level or one monorepo level deep (e.g. dashboard/netlify/functions/)
+    /(?:^|[^/]+\/)netlify\/functions\//i.test(file) ||
     /^supabase\/migrations\//i.test(file) ||
     /^supabase\/functions\//i.test(file) ||
     /\/(src|app)\/(main|index|App)\.(ts|tsx|js|jsx)$/i.test(file) ||
     /^(src|app)\/(main|index|App)\.(ts|tsx|js|jsx)$/i.test(file) ||
-    /^(src|app)\/.*\/(index|route|server)\.(ts|js)$/i.test(file) ||
-    // AI subsystem — router, registry, provider config, model definitions
-    /src\/lib\/(ai|models)\//i.test(file) ||
+    // App Router route handlers — root or monorepo prefix (dashboard/app/.../route.ts)
+    /(?:^|[^/]+\/)(src\/)?app\/.*\/(index|route|server)\.(ts|js)$/i.test(file) ||
+    // AI subsystem — lib/ai/, lib/models/, or providers/ in repair_engine/worker
+    /(?:[^/]+\/)?lib\/(ai|models)\//i.test(file) ||
+    /(?:[^/]+\/)?providers\/(router|gateway|registry)\./i.test(file) ||
     /netlify\/functions\/utils\/(credential|retrieval|stripe)/i.test(file) ||
-    // Domain logic — pricing tiers, cost policy, model selection are high-value read targets
-    /src\/domain\/(pricing|cost-policy|model-selector|types|task-queue)\.(ts|tsx)$/i.test(file) ||
+    // Domain logic
+    /(?:[^/]+\/)?domain\/(pricing|cost-policy|model-selector|types|task-queue)\.(ts|tsx)$/i.test(file) ||
     // State stores
-    /src\/(store|stores|state)\//i.test(file) ||
+    /(?:[^/]+\/)?(store|stores|state)\//i.test(file) ||
     /\/(use\w*Store|use\w*State)\.(ts|tsx)$/i.test(file)
   );
 }
@@ -931,7 +978,8 @@ function sampleFiles(files: string[], root: string): Array<{ path: string; excer
   // Tier 3 — config, docs, everything else
   const priority = (file: string): number => {
     if (isKeyFile(file)) return 0;
-    if (/^(src|app|lib|server|api|pages|components|features|hooks|domain|services|modules)\//i.test(file)) return 1;
+    // Tier 1: primary source trees at root OR one level deep (monorepo: dashboard/app/, worker/src/)
+    if (/(?:^|[^/]+\/)(src|app|lib|server|api|pages|components|features|hooks|domain|services|modules)\//i.test(file)) return 1;
     if (/\.(ts|tsx|js|jsx|py)$/.test(file)) return 2;
     return 3;
   };
@@ -1522,6 +1570,13 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/^archive\//i.test(file)) return "Archive";
     if (/^(\.github|\.cursor)\//i.test(file)) return "Agent / CI Rules";
     if (/^\.storybook\//i.test(file)) return "Build tooling";
+    // Whole-subtree catches for well-known monorepo sub-packages
+    if (/^repair_engine\//i.test(file)) return "AI / ML Integration";
+    if (/^worker\//i.test(file)) return "AI / ML Integration";
+    if (/^atlas\//i.test(file)) return "Specification Engine";
+    if (/^comparisons\//i.test(file)) return "Documentation";
+    if (/^expectations\//i.test(file)) return "Specification Engine";
+    if (/^the_penny_lane_project\//i.test(file)) return "Documentation";
 
     // --- Root-level dotfiles and lock files ---
     if (/^\.(env|gitignore|gitattributes|eslintrc|editorconfig|nvmrc|npmrc|prettierrc|stylelintrc)/i.test(file) ||
@@ -1542,8 +1597,8 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     // audits/ top-level directory — remaining files (not test/spec) go to Specification Engine
     if (/^audits\//i.test(file)) return "Specification Engine";
     if (/\/(onboarding|wizard|tour|welcome)/i.test(file)) return "Onboarding";
-    // AI before broad lib — catches src/lib/ai/, netlify/functions/ai-*, etc.
-    if (/\/(ai|llm|models?|provider|completion|agent|prompt)\//i.test(file)) return "AI / ML Integration";
+    // AI before broad lib — catches src/lib/ai/, providers/, netlify/functions/ai-*, etc.
+    if (/\/(ai|llm|models?|providers?|completion|agent|prompt)\//i.test(file)) return "AI / ML Integration";
     if (/\/(flow|canvas|workflow)\//i.test(file)) return "Workflow Engine";
     if (/\/(asset|upload|cloudinary)\//i.test(file)) return "Asset Management";
     if (/\/(specification|expectation|audit[-_]template|audit[-_]output)/i.test(file)) return "Specification Engine";
@@ -1569,6 +1624,12 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/^scripts\//i.test(file)) return "Utilities & Scripts";
     // src/lib catch-all — after all more-specific patterns
     if (/^src\/lib\//i.test(file)) return "Utilities & Scripts";
+    // Root-level files with no subdirectory (Makefile, batch_fix.py, lyra-dashboard.jsx, etc.)
+    if (!file.includes("/")) {
+      if (/\.(py|sh|bash|zsh)$/.test(file) || file === "Makefile") return "Utilities & Scripts";
+      if (/\.(md|mdx|txt)$/.test(file)) return "Documentation";
+      if (/\.(jsx?|tsx?)$/.test(file)) return "UI Components";
+    }
     return "Other";
   };
 
