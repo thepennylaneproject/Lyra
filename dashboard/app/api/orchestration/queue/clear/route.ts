@@ -33,9 +33,9 @@ export async function POST(request: Request) {
       try {
         await queue.obliterate({ force: true });
         bullmqCleared = true;
-      } catch (e) {
+      } catch (error) {
         bullmqError =
-          e instanceof Error ? e.message : String(e);
+          error instanceof Error ? error.message : String(error);
         console.warn("[orchestration/queue/clear] BullMQ obliterate failed:", bullmqError);
       } finally {
         await queue.close();
@@ -62,10 +62,10 @@ export async function POST(request: Request) {
       bullmq_obliterated: bullmqCleared,
       bullmq_error: bullmqError,
     });
-  } catch (e) {
-    console.error("POST /api/orchestration/queue/clear", e);
+  } catch (error) {
+    console.error("POST /api/orchestration/queue/clear", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

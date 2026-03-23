@@ -18,19 +18,19 @@ export function bullmqConnectionFromEnv(): BullmqRedisConnection | null {
     process.env.REDIS_URL?.trim() || process.env.LYRA_REDIS_URL?.trim();
   if (!raw) return null;
   try {
-    const u = new URL(raw);
-    if (!u.hostname?.trim()) return null;
+    const parsedUrl = new URL(raw);
+    if (!parsedUrl.hostname?.trim()) return null;
     return {
-      host: u.hostname,
-      port: Number(u.port || 6379),
-      password: u.password ? decodeURIComponent(u.password) : undefined,
+      host: parsedUrl.hostname,
+      port: Number(parsedUrl.port || 6379),
+      password: parsedUrl.password ? decodeURIComponent(parsedUrl.password) : undefined,
       username:
-        u.username && u.username !== "default"
-          ? decodeURIComponent(u.username)
-          : u.username === "default" && u.password
+        parsedUrl.username && parsedUrl.username !== "default"
+          ? decodeURIComponent(parsedUrl.username)
+          : parsedUrl.username === "default" && parsedUrl.password
             ? "default"
             : undefined,
-      tls: u.protocol === "rediss:" ? {} : undefined,
+      tls: parsedUrl.protocol === "rediss:" ? {} : undefined,
       maxRetriesPerRequest: null,
     };
   } catch {
