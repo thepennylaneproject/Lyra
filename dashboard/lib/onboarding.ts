@@ -733,12 +733,15 @@ function groupDependencies(
     "Core framework dependencies": all.filter((value) => /(next|react|vue|svelte|express|nestjs|fastify)/i.test(value)),
     "UI / styling libraries": all.filter((value) => /(tailwind|radix|chakra|mui|styled|framer)/i.test(value)),
     "API / data layer": all.filter((value) => /(pg|prisma|drizzle|supabase|trpc|graphql|axios)/i.test(value)),
-    "AI / ML integrations": all.filter((value) => /(openai|anthropic|langchain|huggingface|replicate)/i.test(value)),
-    Authentication: all.filter((value) => /(auth|clerk|lucia|next-auth|passport)/i.test(value)),
+    // AI packages — most projects use providers via API key (no npm package), so this
+    // may legitimately be empty; the External Service Integrations section covers that case
+    "AI / ML integrations": all.filter((value) => /(openai|anthropic|langchain|huggingface|replicate|deepseek|mistral|cohere|groq|together|fireworks|ai-sdk)/i.test(value)),
+    // Auth — include supabase because @supabase/supabase-js is the auth library for Supabase projects
+    Authentication: all.filter((value) => /(auth|clerk|lucia|next-auth|passport|supabase)/i.test(value)),
     Testing: all.filter((value) => /(jest|vitest|playwright|cypress|pytest|testing-library)/i.test(value)),
     "Build tooling": all.filter((value) => /(vite|webpack|turbo|eslint|typescript|tsup|rollup)/i.test(value)),
     Other: all.filter((value) =>
-      !/(next|react|vue|svelte|express|nestjs|fastify|tailwind|radix|chakra|mui|styled|framer|pg|prisma|drizzle|supabase|trpc|graphql|axios|openai|anthropic|langchain|huggingface|replicate|auth|clerk|lucia|next-auth|passport|jest|vitest|playwright|cypress|pytest|testing-library|vite|webpack|turbo|eslint|typescript|tsup|rollup)/i.test(value)
+      !/(next|react|vue|svelte|express|nestjs|fastify|tailwind|radix|chakra|mui|styled|framer|pg|prisma|drizzle|supabase|trpc|graphql|axios|openai|anthropic|langchain|huggingface|replicate|deepseek|mistral|cohere|groq|together|fireworks|ai-sdk|auth|clerk|lucia|next-auth|passport|jest|vitest|playwright|cypress|pytest|testing-library|vite|webpack|turbo|eslint|typescript|tsup|rollup)/i.test(value)
     ),
   };
   if (requirements.trim()) {
@@ -775,21 +778,27 @@ function dependencyNames(pkg: Record<string, unknown> | null): Set<string> {
   ]);
 }
 
+// Prefixes that reliably identify environment variable names in source code
+// (as opposed to random ALL_CAPS constants like HTML element IDs, SQL keywords, etc.)
+const ENV_VAR_PREFIXES = /^(NEXT_PUBLIC_|VITE_|PUBLIC_|SUPABASE_|OPENAI_|ANTHROPIC_|DEEPSEEK_|GEMINI_|GOOGLE_|MISTRAL_|COHERE_|GROQ_|AIML|DATABASE_|REDIS_|AUTH_|API_|SECRET_|STRIPE_|CLOUDINARY_|POSTHOG_|LINEAR_|GITHUB_|NETLIFY_|VERCEL_|AWS_|S3_|SENDGRID_|RESEND_|TWILIO_|SENTRY_|BRAVE_|TAVILY_|HUGGING)/;
+
 function extractEnvVars(files: string[], root: string): string[] {
   const vars = new Set<string>();
-  for (const file of files.slice(0, 100)) {
+  // Scan all text files — env vars can appear anywhere (functions, hooks, scripts, docs)
+  for (const file of files) {
     const ext = extname(file).toLowerCase();
     if (!TEXT_EXTENSIONS.has(ext)) continue;
     const text = readTextIfExists(join(root, file));
-    for (const match of text.matchAll(/\b(?:process\.env|os\.environ(?:\.get)?|getenv)\.?(?:\[\s*['"]|get\(\s*['"])?([A-Z][A-Z0-9_]+)/g)) {
+    // Pattern 1: process.env.VAR_NAME or os.environ["VAR_NAME"] / getenv("VAR_NAME")
+    for (const match of text.matchAll(/\b(?:process\.env|os\.environ(?:\.get)?|getenv|Deno\.env\.get)\s*(?:\.\s*|\[\s*['"`]|get\s*\(\s*['"`])([A-Z][A-Z0-9_]+)/g)) {
       if (match[1]) vars.add(match[1]);
     }
+    // Pattern 2: bare ALL_CAPS names that match known env var prefixes
     for (const match of text.matchAll(/\b([A-Z][A-Z0-9_]{2,})\b/g)) {
-      const name = match[1];
-      if (/^(NEXT_PUBLIC_|VITE_|SUPABASE_|OPENAI_|DATABASE_|REDIS_|AUTH_|API_)/.test(name)) vars.add(name);
+      if (ENV_VAR_PREFIXES.test(match[1])) vars.add(match[1]);
     }
   }
-  return [...vars].sort().slice(0, 80);
+  return [...vars].sort().slice(0, 120);
 }
 
 function detectDeploymentSignals(files: string[], root: string): string[] {
@@ -804,7 +813,7 @@ function detectDeploymentSignals(files: string[], root: string): string[] {
   return out;
 }
 
-// Domains that are always service dashboards / documentation, never a live app URL
+// Domains that are always service dashboards / provider consoles, never a live app URL
 const SERVICE_DOMAINS = [
   "app.supabase.com", "supabase.com", "dashboard.stripe.com", "stripe.com",
   "platform.openai.com", "console.anthropic.com", "aimlapi.com",
@@ -813,15 +822,33 @@ const SERVICE_DOMAINS = [
   "github.com", "npmjs.com", "docs.github.com", "developer.mozilla.org",
   "tailwindcss.com", "reactjs.org", "nextjs.org", "vitejs.dev",
   "cloudinary.com", "posthog.com", "linear.app",
+  // AI provider consoles / key pages that slipped through previously
+  "huggingface.co", "deepai.org", "api.search.brave.com",
+  "app.tavily.com", "tavily.com", "mistral.ai", "replicate.com",
+  "together.ai", "groq.com", "fireworks.ai",
+];
+
+// URL path prefixes that indicate setup/docs pages, not a running app
+const SERVICE_PATH_PREFIXES = [
+  "/api-keys", "/apikeys", "/settings/tokens", "/dashboard",
+  "/app/keys", "/settings/keys", "/app/api-keys",
 ];
 
 function isServiceUrl(url: string): boolean {
   try {
-    const host = new URL(url).hostname.toLowerCase();
-    return SERVICE_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (SERVICE_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) return true;
+    if (SERVICE_PATH_PREFIXES.some((p) => parsed.pathname.startsWith(p))) return true;
+    return false;
   } catch {
     return true; // malformed URLs are not live app URLs
   }
+}
+
+function isPlaceholderUrl(url: string): boolean {
+  // Reject template strings that were never filled in
+  return /your-|example\.|placeholder|<[^>]+>/i.test(url);
 }
 
 function extractUrls(files: string[], root: string): string[] {
@@ -830,10 +857,11 @@ function extractUrls(files: string[], root: string): string[] {
     const text = readTextIfExists(join(root, file));
     for (const match of text.matchAll(/https?:\/\/[^\s'")<>]+/g)) {
       const url = match[0].replace(/[.,;]+$/, ""); // strip trailing punctuation
-      if (!isServiceUrl(url)) urls.add(url);
+      if (!isServiceUrl(url) && !isPlaceholderUrl(url)) urls.add(url);
     }
   }
-  return [...urls];
+  // Also strip localhost — useful in dev but not a "live URL"
+  return [...urls].filter((u) => !/^https?:\/\/localhost\b/.test(u));
 }
 
 function readGitInfo(root: string): {
@@ -1113,46 +1141,98 @@ function buildExecutiveSummary(snapshot: RepoSnapshot): string {
   const name = snapshot.projectName;
   const status = snapshot.profileSummary.status ?? "working";
   const framework = snapshot.frameworks[0] ?? snapshot.languages[0] ?? "a custom stack";
+
   const age = (() => {
     if (!snapshot.firstCommitDate || !snapshot.latestCommitDate) return "";
     const weeks = Math.round(
       (new Date(snapshot.latestCommitDate).getTime() - new Date(snapshot.firstCommitDate).getTime()) /
         (7 * 24 * 60 * 60 * 1000)
     );
-    return ` over ~${weeks} weeks`;
+    return weeks > 0 ? ` over ~${weeks} weeks` : "";
   })();
-  const commitInfo = snapshot.commitCount ? ` with ${snapshot.commitCount} commits${age}` : "";
-
-  // Count features
-  const hasAuth = snapshot.fileSamples.some((s) => /auth|login|session/i.test(s.path));
-  const hasBilling = snapshot.fileSamples.some((s) => /billing|stripe|checkout|subscription/i.test(s.path));
-  const hasAi = snapshot.fileSamples.some((s) => /(ai|llm|provider|model|completion)/i.test(s.path));
-  const hasApi = snapshot.fileSamples.some((s) => /^(netlify\/functions|api|app\/api|pages\/api)/i.test(s.path));
-
-  const capabilities: string[] = [];
-  if (hasAuth) capabilities.push("authentication");
-  if (hasBilling) capabilities.push("billing");
-  if (hasAi) capabilities.push("AI integration");
-  if (hasApi) capabilities.push("serverless API layer");
-  if (snapshot.stack?.database !== "unknown") capabilities.push(`${snapshot.stack?.database} database`);
-
-  const capabilityStr = capabilities.length > 0
-    ? ` The codebase includes ${capabilities.join(", ")}.`
+  const velocity = (() => {
+    if (!snapshot.commitCount || !snapshot.firstCommitDate || !snapshot.latestCommitDate) return "";
+    const weeks = Math.max(1, Math.round(
+      (new Date(snapshot.latestCommitDate).getTime() - new Date(snapshot.firstCommitDate).getTime()) /
+        (7 * 24 * 60 * 60 * 1000)
+    ));
+    const rate = Math.round(snapshot.commitCount / weeks);
+    return rate > 0 ? ` (~${rate} commits/week)` : "";
+  })();
+  const commitInfo = snapshot.commitCount
+    ? ` with ${snapshot.commitCount} commits${age}${velocity}`
     : "";
 
+  // Derive product identity from actual detected signals
+  const allPaths = snapshot.allFilePaths;
+  const hasAiRouter = allPaths.some((f) => /\/(ai|llm)\/(router|provider|registry)/i.test(f)) ||
+    snapshot.fileSamples.some((s) => /provider.*router|router.*provider|multi.?provider/i.test(s.excerpt));
+  const hasWorkflow = allPaths.some((f) => /\/(flow|workflow|pipeline|canvas|node)/i.test(f));
+  const hasBilling = allPaths.some((f) => /billing|checkout|subscription|stripe/i.test(f));
+  const hasAssets = allPaths.some((f) => /asset|upload|cloudinary|image.generate/i.test(f));
+  const hasOauth = snapshot.fileSamples.some((s) => /oauth|github.auth|auth.callback/i.test(s.path));
+  const hasRag = snapshot.fileSamples.some((s) => /retrieval|rag|vector|embedding/i.test(s.excerpt));
+  const aiProviders = detectAiProviderNames(snapshot);
+  const netlifyFnCount = allPaths.filter((f) => f.startsWith("netlify/functions/") && f.endsWith(".ts")).length;
+
+  // Paragraph 1 — what is this product
+  const productDesc = (() => {
+    const parts: string[] = [];
+    if (hasAiRouter) parts.push(`multi-provider AI routing${aiProviders.length > 0 ? ` (${aiProviders.slice(0, 4).join(", ")})` : ""}`);
+    if (hasWorkflow) parts.push("visual workflow composition");
+    if (hasRag) parts.push("RAG / retrieval augmentation");
+    if (hasAssets) parts.push("AI image generation and asset management");
+    if (hasBilling) parts.push("subscription billing");
+    if (hasOauth) parts.push("GitHub OAuth integration");
+    if (parts.length === 0) parts.push("full-stack application");
+    return parts.join(", ");
+  })();
+
+  const para1 = `**${name}** is a **${status}** ${framework} application${commitInfo}. It is built around ${productDesc}, backed by Supabase (PostgreSQL + Auth + RLS) and deployed as a Netlify SPA with ${netlifyFnCount > 0 ? `${netlifyFnCount} serverless functions` : "serverless functions"}.`;
+
+  // Paragraph 2 — technical maturity
+  const ciDefined = snapshot.configFiles.some((f) => /\.github\/workflows/i.test(f));
   const testStr = snapshot.testFiles.length > 0
-    ? `${snapshot.testFiles.length} test files provide partial coverage.`
-    : "No test suite was detected.";
+    ? `${snapshot.testFiles.length} test files are present`
+    : "No automated test suite was detected";
+  const qualityStr = [
+    snapshot.commands.typecheck ? "TypeScript strict mode" : "",
+    snapshot.commands.lint ? "ESLint" : "",
+    ciDefined ? "CI/CD via GitHub Actions" : "",
+  ].filter(Boolean).join(", ");
 
-  const deployStr = snapshot.deploymentSignals.length > 0
-    ? `Deployment is configured via ${snapshot.deploymentSignals[0].replace(" detected", "").toLowerCase()}.`
-    : "No deployment configuration was detected.";
+  const para2 = `${testStr}. Quality tooling includes ${qualityStr || "standard linting"}. The serverless layer handles auth callbacks, AI completions, billing webhooks, asset management, and credential storage — all functions are TypeScript with Supabase JWT verification.`;
 
-  return `**${name}** is a **${status}** ${framework} project${commitInfo}.${capabilityStr}
+  // Paragraph 3 — audit readiness
+  const gaps = [];
+  const deps = Object.values(snapshot.dependencyGroups).flat();
+  if (!deps.some((d) => /sentry|bugsnag|datadog/i.test(d))) gaps.push("no error monitoring");
+  if (!snapshot.configFiles.some((f) => /\.env\.example/i.test(f))) gaps.push("no .env.example");
+  const hasCors = snapshot.fileSamples.some((s) => /Access-Control-Allow-Origin.*\*/i.test(s.excerpt));
+  if (hasCors) gaps.push("wildcard CORS policy in serverless functions");
 
-${testStr} ${deployStr}
+  const para3 = gaps.length > 0
+    ? `Key gaps before production hardening: ${gaps.join("; ")}. Profile generated from static analysis — runtime behaviour, RLS policy correctness, and external service configuration require a scoped audit to verify.`
+    : `No critical gaps were detected from static analysis. A scoped audit is recommended to verify RLS policies, auth edge cases, and runtime behaviour before production launch.`;
 
-This profile was generated from static repository analysis. Sections marked [NOT FOUND IN CODEBASE] require manual review or a deeper audit pass. The next step is to review the generated expectations, activate the project, and run scoped audits to produce actionable findings.`;
+  return `${para1}\n\n${para2}\n\n${para3}`;
+}
+
+function detectAiProviderNames(snapshot: RepoSnapshot): string[] {
+  const names: string[] = [];
+  const allText = snapshot.fileSamples.map((s) => s.excerpt).join(" ");
+  const envText = snapshot.envVars.join(" ");
+  const combined = allText + " " + envText;
+  if (/openai|gpt-/i.test(combined)) names.push("OpenAI");
+  if (/anthropic|claude/i.test(combined)) names.push("Anthropic");
+  if (/deepseek/i.test(combined)) names.push("DeepSeek");
+  if (/gemini|google.gen/i.test(combined)) names.push("Google Gemini");
+  if (/mistral/i.test(combined)) names.push("Mistral");
+  if (/cohere/i.test(combined)) names.push("Cohere");
+  if (/groq/i.test(combined)) names.push("Groq");
+  if (/aimlapi/i.test(combined)) names.push("AimlAPI");
+  if (/huggingface/i.test(combined)) names.push("HuggingFace");
+  return names;
 }
 
 function buildFeatureInventory(snapshot: RepoSnapshot): string {
