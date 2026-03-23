@@ -247,3 +247,25 @@ export async function updateAuditJobStatus(
     [id, status, error ?? null]
   );
 }
+
+/** Cancel a single queued or running job (marks it failed). Returns the row or null if not found / not cancellable. */
+export async function cancelAuditJob(id: string): Promise<LyraAuditJobRow | null> {
+  const db = pool();
+  const rows = await db.query(
+    `UPDATE lyra_audit_jobs
+     SET status = 'failed', finished_at = now(), error = 'Cancelled by operator'
+     WHERE id = $1 AND status IN ('queued', 'running')
+     RETURNING *`,
+    [id]
+  );
+  return rows.length > 0 ? rowJob(rows[0]) : null;
+}
+
+/** Count jobs currently queued or running (used for the activity badge). */
+export async function countActiveAuditJobs(): Promise<number> {
+  const db = pool();
+  const rows = await db.query(
+    `SELECT COUNT(*) AS count FROM lyra_audit_jobs WHERE status IN ('queued', 'running')`
+  );
+  return Number(rows[0]?.count ?? 0);
+}

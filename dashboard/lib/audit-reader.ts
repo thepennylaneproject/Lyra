@@ -41,6 +41,8 @@ export interface EngineStatus {
   queue_size: number;
   queued_findings: RepairJob[];
   recent_repair_runs: RepairRunSummary[];
+  /** Queued + running audit jobs (from lyra_audit_jobs). Present when DATABASE_URL is configured. */
+  active_audit_jobs?: number;
 }
 
 function auditDir(): string {

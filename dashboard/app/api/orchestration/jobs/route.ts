@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Queue } from "bullmq";
 import {
+  cancelAuditJob,
   insertAuditJob,
   jobsStoreConfigured,
   listRecentAuditJobs,
@@ -158,5 +159,30 @@ export async function POST(request: Request) {
       { error: apiErrorMessage(error) },
       { status: 500 }
     );
+  }
+}
+
+/** DELETE /api/orchestration/jobs — cancel a single queued/running audit job by id. */
+export async function DELETE(request: Request) {
+  if (!jobsStoreConfigured()) {
+    return NextResponse.json({ error: "DATABASE_URL required" }, { status: 503 });
+  }
+  try {
+    const body = await request.json().catch(() => ({}));
+    const id = typeof body.id === "string" ? body.id.trim() : null;
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+    const job = await cancelAuditJob(id);
+    if (!job) {
+      return NextResponse.json(
+        { error: "Job not found or already in a terminal state" },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({ job });
+  } catch (error) {
+    console.error("DELETE /api/orchestration/jobs", error);
+    return NextResponse.json({ error: apiErrorMessage(error) }, { status: 500 });
   }
 }

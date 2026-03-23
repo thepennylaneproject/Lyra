@@ -13,6 +13,7 @@ import { ImportModal } from "@/components/ImportModal";
 import { NextActionCard } from "@/components/NextActionCard";
 import { PatternPanel } from "@/components/PatternPanel";
 import { EngineView } from "@/components/EngineView";
+import { JobQueueView } from "@/components/JobQueueView";
 import { Shell, type NavView } from "@/components/Shell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { STATUS_GROUPS } from "@/lib/constants";
@@ -365,6 +366,20 @@ export default function Home() {
         onAuditSynced={onAuditSynced}
       >
         <EngineView />
+      </Shell>
+    );
+  }
+
+  // ── Activity / job queue view ──
+  if (activeView === "jobs") {
+    return (
+      <Shell
+        activeView={activeView}
+        navHighlightView={shellNavHighlight}
+        onNavigate={handleNavigate}
+        onAuditSynced={onAuditSynced}
+      >
+        <JobQueueView />
       </Shell>
     );
   }
