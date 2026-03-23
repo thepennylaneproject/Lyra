@@ -506,7 +506,8 @@ function summarizeCriticalFiles(
   const results: Array<{ file: string; role: string; exports: string[]; behaviors: string[] }> = [];
 
   for (const { match, role } of targets) {
-    const sample = fileSamples.find((s) => match.test(s.path));
+    // Exclude test files from subsystem summaries — they describe tests, not the subsystem
+    const sample = fileSamples.find((s) => match.test(s.path) && !/__tests__|\.test\.|\.spec\./i.test(s.path));
     if (!sample || sample.excerpt === "(empty file)") continue;
     const e = sample.excerpt;
 
@@ -854,6 +855,13 @@ function inferTopLevelPurpose(name: string): string {
   if (name === "docs") return "documentation";
   if (name === "supabase" || name === "db") return "database and migrations";
   if (name === "scripts") return "scripts and tooling";
+  if (name === "netlify") return "serverless functions and edge functions";
+  if (name === "archive") return "archived / historical code (not active)";
+  if (name === "audits") return "audit artifacts, reports, and agent prompts";
+  if (/^eslint-plugin-/i.test(name)) return "custom ESLint plugin";
+  if (/^eslint-rules?$/i.test(name)) return "custom ESLint rules";
+  if (name === "index.html") return "Vite SPA entry point";
+  if (/\.(lock|toml|json|yaml|yml|cjs|mjs|js|ts)$/.test(name)) return "project config file";
   return "repository content";
 }
 
@@ -1368,8 +1376,8 @@ function buildGapsSection(snapshot: RepoSnapshot): string {
     gaps.push({ gap: "No error monitoring service", severity: "Medium", notes: "No Sentry, Bugsnag, or similar dependency found" });
   }
 
-  // Check for env documentation
-  if (snapshot.envVars.length > 5 && !snapshot.configFiles.some((f) => /\.env\.example|\.env\.template/i.test(f))) {
+  // Check for env documentation — check all file paths, not just configFiles
+  if (snapshot.envVars.length > 5 && !snapshot.allFilePaths.some((f) => /^\.env\.example$|\.env\.template/i.test(f))) {
     gaps.push({ gap: "No .env.example file", severity: "Low", notes: `${snapshot.envVars.length} env vars used but no template file for onboarding` });
   }
 
@@ -1508,30 +1516,45 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
   // Group files into feature areas by path pattern
   const areas: Record<string, { files: string[]; signals: Set<string> }> = {};
   const categorize = (file: string): string => {
-    if (/\/(auth|login|signup|register|password|session)\b/i.test(file)) return "Authentication";
-    if (/\/(billing|checkout|subscription|payment|stripe|pricing|webhook)/i.test(file)) return "Billing & Payments";
-    if (/\/(ai|llm|provider|router|completion|prompt|model|agent)/i.test(file)) return "AI / ML Integration";
-    if (/\/(api|function|endpoint|route)\b/i.test(file) && !/test/i.test(file)) return "API Endpoints";
-    if (/\/(component|ui|widget|modal|panel|button|form|layout|page|view)/i.test(file)) return "UI Components";
-    if (/\/(hook|use[A-Z])/i.test(file)) return "React Hooks";
-    if (/\/(migration|schema|seed|sql)/i.test(file)) return "Database / Migrations";
-    if (/\/(test|spec|__tests__)/i.test(file)) return "Testing";
-    if (/\/(style|css|theme|token|design)/i.test(file)) return "Design System";
-    if (/\/(asset|image|upload|media|storage|cloudinary)/i.test(file)) return "Asset Management";
-    if (/\/(config|setting|env)/i.test(file)) return "Configuration";
-    if (/\/(onboarding|wizard|tour|welcome)/i.test(file)) return "Onboarding";
-    if (/\/(dashboard|admin|metric|analytics)/i.test(file)) return "Admin / Analytics";
-    if (/\/(flow|canvas|workflow|pipeline|node)/i.test(file)) return "Workflow Engine";
-    // More specific buckets to avoid a large "Other" catch-all
-    if (/\/(specification|expectation|audit.template|audit.output)/i.test(file)) return "Specification Engine";
-    if (/^src\/domain\//i.test(file)) return "Domain Logic";
-    if (/\/(store|stores|state|slice|atom)\b/i.test(file)) return "State Management";
-    if (/\/(context|provider)\.(tsx?|jsx?)$/i.test(file)) return "React Context / Providers";
-    if (/\/(pipeline|transform|processor|resolver)\//i.test(file)) return "Data Pipeline";
-    if (/^\.github\/|^\.cursor\//i.test(file)) return "Agent / CI Rules";
+    // --- Exclusive top-level directories — checked first to prevent misclassification ---
     if (/^archive\//i.test(file)) return "Archive";
+    if (/^(\.github|\.cursor)\//i.test(file)) return "Agent / CI Rules";
+    if (/^\.storybook\//i.test(file)) return "Build tooling";
+
+    // --- Root-level dotfiles and lock files ---
+    if (/^\.(env|gitignore|gitattributes|eslintrc|editorconfig|nvmrc|npmrc|prettierrc|stylelintrc)/i.test(file) ||
+        /\.(env\.example|env\.local|env\.production)$/i.test(file) ||
+        /^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|deno\.lock|bun\.lockb)$/.test(file)) return "Configuration";
+
+    // --- Domain-specific — most exclusive first ---
+    if (/\/(auth|login|signup|register|password|session)\b/i.test(file)) return "Authentication";
+    if (/\/(billing|checkout|subscription|payment|stripe|webhook)/i.test(file)) return "Billing & Payments";
+    if (/supabase\/migrations\/|\/migrations\/.*\.sql$/i.test(file)) return "Database / Migrations";
+    if (/\/(test|spec|__tests__)\//i.test(file) || /\.(test|spec)\.(ts|tsx|js|jsx)$/i.test(file)) return "Testing";
+    if (/\/(onboarding|wizard|tour|welcome)/i.test(file)) return "Onboarding";
+    // AI before broad lib — catches src/lib/ai/, netlify/functions/ai*, etc.
+    if (/\/(ai|llm|provider|completion|agent|prompt)\//i.test(file)) return "AI / ML Integration";
+    if (/\/(flow|canvas|workflow)\//i.test(file)) return "Workflow Engine";
+    if (/\/(asset|upload|cloudinary)\//i.test(file)) return "Asset Management";
+    if (/\/(specification|expectation|audit[-_]template|audit[-_]output)/i.test(file)) return "Specification Engine";
+    // Domain logic directory
+    if (/^src\/domain\//i.test(file)) return "Domain Logic";
+    // Context/provider files — before UI Components so AssistantContext.tsx is caught here
+    if (/\/(context|provider)\.(tsx?|jsx?)$/i.test(file)) return "React Context / Providers";
+    // State stores — before UI
+    if (/\/(store|stores|slice|atom)\.(ts|tsx)$|\/stores?\//i.test(file)) return "State Management";
+    // Hooks — /hooks/ directory OR /useXxx camelCase (no i flag on second to avoid matching user-)
+    if (/\/hooks?\//i.test(file) || /\/use[A-Z]/.test(file)) return "React Hooks";
+    if (/\/(component|ui|widget|modal|panel|button|form|layout|page|view)\//i.test(file)) return "UI Components";
+    if (/\/(style|css|theme|token|design)\//i.test(file)) return "Design System";
+    if (/\/(dashboard|admin|metric|analytics)\//i.test(file)) return "Admin / Analytics";
+    if (/\/(api|function|endpoint|route)\b/i.test(file) && !/test/i.test(file)) return "API Endpoints";
+    if (/\/(config|setting|env)\//i.test(file)) return "Configuration";
     if (/\/(doc|readme|guide|changelog)/i.test(file)) return "Documentation";
-    if (/\/(script|tool|util|helper|lib)\//i.test(file)) return "Utilities & Scripts";
+    if (/\/(script|tool|util|helper)\//i.test(file)) return "Utilities & Scripts";
+    if (/^scripts\//i.test(file)) return "Utilities & Scripts";
+    // src/lib catch-all — after all more-specific patterns above
+    if (/^src\/lib\//i.test(file)) return "Utilities & Scripts";
     return "Other";
   };
 
@@ -1684,9 +1707,9 @@ function detectAuthSignals(
   groups: Record<string, string[]>,
   samples: Array<{ path: string; excerpt: string }>
 ): string {
-  const deps = Object.values(groups).flat().filter((dep) =>
+  const deps = [...new Set(Object.values(groups).flat().filter((dep) =>
     /(auth|clerk|lucia|next-auth|passport|supabase)/i.test(dep)
-  );
+  ))];
   const lines: string[] = [];
   if (deps.length > 0) {
     lines.push(`**Auth libraries:** ${deps.join(", ")}`);
