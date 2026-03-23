@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api-fetch";
 
-export function DashboardLogin({ onSuccess }: { onSuccess: () => void }) {
+export function DashboardLogin({
+  onSuccess,
+  sessionHint,
+}: {
+  onSuccess: () => void;
+  /** Shown under the intro copy (e.g. after 401 / expired session). */
+  sessionHint?: string;
+}) {
   const [secret, setSecret] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -78,6 +85,11 @@ export function DashboardLogin({ onSuccess }: { onSuccess: () => void }) {
         <p style={{ fontSize: "12px", color: "var(--ink-text-3)", marginBottom: "1rem", lineHeight: 1.5 }}>
           Enter your dashboard access key to get started.
         </p>
+        {sessionHint ? (
+          <p style={{ fontSize: "12px", color: "var(--ink-text-3)", marginBottom: "1rem", lineHeight: 1.5 }}>
+            {sessionHint}
+          </p>
+        ) : null}
         <details style={{ fontSize: "11px", color: "var(--ink-text-4)", marginBottom: "1rem", lineHeight: 1.6 }}>
           <summary style={{ cursor: "pointer", marginBottom: "0.5rem", color: "var(--ink-text-3)" }}>
             Where do I find my access key?

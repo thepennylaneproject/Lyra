@@ -65,13 +65,13 @@ export async function GET(_request: Request, { params }: Params) {
       backlog,
       tasks,
     });
-  } catch (e) {
-    console.error("GET /api/projects/[name]/maintenance", e);
+  } catch (error) {
+    console.error("GET /api/projects/[name]/maintenance", error);
     return NextResponse.json({
       maintenance_loop_active: false,
       backlog: [],
       tasks: [],
-      reason: apiErrorMessage(e),
+      reason: apiErrorMessage(error),
     });
   }
 }
@@ -109,8 +109,8 @@ export async function POST(request: Request, { params }: Params) {
     });
     await updateMaintenanceBacklogStatus(item.id, "planned", "review");
     return NextResponse.json({ task }, { status: 201 });
-  } catch (e) {
-    console.error("POST /api/projects/[name]/maintenance", e);
-    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
+  } catch (error) {
+    console.error("POST /api/projects/[name]/maintenance", error);
+    return NextResponse.json({ error: apiErrorMessage(error) }, { status: 500 });
   }
 }

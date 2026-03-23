@@ -20,9 +20,9 @@ export async function GET(_request: Request, { params }: Params) {
       onboardingState: project.onboardingState ?? null,
       decisionHistory: project.decisionHistory ?? [],
     });
-  } catch (e) {
-    console.error("GET /api/projects/[name]/onboarding", e);
-    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
+  } catch (error) {
+    console.error("GET /api/projects/[name]/onboarding", error);
+    return NextResponse.json({ error: apiErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -47,8 +47,8 @@ export async function PATCH(request: Request, { params }: Params) {
     const updated = updateOnboardingArtifacts(project, body);
     const saved = await repo.update(updated);
     return NextResponse.json(saved);
-  } catch (e) {
-    console.error("PATCH /api/projects/[name]/onboarding", e);
-    return NextResponse.json({ error: apiErrorMessage(e) }, { status: 500 });
+  } catch (error) {
+    console.error("PATCH /api/projects/[name]/onboarding", error);
+    return NextResponse.json({ error: apiErrorMessage(error) }, { status: 500 });
   }
 }

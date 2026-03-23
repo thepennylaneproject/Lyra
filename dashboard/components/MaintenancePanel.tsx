@@ -48,8 +48,8 @@ export function MaintenancePanel({ projectName }: MaintenancePanelProps) {
         throw new Error(payload.error ?? `Failed with status ${res.status}`);
       }
       await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
     } finally {
       setCreating(null);
     }

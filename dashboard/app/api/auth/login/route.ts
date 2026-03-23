@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE_NAME } from "@/lib/auth-constants";
 import { createAuthSessionToken } from "@/lib/auth-session";
-import { getDashboardApiSecret } from "@/lib/dashboard-secret";
+import {
+  DASHBOARD_MISCONFIGURED_MESSAGE,
+  getDashboardApiSecret,
+  isOpenApiAllowedWithoutSecret,
+} from "@/lib/dashboard-secret";
 
 /** Normalize for comparison: trim and strip newlines (env / paste often have trailing newline). */
 function normalizeSecret(s: string): string {
@@ -11,6 +15,12 @@ function normalizeSecret(s: string): string {
 export async function POST(request: Request) {
   const secret = getDashboardApiSecret();
   if (!secret) {
+    if (!isOpenApiAllowedWithoutSecret()) {
+      return NextResponse.json(
+        { error: "misconfigured", message: DASHBOARD_MISCONFIGURED_MESSAGE },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({
       ok: true,
       auth_required: false,

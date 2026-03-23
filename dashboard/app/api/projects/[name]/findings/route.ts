@@ -15,10 +15,10 @@ export async function GET(_request: Request, { params }: Params) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
     return NextResponse.json(project.findings ?? []);
-  } catch (e) {
-    console.error("GET /api/projects/[name]/findings", e);
+  } catch (error) {
+    console.error("GET /api/projects/[name]/findings", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -56,10 +56,10 @@ export async function POST(request: Request, { params }: Params) {
     const updated = [...findings, body];
     await repo.update({ ...project, findings: updated });
     return NextResponse.json(body);
-  } catch (e) {
-    console.error("POST /api/projects/[name]/findings", e);
+  } catch (error) {
+    console.error("POST /api/projects/[name]/findings", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
