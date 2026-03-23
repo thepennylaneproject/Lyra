@@ -1619,10 +1619,14 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/\/(components?|ui|widgets?|modals?|panels?|buttons?|forms?|layouts?|pages?|views?)\//i.test(file)) return "UI Components";
     // Broad catches for feature slices and next-gen tree — mostly UI after specific patterns above
     if (/^src\/(features|new)\//i.test(file)) return "UI Components";
+    // Files directly in src/ (main.tsx, App.tsx, vite-env.d.ts, etc.)
+    if (/^src\/[^/]+\.(ts|tsx|js|jsx)$/.test(file)) return "UI Components";
     if (/\/(style|css|theme|token|design)\//i.test(file)) return "Design System";
     if (/\/(dashboard|admin|metric|analytics)\//i.test(file)) return "Admin / Analytics";
-    // API endpoints — plural "functions?" so netlify/functions/* is caught
-    if (/\/(api|functions?|endpoint|route)\b/i.test(file) && !/test/i.test(file)) return "API Endpoints";
+    // API endpoints — exclude only real test files (*.test.ts, __tests__/), not *-test.ts endpoints
+    if (/\/(api|functions?|endpoint|route)\b/i.test(file) && !/(^|\/)__tests__\/|\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file)) return "API Endpoints";
+    // Broad netlify/ catch — plugins, edge functions not caught by auth/billing patterns
+    if (/^netlify\//i.test(file)) return "API Endpoints";
     if (/\/(config|setting|env)\//i.test(file)) return "Configuration";
     // Documentation — no leading-slash requirement so root-level files match
     if (/(doc|readme|guide|changelog)/i.test(file)) return "Documentation";
@@ -1630,11 +1634,14 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/^scripts\//i.test(file)) return "Utilities & Scripts";
     // src/lib catch-all — after all more-specific patterns
     if (/^src\/lib\//i.test(file)) return "Utilities & Scripts";
-    // Root-level files with no subdirectory (Makefile, batch_fix.py, lyra-dashboard.jsx, etc.)
+    // Root-level files with no subdirectory (package.json, vite.config.ts, index.html, etc.)
     if (!file.includes("/")) {
       if (/\.(py|sh|bash|zsh)$/.test(file) || file === "Makefile") return "Utilities & Scripts";
       if (/\.(md|mdx|txt)$/.test(file)) return "Documentation";
-      if (/\.(jsx?|tsx?)$/.test(file)) return "UI Components";
+      if (/\.(html|htm)$/.test(file)) return "Build tooling";
+      // config-like files before jsx check — postcss.config.js, netlify.toml, package.json, etc.
+      if (/\.(toml|yml|yaml|json|cjs|mjs|js|ts)$/.test(file)) return "Configuration";
+      if (/\.(jsx|tsx)$/.test(file)) return "UI Components";
     }
     return "Other";
   };
