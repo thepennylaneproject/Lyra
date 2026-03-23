@@ -887,6 +887,8 @@ function inferTopLevelPurpose(name: string): string {
   if (/\.(lock|toml|json|yaml|yml|cjs|mjs|js|ts)$/.test(name)) return "project config file";
   if (/\.(md|mdx|txt)$/.test(name)) return "documentation";
   if (/^(LICENSE|LICENCE|AUTHORS|CONTRIBUTORS|NOTICE)/i.test(name)) return "open source license";
+  // Spec docs with no extension: "Codra Language Charter", "Image Policy Specification v1", etc.
+  if (/^[A-Z][A-Za-z0-9 ]+(Charter|Specification|Manifest|Policy|Contract)/i.test(name)) return "documentation";
   return "repository content";
 }
 
@@ -1577,6 +1579,10 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/^comparisons\//i.test(file)) return "Documentation";
     if (/^expectations\//i.test(file)) return "Specification Engine";
     if (/^the_penny_lane_project\//i.test(file)) return "Documentation";
+    // Custom ESLint plugins and rule packages — build tooling
+    if (/^eslint-plugin-/i.test(file) || /^eslint-rules?\//i.test(file)) return "Build tooling";
+    // All supabase/ files (config, seeds, edge functions, non-migration SQL)
+    if (/^supabase\//i.test(file)) return "Database / Migrations";
 
     // --- Root-level dotfiles and lock files ---
     if (/^\.(env|gitignore|gitattributes|eslintrc|editorconfig|nvmrc|npmrc|prettierrc|stylelintrc)/i.test(file) ||
@@ -1594,8 +1600,8 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/\/(billing|checkout|subscription|payment|stripe|webhook)/i.test(file)) return "Billing & Payments";
     if (/supabase\/migrations\/|\/migrations\/.*\.sql$/i.test(file)) return "Database / Migrations";
     if (/\/(test|spec|__tests__)\//i.test(file) || /\.(test|spec)\.(ts|tsx|js|jsx)$/i.test(file)) return "Testing";
-    // audits/ top-level directory — remaining files (not test/spec) go to Specification Engine
-    if (/^audits\//i.test(file)) return "Specification Engine";
+    // audits/ anywhere in path — top-level audits/ AND src/audits/, etc. (test files already caught above)
+    if (/(?:^|\/)audits?\//i.test(file)) return "Specification Engine";
     if (/\/(onboarding|wizard|tour|welcome)/i.test(file)) return "Onboarding";
     // AI before broad lib — catches src/lib/ai/, providers/, netlify/functions/ai-*, etc.
     if (/\/(ai|llm|models?|providers?|completion|agent|prompt)\//i.test(file)) return "AI / ML Integration";
