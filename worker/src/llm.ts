@@ -39,58 +39,129 @@ export interface AuditLlmResult {
 }
 
 /**
- * Determine the model to use based on routing strategy and configuration.
- * Supports multiple formats:
- *   - "openai:mini" (explicit provider:model format)
- *   - "gpt-4o-mini" (inferred as openai:mini)
- *   - "claude-3.5-sonnet" (inferred as anthropic:sonnet)
+ * Build a priority-ordered model chain for a given audit kind and routing strategy.
  *
- * Auto-select logic: for each strategy, picks the best *configured* provider
- * so you automatically get cheap DeepSeek when the key is set, and fall back
- * to Sonnet (quality) or mini (safe default) otherwise.
+ * The registry tries each model left-to-right, silently skipping unconfigured
+ * providers and moving to the next on API failure. The chain always ends with
+ * free-tier fallbacks so there is always something to try.
  *
- *   aggressive  →  haiku  → mini          (cheapest)
- *   balanced    →  deepseek:chat → sonnet → mini  (best value; cost-efficient default)
- *   precision   →  sonnet → balanced      (highest quality)
+ * LYRA_ROUTING_STRATEGY controls the quality/cost trade-off:
+ *   precision  — best available regardless of cost (Opus → Sonnet → DeepSeek R1 → …)
+ *   balanced   — best value: DeepSeek V3 leads (10× cheaper than Sonnet, top code quality)
+ *   aggressive — minimize cost (Haiku, Gemini Flash, open-source models)
+ *   economy    — free / near-free only (HuggingFace, Gemini free tier)
+ *
+ * audit_kind fine-tunes within the chosen strategy:
+ *   security / logic / data / code_debt / investor_readiness / intelligence
+ *     → anchor with at least one strong model even in balanced/aggressive mode
+ *   visual / domain_manifest / domain_pass / portfolio_synthesize
+ *     → prefer Gemini Flash (1M-token context window eliminates chunking)
+ *   synthesize* / meta_synthesize / cluster_synthesize
+ *     → prefer Opus / DeepSeek Reasoner for cross-domain synthesis
  */
-export function resolveModel(): { primary: string; fallback: string | undefined } {
+export function resolveModelChain(auditKind?: string): string[] {
   const configuredModel = process.env.LYRA_AUDIT_MODEL?.trim();
   const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
   const registry = getRegistry();
 
-  // Escape hatch: explicit model override (rarely needed)
+  // Explicit override — honour it, add safe tail fallbacks
   if (configuredModel) {
-    if (configuredModel.includes(":")) {
-      return { primary: configuredModel, fallback: undefined };
-    }
-    // Infer provider from model name
-    const inferred = registry.inferProvider(configuredModel);
-    return { primary: `${inferred.provider}:${inferred.modelId}`, fallback: "openai:mini" };
+    const ref = configuredModel.includes(":")
+      ? configuredModel
+      : (() => {
+          const { provider, modelId } = registry.inferProvider(configuredModel);
+          return `${provider}:${modelId}`;
+        })();
+    return dedupe([ref, "openai:mini", "aimlapi:cheap", "huggingface:small"]);
   }
 
-  // Auto-select best configured provider per strategy
-  const deepseekOk = registry.getProvider("deepseek")?.isConfigured() ?? false;
-  const anthropicOk = registry.getProvider("anthropic")?.isConfigured() ?? false;
+  const ok = (name: string) => registry.getProvider(name)?.isConfigured() ?? false;
+  const anthropicOk = ok("anthropic");
+  const deepseekOk  = ok("deepseek");
+  const geminiOk    = ok("gemini");
+  const aimlapiOk   = ok("aimlapi");
+  const openaiOk    = ok("openai");
+  // huggingface is always available (public models need no key)
+
+  const HIGH_STAKES   = new Set(["security", "logic", "data", "code_debt", "investor_readiness", "intelligence"]);
+  const LARGE_CONTEXT = new Set(["visual", "domain_manifest", "domain_pass", "portfolio_synthesize"]);
+  const SYNTHESIS     = new Set(["synthesize", "cluster_synthesize", "meta_synthesize", "portfolio_synthesize", "synthesize_project"]);
+
+  const isHighStakes   = HIGH_STAKES.has(auditKind ?? "");
+  const isLargeContext = LARGE_CONTEXT.has(auditKind ?? "");
+  const isSynthesis    = SYNTHESIS.has(auditKind ?? "");
+
+  const chain: string[] = [];
 
   switch (strategy) {
-    case "aggressive":
-      // Cheapest: haiku > mini
-      if (anthropicOk) return { primary: "anthropic:haiku", fallback: "openai:mini" };
-      return { primary: "openai:mini", fallback: undefined };
-
     case "precision":
-      // Highest quality: sonnet > balanced
-      if (anthropicOk) return { primary: "anthropic:sonnet", fallback: "openai:balanced" };
-      return { primary: "openai:balanced", fallback: "openai:mini" };
+      // Best available; cost is secondary
+      if (isSynthesis && anthropicOk)    chain.push("anthropic:opus");
+      if (isSynthesis && deepseekOk)     chain.push("deepseek:reasoner");
+      if (anthropicOk)                   chain.push("anthropic:sonnet");
+      if (isHighStakes && deepseekOk)    chain.push("deepseek:reasoner");
+      if (deepseekOk)                    chain.push("deepseek:chat");
+      if (openaiOk)                      chain.push("openai:balanced");
+      if (isLargeContext && geminiOk)    chain.push("gemini:flash");
+      if (geminiOk)                      chain.push("gemini:flash");
+      if (anthropicOk)                   chain.push("anthropic:haiku");
+      if (aimlapiOk)                     chain.push("aimlapi:expensive");
+      if (openaiOk)                      chain.push("openai:mini");
+      chain.push("aimlapi:mid", "huggingface:small");
+      break;
+
+    case "aggressive":
+      // Minimize cost while keeping audit-viable quality
+      if (anthropicOk)                   chain.push("anthropic:haiku");
+      if (isHighStakes && deepseekOk)    chain.push("deepseek:chat");
+      if (isLargeContext && geminiOk)    chain.push("gemini:flash");
+      if (deepseekOk)                    chain.push("deepseek:chat");
+      if (geminiOk)                      chain.push("gemini:flash");
+      if (aimlapiOk)                     chain.push("aimlapi:mid");
+      if (openaiOk)                      chain.push("openai:mini");
+      chain.push("aimlapi:cheap", "huggingface:small");
+      break;
+
+    case "economy":
+      // Free / near-free only
+      if (geminiOk)                      chain.push("gemini:flash8b");
+      if (aimlapiOk)                     chain.push("aimlapi:cheap");
+      chain.push("huggingface:small", "huggingface:nano");
+      if (openaiOk)                      chain.push("openai:mini");
+      if (anthropicOk)                   chain.push("anthropic:haiku");
+      break;
 
     case "balanced":
     default:
-      // Best value: deepseek:chat (~10x cheaper than sonnet, strong code analysis)
-      // → fall back to sonnet if no DeepSeek key, then mini as last resort
-      if (deepseekOk) return { primary: "deepseek:chat", fallback: anthropicOk ? "anthropic:haiku" : "openai:mini" };
-      if (anthropicOk) return { primary: "anthropic:sonnet", fallback: "openai:mini" };
-      return { primary: "openai:mini", fallback: undefined };
+      // Best value: DeepSeek V3 ~10× cheaper than Sonnet, top-tier for code
+      // High-stakes audits get a precision anchor regardless of strategy
+      if (isHighStakes && anthropicOk)   chain.push("anthropic:sonnet");
+      if (isHighStakes && deepseekOk)    chain.push("deepseek:reasoner");
+      // Large-context passes lead with Gemini (1M token window)
+      if (isLargeContext && geminiOk)    chain.push("gemini:flash");
+      if (deepseekOk)                    chain.push("deepseek:chat");
+      if (anthropicOk)                   chain.push("anthropic:sonnet");
+      if (geminiOk)                      chain.push("gemini:flash");
+      if (openaiOk)                      chain.push("openai:balanced");
+      if (anthropicOk)                   chain.push("anthropic:haiku");
+      if (aimlapiOk)                     chain.push("aimlapi:mid");
+      if (openaiOk)                      chain.push("openai:mini");
+      chain.push("aimlapi:cheap", "huggingface:small");
+      break;
   }
+
+  return dedupe(chain);
+}
+
+function dedupe(arr: string[]): string[] {
+  const seen = new Set<string>();
+  return arr.filter((x) => { if (seen.has(x)) return false; seen.add(x); return true; });
+}
+
+/** @deprecated Use resolveModelChain() */
+export function resolveModel(): { primary: string; fallback: string | undefined } {
+  const chain = resolveModelChain();
+  return { primary: chain[0] ?? "openai:mini", fallback: chain[1] };
 }
 
 export async function auditWithLlm(
@@ -110,45 +181,39 @@ export async function auditWithLlm(
   }
 ): Promise<AuditLlmResult> {
   const registry = getRegistry();
-  const { primary, fallback } = resolveModel();
+  const chain = resolveModelChain(auditKind);
 
-  // Check if at least one provider is configured
-  const primaryRef = primary.split(":");
-  const primaryProvider = registry.getProvider(primaryRef[0]);
+  // Check that at least one provider in the chain is configured
+  const anyConfigured = chain.some((ref) => {
+    const provName = ref.split(":")[0];
+    return registry.getProvider(provName)?.isConfigured() ?? false;
+  });
 
-  if (!primaryProvider || !primaryProvider.isConfigured()) {
-    const fallbackRef = fallback?.split(":");
-    const fallbackProvider = fallbackRef ? registry.getProvider(fallbackRef[0]) : null;
-
-    if (!fallbackProvider || !fallbackProvider.isConfigured()) {
-      console.warn(
-        `[lyra-worker] No LLM provider configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY`
-      );
-      return {
-        coverage: {
-          coverage_complete: false,
-          confidence: "low",
-          checklist_id: extras?.checklistId,
-          incomplete_reason: "No LLM provider configured",
+  if (!anyConfigured) {
+    console.warn(`[lyra-worker] No LLM provider configured. Set one of: ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, AIMLAPI_API_KEY`);
+    return {
+      coverage: {
+        coverage_complete: false,
+        confidence: "low",
+        checklist_id: extras?.checklistId,
+        incomplete_reason: "No LLM provider configured",
+      },
+      model: "none",
+      provider: "none",
+      raw_response: "No LLM provider configured",
+      findings: [
+        {
+          finding_id: `${appName}-no-llm-provider`,
+          title: "No LLM provider configured",
+          description: "Set ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or AIMLAPI_API_KEY.",
+          type: "question",
+          severity: "minor",
+          priority: "P2",
+          status: "open",
+          category: "config",
         },
-        model: "none",
-        provider: "none",
-        raw_response: "No LLM provider configured",
-        findings: [
-          {
-            finding_id: `${appName}-no-llm-provider`,
-            title: "No LLM provider configured",
-            description:
-              "Worker cannot run LLM audit without OPENAI_API_KEY or ANTHROPIC_API_KEY.",
-            type: "question",
-            severity: "minor",
-            priority: "P2",
-            status: "open",
-            category: "config",
-          },
-        ],
-      };
-    }
+      ],
+    };
   }
 
   const user = `App name: ${appName}
@@ -180,7 +245,7 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
 
   let llmResponse;
   try {
-    llmResponse = await registry.call(primary, fallback, {
+    llmResponse = await registry.call(chain, {
       systemPrompt: `${corePrompt}\n\n---\n\n${auditAgentPrompt}`,
       userPrompt: user,
       responseFormat: "json_object",

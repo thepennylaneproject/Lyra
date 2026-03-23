@@ -6,9 +6,9 @@ import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
 export class AnthropicProvider extends LLMProvider {
   name = "anthropic";
   models = {
-    haiku: "claude-3-5-haiku-20241022",
-    sonnet: "claude-3-5-sonnet-20241022",
-    opus: "claude-3-opus-20240229",
+    haiku: "claude-haiku-4-5-20251001",
+    sonnet: "claude-sonnet-4-6",
+    opus: "claude-opus-4-6",
   };
 
   private apiKey: string;
@@ -64,11 +64,11 @@ export class AnthropicProvider extends LLMProvider {
     const inputTokens = data.usage?.input_tokens;
     const outputTokens = data.usage?.output_tokens;
 
-    // Approximate cost estimation (Claude 3.5 pricing)
+    // Approximate cost estimation (Claude 4 pricing)
     let costUsd = 0;
     if (inputTokens && outputTokens) {
       if (model.includes("haiku")) {
-        costUsd = (inputTokens * 0.00000008 + outputTokens * 0.00000024);
+        costUsd = (inputTokens * 0.0000008 + outputTokens * 0.000004);
       } else if (model.includes("sonnet")) {
         costUsd = (inputTokens * 0.000003 + outputTokens * 0.000015);
       } else {

@@ -102,9 +102,9 @@ export function getRoutingCatalog(): ModelCatalog {
       balanced: readStringEnv("LYRA_OPENAI_BALANCED_MODEL", "gpt-4o"),
     },
     anthropic: {
-      haiku: readStringEnv("LYRA_ANTHROPIC_HAIKU_MODEL", "claude-3-haiku"),
-      sonnet: readStringEnv("LYRA_ANTHROPIC_SONNET_MODEL", "claude-3.5-sonnet"),
-      opus: readStringEnv("LYRA_ANTHROPIC_OPUS_MODEL", "claude-3-opus"),
+      haiku: readStringEnv("LYRA_ANTHROPIC_HAIKU_MODEL", "claude-haiku-4-5-20251001"),
+      sonnet: readStringEnv("LYRA_ANTHROPIC_SONNET_MODEL", "claude-sonnet-4-6"),
+      opus: readStringEnv("LYRA_ANTHROPIC_OPUS_MODEL", "claude-opus-4-6"),
     },
     gemini: {
       flash: readStringEnv("LYRA_GEMINI_FLASH_MODEL", "gemini-1.5-flash"),
