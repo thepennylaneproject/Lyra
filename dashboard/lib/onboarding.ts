@@ -871,6 +871,8 @@ function inferTopLevelPurpose(name: string): string {
   if (/^eslint-rules?$/i.test(name)) return "custom ESLint rules";
   if (name === "index.html") return "Vite SPA entry point";
   if (/\.(lock|toml|json|yaml|yml|cjs|mjs|js|ts)$/.test(name)) return "project config file";
+  if (/\.(md|mdx|txt)$/.test(name)) return "documentation";
+  if (/^(LICENSE|LICENCE|AUTHORS|CONTRIBUTORS|NOTICE)/i.test(name)) return "open source license";
   return "repository content";
 }
 
@@ -1546,9 +1548,11 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/\/(billing|checkout|subscription|payment|stripe|webhook)/i.test(file)) return "Billing & Payments";
     if (/supabase\/migrations\/|\/migrations\/.*\.sql$/i.test(file)) return "Database / Migrations";
     if (/\/(test|spec|__tests__)\//i.test(file) || /\.(test|spec)\.(ts|tsx|js|jsx)$/i.test(file)) return "Testing";
+    // audits/ top-level directory — remaining files (not test/spec) go to Specification Engine
+    if (/^audits\//i.test(file)) return "Specification Engine";
     if (/\/(onboarding|wizard|tour|welcome)/i.test(file)) return "Onboarding";
     // AI before broad lib — catches src/lib/ai/, netlify/functions/ai-*, etc.
-    if (/\/(ai|llm|provider|completion|agent|prompt)\//i.test(file)) return "AI / ML Integration";
+    if (/\/(ai|llm|models?|provider|completion|agent|prompt)\//i.test(file)) return "AI / ML Integration";
     if (/\/(flow|canvas|workflow)\//i.test(file)) return "Workflow Engine";
     if (/\/(asset|upload|cloudinary)\//i.test(file)) return "Asset Management";
     if (/\/(specification|expectation|audit[-_]template|audit[-_]output)/i.test(file)) return "Specification Engine";
