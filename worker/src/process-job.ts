@@ -10,7 +10,7 @@ import {
   resolveScopeFiles,
   type AuditScope,
 } from "./context.js";
-import { auditWithLlm, resolveModel } from "./llm.js";
+import { auditWithLlm, resolveModelChain } from "./llm.js";
 import {
   claimJob,
   completeJob,
@@ -914,9 +914,7 @@ async function runClusterSynthesize(
 
   const { getRegistry } = await import("./providers/registry.js");
   const registry = getRegistry();
-  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
-  const synthModel = strategy === "aggressive" ? "openai:mini" : "anthropic:sonnet";
-  const synthFallback = "openai:balanced";
+  const synthChain = resolveModelChain("cluster_synthesize");
 
   let voiceStr = "";
   if (cluster === "standard") voiceStr = "Provide a technical summary of what's broken and how to fix it.";
@@ -929,7 +927,7 @@ async function runClusterSynthesize(
   let score: number | undefined;
 
   try {
-    const llmRes = await registry.call(synthModel, synthFallback, {
+    const llmRes = await registry.call(synthChain, {
       systemPrompt: `${core}\n\nYou are the ${cluster.toUpperCase()} Cluster Synthesizer.\n${voiceStr}\nRespond with ONLY valid JSON matching this schema:\n{\n  "topFindings": ["string"],\n  "synthesisText": "2-3 paragraphs narrative",\n  "score": 8.5\n}`,
       userPrompt: blob,
       temperature: 0.2,
@@ -1001,16 +999,14 @@ async function runMetaSynthesize(
 
   const { getRegistry } = await import("./providers/registry.js");
   const registry = getRegistry();
-  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
-  const synthModel = strategy === "aggressive" ? "openai:mini" : "anthropic:sonnet";
-  const synthFallback = "openai:balanced";
+  const synthChain = resolveModelChain("meta_synthesize");
 
   let narrativeSummary = "No narrative summary generated.";
   let crossClusterP0s: string[] = [];
   let todaysTop5: string[] = [];
 
   try {
-    const llmRes = await registry.call(synthModel, synthFallback, {
+    const llmRes = await registry.call(synthChain, {
       systemPrompt: `${core}\n\nYou are the Project Meta-Synthesizer. Your job is to read the outputs of all individual cluster synthesizers and output a single unified action plan for the project.\nCross-reference P0s across clusters to find systemic issues.\nRespond with ONLY valid JSON matching this schema:\n{\n  "crossClusterP0s": ["string"],\n  "todaysTop5": ["string"],\n  "narrativeSummary": "2-3 paragraphs narrative"\n}`,
       userPrompt: blob,
       temperature: 0.2,
@@ -1078,15 +1074,13 @@ Narrative: ${meta.narrativeSummary}`;
 
   const { getRegistry } = await import("./providers/registry.js");
   const registry = getRegistry();
-  const strategy = process.env.LYRA_ROUTING_STRATEGY?.trim().toLowerCase() || "balanced";
-  const synthModel = strategy === "aggressive" ? "openai:mini" : "anthropic:sonnet";
-  const synthFallback = "openai:balanced";
+  const synthChain = resolveModelChain("portfolio_synthesize");
 
   let portfolioNarrative = "No narrative summary generated.";
   let portfolioTop5: string[] = [];
 
   try {
-    const llmRes = await registry.call(synthModel, synthFallback, {
+    const llmRes = await registry.call(synthChain, {
       systemPrompt: `${core}\n\nYou are the Portfolio Meta-Meta Synthesizer. Your job is to read the outputs of all Project Meta-Synthesizers and output a single unified action plan for the entire engineering portfolio.\nCross-reference P0s across ALL projects to find deeply systemic organizational or architectural issues.\nRespond with ONLY valid JSON matching this schema:\n{\n  "portfolioTop5": ["string (state the project name and the action)"],\n  "portfolioNarrative": "3-4 paragraphs of high-level portfolio analysis"\n}`,
       userPrompt: blob,
       temperature: 0.2,
@@ -1143,14 +1137,14 @@ async function runSynthesize(
   const scopeLabel = job.project_name ? `project "${job.project_name}"` : "portfolio";
   let summary = `${scopeLabel}: ${projects.length} project(s), ${lines.length} finding lines.`;
   const registry = getRegistry();
-  const { primary, fallback } = resolveModel();
-  const anyConfigured =
-    registry.getProvider("openai")?.isConfigured() ||
-    registry.getProvider("anthropic")?.isConfigured() ||
-    registry.getProvider("deepseek")?.isConfigured();
+  const synthChain = resolveModelChain("synthesize_project");
+  const anyConfigured = synthChain.some((ref) => {
+    const [p] = ref.split(":");
+    return registry.getProvider(p)?.isConfigured() ?? false;
+  });
   if (anyConfigured) {
     try {
-      const llmRes = await registry.call(primary, fallback, {
+      const llmRes = await registry.call(synthChain, {
         systemPrompt: `${core}\nSummarize audit themes for ${scopeLabel} in 2 short paragraphs.`,
         userPrompt: blob,
         responseFormat: "text",
