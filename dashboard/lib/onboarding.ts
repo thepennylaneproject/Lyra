@@ -1617,13 +1617,15 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/\/hooks?\//i.test(file) || /\/use[A-Z]/.test(file)) return "React Hooks";
     // UI Components — plural-aware so src/components/, src/pages/, src/views/ all match
     if (/\/(components?|ui|widgets?|modals?|panels?|buttons?|forms?|layouts?|pages?|views?)\//i.test(file)) return "UI Components";
+    // CSS/stylesheet files — checked before src/app/ catch so globals.css goes to Design System
+    if (/\.(css|scss|sass|less|styl)$/.test(file)) return "Design System";
+    if (/\/(style|css|theme|token|design)\//i.test(file)) return "Design System";
+    // Storybook stories — build/documentation tooling
+    if (/\/stories?\//i.test(file) || /\.stories\.(ts|tsx|js|jsx)$/.test(file)) return "Build tooling";
     // Broad catches for feature slices, next-gen tree, and app/ directory
     if (/^src\/(features|new|app)\//i.test(file)) return "UI Components";
     // Files directly in src/ (main.tsx, App.tsx, vite-env.d.ts, etc.)
     if (/^src\/[^/]+\.(ts|tsx|js|jsx)$/.test(file)) return "UI Components";
-    if (/\/(style|css|theme|token|design)\//i.test(file)) return "Design System";
-    // CSS/stylesheet files anywhere (src/index.css, src/app/globals.css, etc.)
-    if (/\.(css|scss|sass|less|styl)$/.test(file)) return "Design System";
     if (/\/(dashboard|admin|metric|analytics)\//i.test(file)) return "Admin / Analytics";
     // API endpoints — exclude only real test files (*.test.ts, __tests__/), not *-test.ts endpoints
     if (/\/(api|functions?|endpoint|route)\b/i.test(file) && !/(^|\/)__tests__\/|\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file)) return "API Endpoints";
