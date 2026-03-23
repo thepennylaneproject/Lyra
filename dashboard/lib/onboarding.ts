@@ -1617,11 +1617,13 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/\/hooks?\//i.test(file) || /\/use[A-Z]/.test(file)) return "React Hooks";
     // UI Components — plural-aware so src/components/, src/pages/, src/views/ all match
     if (/\/(components?|ui|widgets?|modals?|panels?|buttons?|forms?|layouts?|pages?|views?)\//i.test(file)) return "UI Components";
-    // Broad catches for feature slices and next-gen tree — mostly UI after specific patterns above
-    if (/^src\/(features|new)\//i.test(file)) return "UI Components";
+    // Broad catches for feature slices, next-gen tree, and app/ directory
+    if (/^src\/(features|new|app)\//i.test(file)) return "UI Components";
     // Files directly in src/ (main.tsx, App.tsx, vite-env.d.ts, etc.)
     if (/^src\/[^/]+\.(ts|tsx|js|jsx)$/.test(file)) return "UI Components";
     if (/\/(style|css|theme|token|design)\//i.test(file)) return "Design System";
+    // CSS/stylesheet files anywhere (src/index.css, src/app/globals.css, etc.)
+    if (/\.(css|scss|sass|less|styl)$/.test(file)) return "Design System";
     if (/\/(dashboard|admin|metric|analytics)\//i.test(file)) return "Admin / Analytics";
     // API endpoints — exclude only real test files (*.test.ts, __tests__/), not *-test.ts endpoints
     if (/\/(api|functions?|endpoint|route)\b/i.test(file) && !/(^|\/)__tests__\/|\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file)) return "API Endpoints";
@@ -1632,6 +1634,8 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/(doc|readme|guide|changelog)/i.test(file)) return "Documentation";
     if (/\/(script|tool|util|helper)\//i.test(file)) return "Utilities & Scripts";
     if (/^scripts\//i.test(file)) return "Utilities & Scripts";
+    // src/ subdirectories not caught by specific patterns above (pipeline, utils, types, etc.)
+    if (/^src\/(?:pipeline|utils?|constants?|types?|contexts?|services?|adapters?)\//i.test(file)) return "Utilities & Scripts";
     // src/lib catch-all — after all more-specific patterns
     if (/^src\/lib\//i.test(file)) return "Utilities & Scripts";
     // Root-level files with no subdirectory (package.json, vite.config.ts, index.html, etc.)
