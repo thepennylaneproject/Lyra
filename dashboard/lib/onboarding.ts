@@ -104,6 +104,11 @@ interface RepoSnapshot {
   };
   stack: Project["stack"];
   profileSummary: ProjectProfileSummary;
+  // Deep-analysis fields — populated after fileSamples are read
+  databaseSchema: string;
+  stateStores: string[];
+  architectureDetail: string;
+  criticalFileSummaries: Array<{ file: string; role: string; exports: string[]; behaviors: string[] }>;
 }
 
 export function deriveProjectName(input: OnboardRepositoryInput): string {
@@ -281,6 +286,8 @@ function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string, provide
   const deploymentSignals = detectDeploymentSignals(files, root);
   const liveUrls = extractUrls(files, root).filter((url) => /^https?:\/\//.test(url));
   const gitInfo = readGitInfo(root);
+  // Deep analysis — depends on fileSamples, computed after main fields
+  const fileSamplesEarly = sampleFiles(files, root);
   const stack = {
     language: languages[0] || guessPrimaryLanguage(files),
     framework: frameworks[0] || "unknown",
@@ -323,7 +330,7 @@ function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string, provide
     testFiles,
     allFilePaths: files,
     topLevelTree,
-    fileSamples: sampleFiles(files, root),
+    fileSamples: fileSamplesEarly,
     commands: {
       test: packageScripts.test,
       lint: packageScripts.lint,
@@ -331,6 +338,10 @@ function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string, provide
       typecheck: packageScripts.typecheck,
     },
     stack,
+    databaseSchema: extractDatabaseSchema(fileSamplesEarly),
+    stateStores: extractZustandStores(fileSamplesEarly),
+    architectureDetail: detectArchitectureDetail(pkg, files, fileSamplesEarly),
+    criticalFileSummaries: summarizeCriticalFiles(fileSamplesEarly),
     profileSummary: {
       status: classifyRepoStatus(files, testFiles, deploymentSignals),
       languages,
@@ -340,6 +351,208 @@ function collectRepoSnapshot(access: RepoAccess, defaultBranch?: string, provide
       liveUrls: [...new Set(liveUrls)].slice(0, 5),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Deep analysis — schema, architecture, state, critical-file summaries
+// ---------------------------------------------------------------------------
+
+function extractDatabaseSchema(fileSamples: Array<{ path: string; excerpt: string }>): string {
+  const tables = new Map<string, Set<string>>();
+  const migrations = fileSamples.filter(
+    (s) => /migrations?\/.*\.sql$/i.test(s.path) || /schema\.sql$/i.test(s.path)
+  );
+
+  for (const sample of migrations) {
+    // CREATE TABLE [IF NOT EXISTS] [schema.]name (body)
+    for (const m of sample.excerpt.matchAll(
+      /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"?\w+"?\.)?"?(\w+)"?\s*\(([\s\S]*?)(?:\n\s*\);)/gi
+    )) {
+      const tableName = m[1].toLowerCase();
+      // Skip system/extension tables
+      if (/^(spatial_ref_sys|schema_migrations|_prisma|pg_)/i.test(tableName)) continue;
+      const body = m[2];
+      const cols = body
+        .split(/\r?\n/)
+        .map((l) => l.trim().match(/^"?(\w+)"?\s+\w/)?.[1] ?? "")
+        .filter((c) => c && !c.match(/^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT|INDEX|EXCLUDE|id$)/i) && c.length > 1);
+      const set = tables.get(tableName) ?? new Set<string>();
+      // Also capture id explicitly if present
+      if (/\bUUID\b|\bSERIAL\b/i.test(body)) set.add("id");
+      cols.forEach((c) => set.add(c));
+      tables.set(tableName, set);
+    }
+    // ALTER TABLE name ADD COLUMN col
+    for (const m of sample.excerpt.matchAll(
+      /ALTER\s+TABLE\s+(?:ONLY\s+)?(?:"?\w+"?\.)?"?(\w+)"?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?/gi
+    )) {
+      const tableName = m[1].toLowerCase();
+      if (/^(spatial_ref_sys|schema_migrations)/i.test(tableName)) continue;
+      const set = tables.get(tableName) ?? new Set<string>();
+      set.add(m[2]);
+      tables.set(tableName, set);
+    }
+  }
+
+  if (tables.size === 0) return "[NOT FOUND IN CODEBASE]";
+  return [...tables.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([table, cols]) => {
+      const list = [...cols].slice(0, 10);
+      const more = cols.size > 10 ? ` + ${cols.size - 10} more cols` : "";
+      return `- **${table}**: ${list.join(", ")}${more}`;
+    })
+    .join("\n");
+}
+
+function extractZustandStores(fileSamples: Array<{ path: string; excerpt: string }>): string[] {
+  const stores: string[] = [];
+  for (const sample of fileSamples) {
+    // Zustand stores use create<T>() — match variable names assigned to create(
+    for (const m of sample.excerpt.matchAll(/(?:export\s+)?const\s+(use\w+(?:Store|State)|use\w+)\s*=\s*create[<(]/g)) {
+      if (!stores.includes(m[1])) stores.push(m[1]);
+    }
+    // File-name-based detection for store files that export a default store
+    const base = sample.path.split("/").pop()?.replace(/\.(ts|tsx|js)$/, "") ?? "";
+    if (/Store$|\.store$/i.test(base) && !stores.some((s) => s.toLowerCase().includes(base.toLowerCase()))) {
+      stores.push(base);
+    }
+  }
+  return stores;
+}
+
+function detectArchitectureDetail(
+  pkg: Record<string, unknown> | null,
+  allFilePaths: string[],
+  fileSamples: Array<{ path: string; excerpt: string }>
+): string {
+  const deps = dependencyNames(pkg);
+  const parts: string[] = [];
+
+  // Build system / entry
+  const hasIndexHtml = allFilePaths.includes("index.html");
+  if (deps.has("vite") && hasIndexHtml) {
+    parts.push("**Build**: Vite SPA — `index.html` is the entry point, output bundled to `dist/`");
+  } else if (deps.has("next")) {
+    const hasAppDir = allFilePaths.some((f) => /^(src\/)?app\//.test(f));
+    parts.push(`**Build**: Next.js (${hasAppDir ? "App Router" : "Pages Router"})`);
+  }
+
+  // Routing
+  if (deps.has("react-router-dom")) {
+    const pkgDeps = pkg && typeof pkg.dependencies === "object"
+      ? (pkg.dependencies as Record<string, string>) : {};
+    const ver = pkgDeps["react-router-dom"] ?? "";
+    parts.push(`**Routing**: React Router DOM ${ver} — client-side SPA routing with \`<BrowserRouter>\` + \`<Routes>\``);
+  }
+
+  // State management
+  if (deps.has("zustand")) {
+    const storeFiles = allFilePaths.filter((f) => /(store|slice)\.(ts|tsx)$/.test(f));
+    const storeCount = storeFiles.length;
+    parts.push(`**Client state**: Zustand${storeCount > 0 ? ` — ${storeCount} store file${storeCount > 1 ? "s" : ""} detected` : ""}`);
+    if (deps.has("immer")) parts.push("**State mutations**: Immer (immutable produce() updates inside Zustand)");
+  } else if (deps.has("@reduxjs/toolkit")) {
+    parts.push("**Client state**: Redux Toolkit");
+  } else if (deps.has("jotai")) {
+    parts.push("**Client state**: Jotai atoms");
+  }
+
+  // Server state / data fetching
+  if (deps.has("@tanstack/react-query") || deps.has("react-query")) {
+    parts.push("**Server state**: TanStack React Query — async data fetching, caching, and background refetch");
+  }
+
+  // Backend pattern
+  const netlifyFnTs = allFilePaths.filter((f) => /^netlify\/functions\/[^/]+\.ts$/.test(f));
+  const netlifyFnJs = allFilePaths.filter((f) => /^netlify\/functions\/[^/]+\.js$/.test(f));
+  const hasEdge = allFilePaths.some((f) => /^netlify\/edge-functions\//.test(f));
+  if (netlifyFnTs.length + netlifyFnJs.length > 0) {
+    parts.push(
+      `**Backend**: ${netlifyFnTs.length + netlifyFnJs.length} Netlify serverless functions (TypeScript)` +
+      (hasEdge ? " + edge functions" : "") +
+      " — each function verifies Supabase JWTs before processing"
+    );
+  }
+
+  // Folder structure
+  const folders: string[] = [];
+  if (allFilePaths.some((f) => /^src\/domain\//.test(f))) folders.push("`src/domain/` — business types, domain logic, policy");
+  if (allFilePaths.some((f) => /^src\/features\//.test(f))) folders.push("`src/features/` — vertical feature slices");
+  if (allFilePaths.some((f) => /^src\/lib\//.test(f))) folders.push("`src/lib/` — shared utilities, API clients, design tokens");
+  if (allFilePaths.some((f) => /^src\/components\//.test(f))) folders.push("`src/components/` — shared UI components");
+  if (allFilePaths.some((f) => /^src\/hooks\//.test(f))) folders.push("`src/hooks/` — custom React hooks");
+  if (allFilePaths.some((f) => /^src\/new\//.test(f))) folders.push("`src/new/` — next-generation route/component tree");
+  if (folders.length > 0) parts.push(`**Folder structure**: ${folders.join(", ")}`);
+
+  // Validation
+  if (fileSamples.some((s) => /z\.object|z\.string|z\.enum/i.test(s.excerpt))) {
+    parts.push("**Validation**: Zod schema validation at API boundaries");
+  }
+
+  return parts.length > 0 ? parts.join("\n") : "[NOT FOUND IN CODEBASE]";
+}
+
+function summarizeCriticalFiles(
+  fileSamples: Array<{ path: string; excerpt: string }>
+): Array<{ file: string; role: string; exports: string[]; behaviors: string[] }> {
+  const targets: Array<{ match: RegExp; role: string }> = [
+    { match: /src\/lib\/ai\/router/i, role: "AI provider router / fallback dispatch" },
+    { match: /src\/lib\/ai\/registry/i, role: "AI model registry" },
+    { match: /netlify\/functions\/providers\./i, role: "Provider configuration (endpoint + auth)" },
+    { match: /netlify\/functions\/ai-complete/i, role: "AI completion serverless endpoint" },
+    { match: /netlify\/functions\/ai-stream/i, role: "AI streaming serverless endpoint" },
+    { match: /netlify\/functions\/utils\/credential/i, role: "Credential encryption + storage utilities" },
+    { match: /netlify\/functions\/utils\/retrieval/i, role: "RAG / retrieval provider utilities" },
+    { match: /src\/domain\/pricing/i, role: "Pricing tiers and feature gating" },
+    { match: /src\/domain\/cost-policy/i, role: "Cost and budget enforcement" },
+    { match: /src\/domain\/model-selector/i, role: "Model selection strategy" },
+    { match: /src\/lib\/models\//i, role: "Model definitions and metadata" },
+    { match: /src\/domain\/task-queue/i, role: "Async task queue" },
+    { match: /src\/lib\/prompt-architect/i, role: "Prompt template engine" },
+  ];
+
+  const results: Array<{ file: string; role: string; exports: string[]; behaviors: string[] }> = [];
+
+  for (const { match, role } of targets) {
+    const sample = fileSamples.find((s) => match.test(s.path));
+    if (!sample || sample.excerpt === "(empty file)") continue;
+    const e = sample.excerpt;
+
+    // Exported symbols
+    const exports: string[] = [];
+    for (const m of e.matchAll(/export\s+(?:async\s+)?(?:const|function|class|default\s+(?:function|class)?)\s+(\w+)/g)) {
+      if (m[1] && m[1] !== "default") exports.push(m[1]);
+    }
+    // Named exports: export { a, b }
+    for (const m of e.matchAll(/export\s*\{([^}]+)\}/g)) {
+      m[1].split(",").forEach((name) => {
+        const n = name.trim().split(/\s+as\s+/).pop()?.trim();
+        if (n && !exports.includes(n)) exports.push(n);
+      });
+    }
+
+    // Behaviour signals from content
+    const behaviors: string[] = [];
+    // Named config / registry constants
+    for (const m of e.matchAll(/(?:export\s+)?const\s+([A-Z_][A-Z0-9_]{3,})\s*(?::|=)/g)) {
+      behaviors.push(`defines \`${m[1]}\``);
+    }
+    if (/fallback|retry.*provider|catch.*fallback/i.test(e)) behaviors.push("provider fallback / retry");
+    if (/stream|ReadableStream|SSE|text\/event-stream/i.test(e)) behaviors.push("streaming response");
+    if (/encrypt|decrypt|aes|hmac|crypto/i.test(e)) behaviors.push("AES encryption");
+    if (/supabase.*getUser|verifyJwt|getBearerToken/i.test(e)) behaviors.push("Supabase JWT verification");
+    if (/stripe\.customers|stripe\.subscriptions|stripe\.checkout/i.test(e)) behaviors.push("Stripe lifecycle");
+    if (/p-limit|concurrency\s*:/i.test(e)) behaviors.push("concurrency limiting (p-limit)");
+    if (/pgvector|embedding|vector.*search/i.test(e)) behaviors.push("pgvector / embedding search");
+    if (/tier|quota|limit.*plan|plan.*limit/i.test(e)) behaviors.push("tier / quota enforcement");
+    if (/template.*interpolat|handlebars|mustache|\{\{/i.test(e)) behaviors.push("template interpolation");
+    if (/zod|z\.object/i.test(e)) behaviors.push("Zod input validation");
+
+    results.push({ file: sample.path, role, exports: exports.slice(0, 10), behaviors });
+  }
+
+  return results;
 }
 
 function buildProjectProfile(snapshot: RepoSnapshot): string {
@@ -398,7 +611,7 @@ ${dependencyTable}
 ${treeBlock || "- [NOT FOUND IN CODEBASE]"}
 
 ### 4. Architecture Pattern
-${snapshot.frameworks.length > 0 ? `${snapshot.frameworks.join(", ")} application structure detected.` : "[NOT FOUND IN CODEBASE]"}
+${snapshot.architectureDetail}
 
 ### 5. Database / Storage Layer
 ${verified(snapshot.stack?.database)} [VERIFIED OR INFERRED FROM CONFIG]
@@ -417,6 +630,15 @@ ${detectAuthSignals(snapshot.dependencyGroups, snapshot.fileSamples)}
 
 ### 10. Environment Variables
 ${snapshot.envVars.length > 0 ? snapshot.envVars.map((name) => `- ${name}`).join("\n") : "[NOT FOUND IN CODEBASE]"}
+
+### 11. State Management
+${buildStateManagementSection(snapshot)}
+
+### 12. Database Schema
+${snapshot.databaseSchema}
+
+### 13. Key Subsystem Summaries
+${buildCriticalFileSummariesSection(snapshot)}
 
 ## SECTION 3: FEATURE INVENTORY
 
@@ -462,6 +684,51 @@ Sections with gaps: sections depending on runtime, external services, and undocu
 Total files analyzed: ${snapshot.fileCount}
 ---
 \`\`\``;
+}
+
+function buildStateManagementSection(snapshot: RepoSnapshot): string {
+  const lines: string[] = [];
+  const deps = Object.values(snapshot.dependencyGroups).flat();
+
+  if (deps.some((d) => /\bzustand\b/i.test(d))) {
+    if (snapshot.stateStores.length > 0) {
+      lines.push(`**Zustand stores (${snapshot.stateStores.length}):** ${snapshot.stateStores.map((s) => `\`${s}\``).join(", ")}`);
+    } else {
+      lines.push("**Zustand** — detected in dependencies; no store variable names extracted from sampled files");
+    }
+    if (deps.some((d) => /\bimmer\b/i.test(d))) {
+      lines.push("Immer is used for immutable state updates within stores.");
+    }
+  } else if (deps.some((d) => /@reduxjs\/toolkit/i.test(d))) {
+    lines.push("**Redux Toolkit** — state slices and reducers");
+  } else if (deps.some((d) => /\bjotai\b/i.test(d))) {
+    lines.push("**Jotai** — atomic state");
+  }
+
+  if (deps.some((d) => /@tanstack\/react-query/i.test(d))) {
+    lines.push("**TanStack React Query** — server state, background refetch, stale-while-revalidate caching");
+  }
+
+  // Context providers
+  const contextFiles = snapshot.fileSamples.filter((s) => /(context|provider)\.(tsx|ts)$/i.test(s.path));
+  if (contextFiles.length > 0) {
+    lines.push(`**React Context providers (${contextFiles.length}):** ${contextFiles.slice(0, 6).map((s) => `\`${s.path}\``).join(", ")}${contextFiles.length > 6 ? ` + ${contextFiles.length - 6} more` : ""}`);
+  }
+
+  if (lines.length === 0) return "[NOT FOUND IN CODEBASE]";
+  return lines.join("\n\n");
+}
+
+function buildCriticalFileSummariesSection(snapshot: RepoSnapshot): string {
+  if (snapshot.criticalFileSummaries.length === 0) {
+    return "[NOT FOUND IN CODEBASE — key source files not in sample set]";
+  }
+  return snapshot.criticalFileSummaries.map(({ file, role, exports, behaviors }) => {
+    const parts: string[] = [`**\`${file}\`** — ${role}`];
+    if (exports.length > 0) parts.push(`Exports: ${exports.map((e) => `\`${e}\``).join(", ")}`);
+    if (behaviors.length > 0) parts.push(`Behaviours: ${behaviors.join(", ")}`);
+    return parts.join("\n");
+  }).join("\n\n");
 }
 
 function buildExpectations(snapshot: RepoSnapshot): string {
@@ -642,7 +909,15 @@ function isKeyFile(file: string): boolean {
     /^supabase\/functions\//i.test(file) ||
     /\/(src|app)\/(main|index|App)\.(ts|tsx|js|jsx)$/i.test(file) ||
     /^(src|app)\/(main|index|App)\.(ts|tsx|js|jsx)$/i.test(file) ||
-    /^(src|app)\/.*\/(index|route|server)\.(ts|js)$/i.test(file)
+    /^(src|app)\/.*\/(index|route|server)\.(ts|js)$/i.test(file) ||
+    // AI subsystem — router, registry, provider config, model definitions
+    /src\/lib\/(ai|models)\//i.test(file) ||
+    /netlify\/functions\/utils\/(credential|retrieval|stripe)/i.test(file) ||
+    // Domain logic — pricing tiers, cost policy, model selection are high-value read targets
+    /src\/domain\/(pricing|cost-policy|model-selector|types|task-queue)\.(ts|tsx)$/i.test(file) ||
+    // State stores
+    /src\/(store|stores|state)\//i.test(file) ||
+    /\/(use\w*Store|use\w*State)\.(ts|tsx)$/i.test(file)
   );
 }
 
@@ -1253,11 +1528,19 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
     if (/\/(style|css|theme|token|design)/i.test(file)) return "Design System";
     if (/\/(asset|image|upload|media|storage|cloudinary)/i.test(file)) return "Asset Management";
     if (/\/(config|setting|env)/i.test(file)) return "Configuration";
-    if (/\/(script|tool|util|helper|lib)/i.test(file)) return "Utilities & Scripts";
-    if (/\/(doc|readme|guide|changelog)/i.test(file)) return "Documentation";
     if (/\/(onboarding|wizard|tour|welcome)/i.test(file)) return "Onboarding";
     if (/\/(dashboard|admin|metric|analytics)/i.test(file)) return "Admin / Analytics";
     if (/\/(flow|canvas|workflow|pipeline|node)/i.test(file)) return "Workflow Engine";
+    // More specific buckets to avoid a large "Other" catch-all
+    if (/\/(specification|expectation|audit.template|audit.output)/i.test(file)) return "Specification Engine";
+    if (/^src\/domain\//i.test(file)) return "Domain Logic";
+    if (/\/(store|stores|state|slice|atom)\b/i.test(file)) return "State Management";
+    if (/\/(context|provider)\.(tsx?|jsx?)$/i.test(file)) return "React Context / Providers";
+    if (/\/(pipeline|transform|processor|resolver)\//i.test(file)) return "Data Pipeline";
+    if (/^\.github\/|^\.cursor\//i.test(file)) return "Agent / CI Rules";
+    if (/^archive\//i.test(file)) return "Archive";
+    if (/\/(doc|readme|guide|changelog)/i.test(file)) return "Documentation";
+    if (/\/(script|tool|util|helper|lib)\//i.test(file)) return "Utilities & Scripts";
     return "Other";
   };
 
