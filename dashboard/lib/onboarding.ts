@@ -1490,7 +1490,7 @@ function buildExecutiveSummary(snapshot: RepoSnapshot): string {
   const gaps = [];
   const deps = Object.values(snapshot.dependencyGroups).flat();
   if (!deps.some((d) => /sentry|bugsnag|datadog/i.test(d))) gaps.push("no error monitoring");
-  if (!snapshot.configFiles.some((f) => /\.env\.example/i.test(f))) gaps.push("no .env.example");
+  if (!snapshot.allFilePaths.some((f) => /^\.env\.example$|\.env\.template/i.test(f))) gaps.push("no .env.example");
   const hasCors = snapshot.fileSamples.some((s) => /Access-Control-Allow-Origin.*\*/i.test(s.excerpt));
   if (hasCors) gaps.push("wildcard CORS policy in serverless functions");
 
@@ -1525,7 +1525,7 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
   // Group files into feature areas by path pattern
   const areas: Record<string, { files: string[]; signals: Set<string> }> = {};
   const categorize = (file: string): string => {
-    // --- Exclusive top-level directories — checked first to prevent misclassification ---
+    // --- Exclusive top-level directories — checked first ---
     if (/^archive\//i.test(file)) return "Archive";
     if (/^(\.github|\.cursor)\//i.test(file)) return "Agent / CI Rules";
     if (/^\.storybook\//i.test(file)) return "Build tooling";
@@ -1535,34 +1535,44 @@ function buildFeatureInventory(snapshot: RepoSnapshot): string {
         /\.(env\.example|env\.local|env\.production)$/i.test(file) ||
         /^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|deno\.lock|bun\.lockb)$/.test(file)) return "Configuration";
 
-    // --- Domain-specific — most exclusive first ---
+    // --- Root-level plain-text docs (AGENTS.md, README.md, LICENSE, etc.) ---
+    if (/^[A-Z][A-Z0-9 _-]*\.(md|txt)$/i.test(file)) return "Documentation";
+    if (/^(LICENSE|LICENCE|AUTHORS|CONTRIBUTORS|NOTICE)(\.txt)?$/i.test(file)) return "Configuration";
+    // Files with no extension that look like spec/charter docs (e.g. "Codra Language Charter")
+    if (/^[A-Z][A-Za-z0-9 ]+(Charter|Specification|Manifest|Policy|Contract).*$/.test(file)) return "Documentation";
+
+    // --- Domain-specific (ordered most exclusive → broadest) ---
     if (/\/(auth|login|signup|register|password|session)\b/i.test(file)) return "Authentication";
     if (/\/(billing|checkout|subscription|payment|stripe|webhook)/i.test(file)) return "Billing & Payments";
     if (/supabase\/migrations\/|\/migrations\/.*\.sql$/i.test(file)) return "Database / Migrations";
     if (/\/(test|spec|__tests__)\//i.test(file) || /\.(test|spec)\.(ts|tsx|js|jsx)$/i.test(file)) return "Testing";
     if (/\/(onboarding|wizard|tour|welcome)/i.test(file)) return "Onboarding";
-    // AI before broad lib — catches src/lib/ai/, netlify/functions/ai*, etc.
+    // AI before broad lib — catches src/lib/ai/, netlify/functions/ai-*, etc.
     if (/\/(ai|llm|provider|completion|agent|prompt)\//i.test(file)) return "AI / ML Integration";
     if (/\/(flow|canvas|workflow)\//i.test(file)) return "Workflow Engine";
     if (/\/(asset|upload|cloudinary)\//i.test(file)) return "Asset Management";
     if (/\/(specification|expectation|audit[-_]template|audit[-_]output)/i.test(file)) return "Specification Engine";
-    // Domain logic directory
     if (/^src\/domain\//i.test(file)) return "Domain Logic";
-    // Context/provider files — before UI Components so AssistantContext.tsx is caught here
+    // Context/provider files — before UI so AssistantContext.tsx is caught here
     if (/\/(context|provider)\.(tsx?|jsx?)$/i.test(file)) return "React Context / Providers";
     // State stores — before UI
     if (/\/(store|stores|slice|atom)\.(ts|tsx)$|\/stores?\//i.test(file)) return "State Management";
     // Hooks — /hooks/ directory OR /useXxx camelCase (no i flag on second to avoid matching user-)
     if (/\/hooks?\//i.test(file) || /\/use[A-Z]/.test(file)) return "React Hooks";
-    if (/\/(component|ui|widget|modal|panel|button|form|layout|page|view)\//i.test(file)) return "UI Components";
+    // UI Components — plural-aware so src/components/, src/pages/, src/views/ all match
+    if (/\/(components?|ui|widgets?|modals?|panels?|buttons?|forms?|layouts?|pages?|views?)\//i.test(file)) return "UI Components";
+    // Broad catches for feature slices and next-gen tree — mostly UI after specific patterns above
+    if (/^src\/(features|new)\//i.test(file)) return "UI Components";
     if (/\/(style|css|theme|token|design)\//i.test(file)) return "Design System";
     if (/\/(dashboard|admin|metric|analytics)\//i.test(file)) return "Admin / Analytics";
-    if (/\/(api|function|endpoint|route)\b/i.test(file) && !/test/i.test(file)) return "API Endpoints";
+    // API endpoints — plural "functions?" so netlify/functions/* is caught
+    if (/\/(api|functions?|endpoint|route)\b/i.test(file) && !/test/i.test(file)) return "API Endpoints";
     if (/\/(config|setting|env)\//i.test(file)) return "Configuration";
-    if (/\/(doc|readme|guide|changelog)/i.test(file)) return "Documentation";
+    // Documentation — no leading-slash requirement so root-level files match
+    if (/(doc|readme|guide|changelog)/i.test(file)) return "Documentation";
     if (/\/(script|tool|util|helper)\//i.test(file)) return "Utilities & Scripts";
     if (/^scripts\//i.test(file)) return "Utilities & Scripts";
-    // src/lib catch-all — after all more-specific patterns above
+    // src/lib catch-all — after all more-specific patterns
     if (/^src\/lib\//i.test(file)) return "Utilities & Scripts";
     return "Other";
   };
