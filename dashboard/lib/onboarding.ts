@@ -796,18 +796,23 @@ function buildExpectations(snapshot: RepoSnapshot): string {
           s.behaviors.some((b) => /dispatch|fallback|route.*provider/i.test(b)))
     );
   const aiRouterName = (() => {
-    const routerFile = files.find((f) =>
-      /(?:[^/]+\/)*(?:lib\/ai\/router|providers\/(?:router|gateway))\./i.test(f)
-    );
-    if (routerFile) {
-      const base = routerFile.split("/").pop() ?? "";
-      return base.replace(/\.(ts|tsx|js|jsx)$/, "");
-    }
+    // Prefer the exported class/function name (e.g. "AIRouter", "ProviderGateway")
     const routerSummary = snapshot.criticalFileSummaries.find(
       (s) => /router|gateway/i.test(s.role)
     );
     if (routerSummary) {
-      return routerSummary.exports.find((e) => /[Rr]outer|[Gg]ateway/i.test(e)) ?? "AIRouter";
+      const exportedName = routerSummary.exports.find((e) => /[A-Z].*[Rr]outer|[A-Z].*[Gg]ateway/i.test(e));
+      if (exportedName) return exportedName;
+    }
+    // Fall back to the file path turned into a PascalCase label
+    const routerFile = files.find((f) =>
+      /(?:[^/]+\/)*(?:lib\/ai\/router|providers\/(?:router|gateway))\./i.test(f)
+    );
+    if (routerFile) {
+      const base = routerFile.split("/").pop()?.replace(/\.(ts|tsx|js|jsx)$/, "") ?? "";
+      // Convert kebab/snake to PascalCase: "ai-router" → "AIRouter", "router" → "Router"
+      const pascal = base.replace(/(^|[-_])([a-z])/g, (_, __, c: string) => c.toUpperCase());
+      return pascal || "AIRouter";
     }
     return "AIRouter";
   })();
@@ -1186,13 +1191,21 @@ function listFiles(root: string): string[] {
 }
 
 function detectScanRoots(files: string[]): string[] {
-  const roots = new Set<string>();
+  const subDirs = new Set<string>();
+  const topDirs = new Set<string>();
   for (const file of files) {
-    const top = file.split("/").slice(0, 2).join("/");
-    if (/^(src|app|apps|packages|server|api|services|worker|dashboard)(\/|$)/.test(file)) {
-      roots.add(top.endsWith("/") ? top : `${top}/`);
+    const parts = file.split("/");
+    if (!/^(src|app|apps|packages|server|api|services|worker|dashboard)$/.test(parts[0])) continue;
+    if (parts.length >= 3) {
+      // File is inside a subdirectory — use the 2-level directory path as scan root
+      subDirs.add(`${parts[0]}/${parts[1]}/`);
+    } else {
+      // File is directly inside the top-level source dir — record the dir itself
+      topDirs.add(`${parts[0]}/`);
     }
   }
+  // Prefer granular subdirectory roots; fall back to top-level dirs if no subdirs exist
+  const roots = subDirs.size > 0 ? subDirs : topDirs;
   if (roots.size === 0) roots.add("./");
   return [...roots].sort();
 }
