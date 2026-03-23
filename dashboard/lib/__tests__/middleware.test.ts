@@ -153,9 +153,11 @@ describe("Middleware Auth", () => {
   });
 
   describe("Auth bypass condition", () => {
-    it("should allow all requests if no secret is set", () => {
-      // When DASHBOARD_API_SECRET and ORCHESTRATION_ENQUEUE_SECRET are both unset,
-      // middleware returns NextResponse.next() without checking auth
+    it("documents fail-closed behavior when no secret in production", () => {
+      // When both secrets are unset:
+      // - development: middleware allows all /api/* (open API for local DX)
+      // - production: middleware returns 503 unless LYRA_ALLOW_OPEN_API is true/1
+      // See isOpenApiAllowedWithoutSecret() in lib/dashboard-secret.ts and middleware.ts
       const secret = "";
       expect(secret).toBe("");
     });

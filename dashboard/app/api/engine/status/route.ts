@@ -35,10 +35,10 @@ export async function GET() {
     }
     const status = getEngineStatus();
     return NextResponse.json(status);
-  } catch (e) {
-    console.error("GET /api/engine/status", e);
+  } catch (error) {
+    console.error("GET /api/engine/status", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

@@ -1,8 +1,36 @@
-import { useState } from "react";
-import type { Finding, FindingStatus } from "@/lib/types";
+import { useState, useEffect, useCallback } from "react";
+import type { Finding, FindingStatus, RepairJob, SyncMapping } from "@/lib/types";
 import { Badge } from "./Badge";
 import { STATUS_GROUPS } from "@/lib/constants";
 import { isInQueuedSet } from "@/lib/finding-validation";
+import { UI_COPY } from "@/lib/ui-copy";
+import { apiFetch } from "@/lib/api-fetch";
+
+interface FindingLifecyclePayload {
+  linear: {
+    integration_configured: boolean;
+    last_project_sync: string | null;
+    mapping: SyncMapping | null;
+  };
+  repair_jobs: RepairJob[];
+}
+
+function repairLedgerCaption(jobs: RepairJob[], queuedInUi: boolean): string {
+  const j = jobs[0];
+  if (j) {
+    if (j.status === "queued") return UI_COPY.lifecycleRepairQueued;
+    if (j.status === "running") return UI_COPY.lifecycleRepairRunning;
+    if (j.status === "completed") {
+      return j.patch_applied
+        ? `${UI_COPY.lifecycleRepairCompleted} (patch applied reported)`
+        : UI_COPY.lifecycleRepairCompleted;
+    }
+    if (j.status === "failed") return UI_COPY.lifecycleRepairFailed;
+    return `Ledger row: ${j.status}`;
+  }
+  if (queuedInUi) return UI_COPY.lifecycleRepairIntentOnly;
+  return UI_COPY.lifecycleRepairNone;
+}
 
 const WORKFLOW_HINTS: Record<FindingStatus, string> = {
   open: "Finding is new and unresolved. Start work or defer.",
@@ -61,9 +89,49 @@ export function FindingDetail({
   const [queueing, setQueueing] = useState(false);
   const [queueMsg, setQueueMsg] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState<string | null>(null);
+  const [lifecycle, setLifecycle] = useState<FindingLifecyclePayload | null>(null);
+  const [lifecycleLoading, setLifecycleLoading] = useState(true);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const isQueued = isInQueuedSet(queuedFindingIds, projectName, finding.finding_id);
   const fix      = typeof finding.suggested_fix === "object" ? finding.suggested_fix : {};
   const stripe   = SEVERITY_BORDER[finding.severity ?? ""] ?? "var(--ink-border)";
+
+  const loadLifecycle = useCallback(async () => {
+    setLifecycleError(null);
+    setLifecycleLoading(true);
+    try {
+      const res = await apiFetch(
+        `/api/findings/lifecycle?project=${encodeURIComponent(projectName)}&finding_id=${encodeURIComponent(finding.finding_id)}`
+      );
+      const raw = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        setLifecycle(null);
+        const msg =
+          typeof raw.error === "string" ? raw.error : `Could not load (${res.status})`;
+        setLifecycleError(msg);
+        return;
+      }
+      const data = raw as unknown as FindingLifecyclePayload;
+      if (!data?.linear) {
+        setLifecycle(null);
+        setLifecycleError("Invalid lifecycle response");
+        return;
+      }
+      setLifecycle({
+        linear: data.linear,
+        repair_jobs: Array.isArray(data.repair_jobs) ? data.repair_jobs : [],
+      });
+    } catch {
+      setLifecycle(null);
+      setLifecycleError("Network error loading lifecycle");
+    } finally {
+      setLifecycleLoading(false);
+    }
+  }, [projectName, finding.finding_id]);
+
+  useEffect(() => {
+    void loadLifecycle();
+  }, [loadLifecycle]);
 
   const handleAction = async (status: FindingStatus) => {
     setActionInFlight(status);
@@ -147,6 +215,160 @@ export function FindingDetail({
         }}
       >
         {finding.finding_id}
+      </div>
+
+      {/* Audit ↔ Linear ↔ repair — one story */}
+      <div
+        style={{
+          marginBottom: "1.1rem",
+          padding: "0.65rem 0.75rem",
+          borderRadius: "var(--radius-md)",
+          border: "0.5px solid var(--ink-border-faint)",
+          background: "var(--ink-bg-sunken)",
+        }}
+      >
+        <SectionLabel>{UI_COPY.lifecycleSection}</SectionLabel>
+        {lifecycleLoading && (
+          <div
+            style={{
+              fontSize: "10px",
+              fontFamily: "var(--font-mono)",
+              color: "var(--ink-text-4)",
+            }}
+          >
+            Loading Linear / ledger state…
+          </div>
+        )}
+        {lifecycleError && !lifecycleLoading && (
+          <div
+            style={{
+              fontSize: "10px",
+              fontFamily: "var(--font-mono)",
+              color: "var(--ink-text-4)",
+            }}
+          >
+            {lifecycleError} — status actions still work.
+          </div>
+        )}
+        {!lifecycleLoading && !lifecycleError && lifecycle && (
+          <>
+            <ol
+              style={{
+                margin: 0,
+                paddingLeft: "1.15rem",
+                fontSize: "11px",
+                fontFamily: "var(--font-mono)",
+                color: "var(--ink-text-2)",
+                lineHeight: 1.55,
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.35rem",
+              }}
+            >
+              <li>
+                <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.lifecycleLyra}: </span>
+                {finding.status?.replace(/_/g, " ") ?? "—"}
+                <span style={{ color: "var(--ink-text-4)" }}> — </span>
+                {WORKFLOW_HINTS[finding.status] ?? "—"}
+              </li>
+              <li>
+                <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.lifecycleRepairLedger}: </span>
+                {repairLedgerCaption(lifecycle.repair_jobs ?? [], isQueued)}
+              </li>
+              <li>
+                <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.lifecycleLinear}: </span>
+                {!lifecycle.linear.integration_configured && (
+                  <span>{UI_COPY.lifecycleLinearNotConfigured}</span>
+                )}
+                {lifecycle.linear.integration_configured && !lifecycle.linear.mapping && (
+                  <span>{UI_COPY.lifecycleLinearNoIssue}</span>
+                )}
+                {lifecycle.linear.integration_configured && lifecycle.linear.mapping && (
+                  <span>
+                    Linked
+                    {lifecycle.linear.mapping.identifier ? (
+                      <>
+                        {" "}
+                        {lifecycle.linear.mapping.url ? (
+                          <a
+                            href={lifecycle.linear.mapping.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: "var(--ink-blue)" }}
+                          >
+                            {lifecycle.linear.mapping.identifier}
+                          </a>
+                        ) : (
+                          <span style={{ color: "var(--ink-text)" }}>
+                            {lifecycle.linear.mapping.identifier}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      " (issue id on file)"
+                    )}
+                    {lifecycle.linear.mapping.last_synced && (
+                      <span style={{ color: "var(--ink-text-4)" }}>
+                        {" "}
+                        · last sync {lifecycle.linear.mapping.last_synced.slice(0, 10)}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </li>
+            </ol>
+            {lifecycle.linear.mapping &&
+              lifecycle.linear.mapping.lyra_status !== finding.status && (
+                <div
+                  style={{
+                    marginTop: "0.45rem",
+                    fontSize: "10px",
+                    fontFamily: "var(--font-mono)",
+                    color: "var(--ink-amber)",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {UI_COPY.lifecycleLinearDrift}
+                </div>
+              )}
+            <div
+              style={{
+                marginTop: "0.55rem",
+                paddingTop: "0.5rem",
+                borderTop: "0.5px solid var(--ink-border-faint)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "9px",
+                  fontFamily: "var(--font-mono)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--ink-text-4)",
+                  marginBottom: "0.35rem",
+                }}
+              >
+                {UI_COPY.lifecycleNextHeading}
+              </div>
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: "1.1rem",
+                  fontSize: "10px",
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--ink-text-3)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {UI_COPY.lifecycleNextSteps.map((step, idx) => (
+                  <li key={idx} style={{ marginBottom: "0.25rem" }}>
+                    {step}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Description */}
@@ -301,7 +523,7 @@ export function FindingDetail({
             disabled={actionInFlight !== null}
             onClick={() => handleAction("fixed_pending_verify")}
           >
-            {actionInFlight === "fixed_pending_verify" ? "…" : "Mark done"}
+            {actionInFlight === "fixed_pending_verify" ? "…" : "Mark fixed (needs verify)"}
           </button>
         )}
         {finding.status === "fixed_pending_verify" && (
@@ -314,7 +536,30 @@ export function FindingDetail({
           </button>
         )}
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: "0.35rem",
+          }}
+        >
+          {onQueueRepair && !isQueued && (
+            <span
+              style={{
+                fontSize: "10px",
+                fontFamily: "var(--font-mono)",
+                color: "var(--ink-text-4)",
+                maxWidth: "14rem",
+                textAlign: "right",
+                lineHeight: 1.4,
+              }}
+            >
+              {UI_COPY.ledgerIntentHint}
+            </span>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           {onQueueRepair && !isQueued && (
             <button
               type="button"
@@ -324,9 +569,12 @@ export function FindingDetail({
                 setQueueMsg(null);
                 try {
                   await onQueueRepair(finding.finding_id, projectName);
-                  setQueueMsg("✓ queued for repair");
-                } catch {
-                  setQueueMsg("✗ failed to queue");
+                  setQueueMsg(`✓ ${UI_COPY.ledgerRecorded}`);
+                  void loadLifecycle();
+                } catch (e) {
+                  const msg =
+                    e instanceof Error ? e.message : "Could not queue repair.";
+                  setQueueMsg(`✗ ${msg}`);
                 } finally {
                   setQueueing(false);
                 }
@@ -337,14 +585,14 @@ export function FindingDetail({
                 fontFamily:  "var(--font-mono)",
                 fontSize:    "11px",
               }}
-              title="Send to repair engine"
+              title={UI_COPY.addToLedger}
             >
-              {queueing ? "queueing…" : "queue repair →"}
+              {queueing ? UI_COPY.ledgerAdding : UI_COPY.addToLedger}
             </button>
           )}
           {isQueued && (
             <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--ink-amber)" }}>
-              queued for repair
+              {UI_COPY.onLedger}
             </span>
           )}
           {queueMsg && !isQueued && (
@@ -358,6 +606,7 @@ export function FindingDetail({
               {queueMsg}
             </span>
           )}
+          </div>
         </div>
       </div>
     </div>
