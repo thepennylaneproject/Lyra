@@ -10,9 +10,9 @@ import {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as OnboardRepositoryInput;
-    if (!body?.repository_url?.trim() && !body?.local_path?.trim()) {
+    if (!body?.repository_url?.trim()) {
       return NextResponse.json(
-        { error: "repository_url or local_path is required" },
+        { error: "repository_url is required (Lyra clones this URL on the server; local paths are not supported)" },
         { status: 400 }
       );
     }
@@ -44,10 +44,10 @@ export async function POST(request: Request) {
 
     const created = await repo.create(draft);
     return NextResponse.json({ project: created, created: true }, { status: 201 });
-  } catch (e) {
-    console.error("POST /api/onboarding", e);
+  } catch (error) {
+    console.error("POST /api/onboarding", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

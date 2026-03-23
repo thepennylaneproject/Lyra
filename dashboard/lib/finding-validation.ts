@@ -117,8 +117,7 @@ export function isDuplicateFindingId(findings: Finding[], findingId: string): bo
 
 /**
  * Check whether a composite `(projectName, findingId)` key is present in a
- * Set that uses `"projectName:findingId"` composite keys (with backwards
- * compatibility for legacy Sets that stored bare `findingId` values).
+ * Set that uses `"projectName:findingId"` composite keys (server-backed queue only).
  */
 export function isInQueuedSet(
   queuedIds: Set<string> | undefined,
@@ -126,5 +125,5 @@ export function isInQueuedSet(
   findingId: string
 ): boolean {
   if (!queuedIds) return false;
-  return queuedIds.has(`${projectName}:${findingId}`) || queuedIds.has(findingId);
+  return queuedIds.has(`${projectName}:${findingId}`);
 }

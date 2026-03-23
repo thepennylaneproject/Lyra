@@ -1,0 +1,4 @@
+Project,Manual Count,Dashboard Count,Missing from Dashboard,Extra in Dashboard,Manual Categories,Dashboard Categories,Manual Category List,Dashboard Category List
+Codra,19,70,19,70,4,6,"constraint-violation, missing-validation, synth-debt, type-error","accessibility, cognitive-load, logic, security, ux, visual-consistency"
+Relevnt,82,53,82,53,37,3,"a11y-gap, api-cost, architecture, async-bug, async-inefficiency, auth, auth-bypass, broken-flow, build-config, bundle-size, cache-miss, cache-staleness, code-quality, constraint-violation, copy-mismatch, data-mismatch, dead-code, deploy-risk, error-handling, migration-dependency, migration-gap, missing-error-boundary, missing-method-guard, missing-rls, missing-state, missing-ui-state, missing-validation, n-plus-one, nav-dead-end, orphaned-data, race-condition, schema-mismatch, schema-violation, session-storage-usage, type-drift, type-error, validation-gap","logic, security, ux"
+Embr,78,0,78,0,1,0,unknown,

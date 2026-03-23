@@ -18,7 +18,7 @@ Use OpenAI direct when:
 
 from __future__ import annotations
 
-from .vllm_client import VLLMClient
+from .vllm_client import VLLMClient, build_vllm_tier_client
 
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 
@@ -45,9 +45,11 @@ def build_openai_client(
     Returns:
         A VLLMClient pointed at api.openai.com with the selected model.
     """
-    merged = {**OPENAI_MODELS, **(model_overrides or {})}
-    if tier not in merged:
-        raise ValueError(
-            f"Unknown OpenAI tier '{tier}'. Valid tiers: {list(merged.keys())}"
-        )
-    return VLLMClient(base_url=OPENAI_BASE_URL, model=merged[tier], api_key=api_key)
+    return build_vllm_tier_client(
+        tier=tier,
+        api_key=api_key,
+        models=OPENAI_MODELS,
+        base_url=OPENAI_BASE_URL,
+        provider_name="OpenAI",
+        model_overrides=model_overrides,
+    )

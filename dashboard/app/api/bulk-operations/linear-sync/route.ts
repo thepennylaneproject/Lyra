@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
-import { apiErrorMessage } from "@/lib/api-error";
+import { apiErrorMessage, isValidProjectName, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 
 /**
@@ -31,17 +31,17 @@ import { recordDurableEventBestEffort } from "@/lib/durable-state";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as {
+    const body = await parseJsonBody<{
       project_name?: string;
       finding_ids?: string[];
       team_key?: string;
-    };
+    }>(request);
 
     const projectName = body.project_name
       ? String(body.project_name).trim()
       : null;
 
-    if (!projectName || !projectName.match(/^[a-zA-Z0-9_\-]+$/)) {
+    if (!projectName || !isValidProjectName(projectName)) {
       return NextResponse.json(
         {
           error: "project_name is required and must be alphanumeric with underscore/hyphen",
@@ -82,19 +82,18 @@ export async function POST(request: Request) {
             .map((f: { finding_id?: string }) => f.finding_id)
             .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-    // Create/update sync mappings for each finding
-    const syncPromises = toSync.map((fId: string) =>
-      pool.query(
+    // Create/update sync mappings for all findings in a single batch query
+    if (toSync.length > 0) {
+      await pool.query(
         `INSERT INTO lyra_linear_sync_new (project_name, finding_id, linear_issue_id, linear_team_key)
-         VALUES ($1, $2, '', $3)
+         SELECT $1, t.finding_id, '', $2
+         FROM UNNEST($3::text[]) AS t(finding_id)
          ON CONFLICT (project_name, finding_id) DO UPDATE SET
-           linear_team_key = COALESCE($3, linear_team_key),
+           linear_team_key = COALESCE($3, lyra_linear_sync_new.linear_team_key),
            updated_at = now()`,
-        [projectName, fId, teamKey]
-      )
-    );
-
-    await Promise.all(syncPromises);
+        [projectName, teamKey, toSync]
+      );
+    }
     const syncedCount = toSync.length;
 
     // Log this as an event (actual Linear sync happens async in a separate worker)
@@ -120,10 +119,10 @@ export async function POST(request: Request) {
       project_name: projectName,
       message: `Queued ${syncedCount} finding(s) for Linear sync. Sync will complete in the background.`,
     });
-  } catch (e) {
-    console.error("POST /api/bulk-operations/linear-sync", e);
+  } catch (error) {
+    console.error("POST /api/bulk-operations/linear-sync", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }
