@@ -747,70 +747,411 @@ function buildCriticalFileSummariesSection(snapshot: RepoSnapshot): string {
 }
 
 function buildExpectations(snapshot: RepoSnapshot): string {
-  const scanRoots = snapshot.scanRoots.length > 0
-    ? snapshot.scanRoots.map((dir) => `- \`${dir}\``).join("\n")
-    : "- \`.\`";
-  const configFiles = snapshot.configFiles.length > 0
-    ? snapshot.configFiles.map((file) => `- \`${file}\``).join("\n")
-    : "- [NOT FOUND IN CODEBASE]";
+  const files = snapshot.allFilePaths;
+  const samples = snapshot.fileSamples;
+  const allDeps = Object.values(snapshot.dependencyGroups).flat();
+  // Strip version suffix only (e.g. "react@18.2.0" → "react", "@supabase/supabase-js@2.0.0" → "@supabase/supabase-js")
+  const deps = new Set(allDeps.map((d) => d.toLowerCase().replace(/@[0-9^~>=<*].*$/, "")));
+
+  // ── Signal detection ──────────────────────────────────────────────────────
+
+  // TypeScript strict mode
+  const tsconfigSample = samples.find((s) => /tsconfig.*\.json$/i.test(s.path));
+  const hasStrictMode = tsconfigSample
+    ? /"strict"\s*:\s*true/.test(tsconfigSample.excerpt)
+    : false;
+
+  // React version constraint
+  const reactDep = allDeps.find((d) => /^react@/.test(d));
+  const reactVersion = reactDep ? reactDep.replace(/^react@\^?~?/, "").split(".")[0] : null;
+
+  // Vite as build tool
+  const isVite = snapshot.stack?.build?.toLowerCase().includes("vite") ?? false;
+
+  // Node version (from .nvmrc or package.json engines)
+  const nvmrcSample = samples.find((s) => /\.nvmrc$/.test(s.path));
+  const nodeVersionRaw = nvmrcSample?.excerpt?.trim().replace(/^v/, "") ?? null;
+  const nodeVersionMajor = nodeVersionRaw ? nodeVersionRaw.split(".")[0] : null;
+  const pkgSample = samples.find((s) => s.path === "package.json" || /[^/]+\/package\.json$/.test(s.path));
+  const enginesNode = pkgSample
+    ? (pkgSample.excerpt.match(/"node"\s*:\s*"([^"]+)"/) ?? [])[1] ?? null
+    : null;
+  const nodeConstraint = nodeVersionMajor ?? (enginesNode ? enginesNode.replace(/[^0-9.]/g, "").split(".")[0] : null);
+
+  // Netlify serverless backend
+  const netlifyFunctions = files.filter((f) =>
+    /(?:^|[^/]+\/)netlify\/functions\/[^/]+\.(ts|js)$/.test(f)
+  );
+  const hasNetlifyBackend = netlifyFunctions.length > 0;
+
+  // AI provider router abstraction
+  const hasAIRouter =
+    files.some((f) =>
+      /(?:[^/]+\/)*(?:lib\/ai\/router|providers\/(?:router|gateway))\./i.test(f)
+    ) ||
+    snapshot.criticalFileSummaries.some(
+      (s) =>
+        /router|gateway/i.test(s.role) &&
+        (s.exports.some((e) => /[Rr]outer|[Gg]ateway/i.test(e)) ||
+          s.behaviors.some((b) => /dispatch|fallback|route.*provider/i.test(b)))
+    );
+  const aiRouterName = (() => {
+    const routerFile = files.find((f) =>
+      /(?:[^/]+\/)*(?:lib\/ai\/router|providers\/(?:router|gateway))\./i.test(f)
+    );
+    if (routerFile) {
+      const base = routerFile.split("/").pop() ?? "";
+      return base.replace(/\.(ts|tsx|js|jsx)$/, "");
+    }
+    const routerSummary = snapshot.criticalFileSummaries.find(
+      (s) => /router|gateway/i.test(s.role)
+    );
+    if (routerSummary) {
+      return routerSummary.exports.find((e) => /[Rr]outer|[Gg]ateway/i.test(e)) ?? "AIRouter";
+    }
+    return "AIRouter";
+  })();
+
+  // Stripe — detect if present and where
+  const hasStripe = deps.has("stripe") || files.some((f) => /stripe/i.test(f));
+  const stripeInFunctions = netlifyFunctions.some((f) => /stripe|billing|payment/i.test(f));
+
+  // JWT / authentication in functions
+  const hasJwt =
+    deps.has("jsonwebtoken") ||
+    deps.has("jose") ||
+    deps.has("@supabase/supabase-js") ||
+    netlifyFunctions.some((f) => /auth|jwt|verify|token/i.test(f));
+  const jwtVerifyInBehaviors = snapshot.criticalFileSummaries.some((s) =>
+    s.behaviors.some((b) => /jwt|verify.*token|token.*verif|supabase.*auth|auth.*token/i.test(b))
+  );
+
+  // Supabase RLS
+  const hasSupabase =
+    deps.has("@supabase/supabase-js") ||
+    (snapshot.stack?.database ?? "").toLowerCase().includes("supabase");
+  const rlsDetected = samples.some(
+    (s) =>
+      /migrations?\/.*\.sql$/i.test(s.path) &&
+      /enable_row_level_security|ENABLE ROW LEVEL SECURITY|alter table.*enable rls/i.test(
+        s.excerpt
+      )
+  );
+
+  // Encrypted API credentials
+  const credSummary = snapshot.criticalFileSummaries.find((s) =>
+    /credential/i.test(s.role)
+  );
+  const hasEncryptedCreds =
+    credSummary != null &&
+    credSummary.behaviors.some((b) =>
+      /encrypt|decrypt|cipher|crypto|aes|vault/i.test(b)
+    );
+
+  // Security headers (netlify.toml [[headers]] block)
+  const netlifyTomlSample = samples.find((s) => /netlify\.toml$/.test(s.path));
+  const hasSecurityHeaders = netlifyTomlSample
+    ? /\[\[headers\]\]|X-Frame-Options|Content-Security-Policy|Strict-Transport|X-Content-Type/i.test(
+        netlifyTomlSample.excerpt
+      )
+    : false;
+
+  // Analytics
+  const hasPosthog = deps.has("posthog-js") || deps.has("posthog-node");
+  const otherAnalytics = (["@segment/analytics-next", "mixpanel-browser", "amplitude-js", "@amplitude/analytics-browser", "rudder-sdk-js"] as const)
+    .filter((d) => deps.has(d as string));
+
+  // Custom ESLint plugin / rules
+  const hasCustomEslint =
+    files.some((f) => /^eslint-plugin-/i.test(f) || /^eslint-rules?\//i.test(f));
+  const eslintPluginName = (() => {
+    const pluginEntry = files.find((f) => /^eslint-plugin-/i.test(f));
+    if (pluginEntry) return pluginEntry.split("/")[0];
+    return null;
+  })();
+
+  // Storybook
+  const hasStorybook =
+    files.some((f) => /^\.storybook\//i.test(f) || /\.stories\.(ts|tsx|js|jsx)$/.test(f));
+
+  // Archive / out-of-scope
+  const hasArchive = files.some((f) => /^archive\//i.test(f));
+
+  // ── Document assembly ─────────────────────────────────────────────────────
+
+  const scanRoots =
+    snapshot.scanRoots.length > 0
+      ? snapshot.scanRoots.map((dir) => `- \`${dir}\``).join("\n")
+      : "- `.`";
   const commands = formatCommands(snapshot.commands);
-  return `# ${snapshot.projectName} — Expectations Document
 
-> Generated from repository inspection on ${new Date().toISOString().slice(0, 10)}
-> Review required before activation
+  const sections: string[] = [];
 
----
+  // ── Section 1: Language and runtime ──────────────────────────────────────
+  const langItems: string[] = [];
 
-## 1. Project Identity
+  if (hasStrictMode) {
+    langItems.push(`### 1.1 TypeScript strict mode — **CRITICAL if removed**
 
-- Project name: \`${snapshot.projectName}\`
-- Source type: \`${snapshot.sourceType}\`
-- Source ref: \`${snapshot.sourceRef}\`
-- Default branch: \`${snapshot.defaultBranch ?? "not detected"}\`
+\`tsconfig.json\` has \`"strict": true\`. This setting must remain enabled.
 
-## 2. Audit Scope Defaults
+- **Flag**: any PR that sets \`"strict": false\`, removes \`"strict"\`, or adds \`@ts-ignore\` / \`@ts-nocheck\` without a documented reason.`);
+  } else if (snapshot.stack?.language?.toLowerCase().includes("typescript")) {
+    langItems.push(`### 1.1 TypeScript — **HIGH**
 
-Lyra should treat these paths as the default project scope unless a narrower audit scope is selected:
-${scanRoots}
+The project uses TypeScript. Strict mode was not detected in \`tsconfig.json\` — consider enabling it.
 
-Config files to keep in scope:
-${configFiles}
+- **Flag**: migration to plain JavaScript; removal of TypeScript compilation step.`);
+  }
 
-## 3. Stack Constraints
+  if (reactVersion && parseInt(reactVersion, 10) >= 18) {
+    langItems.push(`### 1.${langItems.length + 1} React ${reactVersion}+ — **CRITICAL if downgraded**
 
-- Primary language: \`${snapshot.stack?.language ?? "unknown"}\`
-- Framework: \`${snapshot.stack?.framework ?? "unknown"}\`
-- Build: \`${snapshot.stack?.build ?? "unknown"}\`
-- Hosting: \`${snapshot.stack?.hosting ?? "unknown"}\`
-- Database: \`${snapshot.stack?.database ?? "unknown"}\`
-- CSS: \`${snapshot.stack?.css ?? "unknown"}\`
+The project targets React ${reactVersion}. Concurrent features and server-component patterns depend on this version floor.
 
-## 4. Validation Commands
+- **Flag**: any change to \`package.json\` that downgrades \`react\` or \`react-dom\` below ${reactVersion}.`);
+  } else if (deps.has("react")) {
+    langItems.push(`### 1.${langItems.length + 1} React version constraint — **HIGH**
+
+The project uses React. Pin the minimum acceptable version in this document once confirmed.
+
+- **Flag**: major version downgrades.`);
+  }
+
+  if (isVite) {
+    langItems.push(`### 1.${langItems.length + 1} Vite build system — **HIGH if swapped**
+
+Vite is the configured build tool. The development and production pipelines are tuned for it.
+
+- **Flag**: replacement of \`vite.config.*\` with Webpack, Rollup, or another bundler without a documented migration decision.`);
+  }
+
+  if (nodeConstraint) {
+    langItems.push(`### 1.${langItems.length + 1} Node ${nodeConstraint} runtime — **HIGH**
+
+The runtime is pinned to Node ${nodeConstraint} (detected from ${nvmrcSample ? ".nvmrc" : "package.json engines"}).
+
+- **Flag**: changes that require a Node version outside this constraint; deployment config that specifies a different runtime.`);
+  } else if (hasNetlifyBackend) {
+    langItems.push(`### 1.${langItems.length + 1} Node runtime for Netlify Functions — **HIGH**
+
+Netlify Functions run on a pinned Node version. Add the version to \`.nvmrc\` or \`package.json engines\` and confirm it here.
+
+- **Flag**: functions code that uses Node APIs unavailable in the target runtime.`);
+  }
+
+  if (langItems.length > 0) {
+    sections.push(`## 1. Language and Runtime\n\n${langItems.join("\n\n")}`);
+  }
+
+  // ── Section 2: Backend architecture ──────────────────────────────────────
+  const backendItems: string[] = [];
+  let bi = 1;
+
+  if (hasNetlifyBackend) {
+    backendItems.push(`### 2.${bi++} Netlify Functions — only permitted backend — **CRITICAL**
+
+All server-side logic must live in \`netlify/functions/\`. There is no Express server, no Next.js API routes, and no other runtime process.
+
+- **Flag**: any new server-side logic added outside \`netlify/functions/\`; introduction of an Express or Fastify server; use of Next.js or Remix API routes.`);
+  }
+
+  if (hasAIRouter) {
+    backendItems.push(`### 2.${bi++} AI provider calls through \`${aiRouterName}\` — **CRITICAL if bypassed**
+
+All LLM completions must be routed through the \`${aiRouterName}\` abstraction, which handles provider selection, fallback, and cost enforcement.
+
+- **Flag**: direct calls to \`openai\`, \`anthropic\`, or any other provider SDK from outside the router; hardcoded provider endpoints in UI code or non-router server code.`);
+  }
+
+  if (hasStripe) {
+    if (stripeInFunctions) {
+      backendItems.push(`### 2.${bi++} Stripe operations Netlify-Functions-only — **CRITICAL**
+
+Stripe API calls (charges, subscriptions, webhooks) occur only inside \`netlify/functions/\`. The Stripe secret key must never be loaded in browser-executed code.
+
+- **Flag**: \`import stripe\` or \`require('stripe')\` in any \`src/\`, \`app/\`, or \`components/\` file; \`STRIPE_SECRET_KEY\` referenced in client bundle.`);
+    } else {
+      backendItems.push(`### 2.${bi++} Stripe secret key must stay server-side — **CRITICAL**
+
+Stripe is a dependency. Ensure the secret key is only ever loaded in server-side code.
+
+- **Flag**: \`STRIPE_SECRET_KEY\` referenced from client-side files; Stripe API calls outside a backend boundary.`);
+    }
+  }
+
+  if (hasJwt || jwtVerifyInBehaviors) {
+    backendItems.push(`### 2.${bi++} JWT / session verification before authenticated requests — **CRITICAL**
+
+Every Netlify Function that reads or writes user data must verify the caller's session token before processing the request.
+
+- **Flag**: functions that read \`event.body\` or query the database without first validating the Authorization header; removal of auth-check utilities from shared function helpers.`);
+  }
+
+  if (backendItems.length > 0) {
+    sections.push(`## 2. Backend Architecture\n\n${backendItems.join("\n\n")}`);
+  }
+
+  // ── Section 3: Database ───────────────────────────────────────────────────
+  if (hasSupabase) {
+    const dbItems: string[] = [];
+    let di = 1;
+
+    dbItems.push(`### 3.${di++} Supabase as primary database — **HIGH if replaced**
+
+Supabase (PostgreSQL + Auth + Storage) is the sole database layer. Direct PostgreSQL connections from client code are not permitted.
+
+- **Flag**: introduction of a second database (MySQL, MongoDB, PlanetScale); direct \`pg\` or \`mysql2\` connections from Netlify Functions without the Supabase client wrapper.`);
+
+    if (rlsDetected) {
+      dbItems.push(`### 3.${di++} Row-Level Security on all tables — **CRITICAL**
+
+Migrations confirm RLS is enabled. Every table exposed through the Supabase client must have an RLS policy. Data must never be readable without a matching policy.
+
+- **Flag**: new \`CREATE TABLE\` migration without a corresponding \`ALTER TABLE … ENABLE ROW LEVEL SECURITY\` and at least one \`CREATE POLICY\`; removal of existing policies without documented justification.`);
+    } else {
+      dbItems.push(`### 3.${di++} Row-Level Security — **CRITICAL**
+
+Supabase is in use. Confirm that every table has RLS enabled and review policies before activating these expectations.
+
+- **Flag**: tables accessible through the anon or authenticated role without an explicit \`CREATE POLICY\`.`);
+    }
+
+    sections.push(`## 3. Database\n\n${dbItems.join("\n\n")}`);
+  }
+
+  // ── Section 4: Security ───────────────────────────────────────────────────
+  const secItems: string[] = [];
+  let si = 1;
+
+  if (hasEncryptedCreds) {
+    secItems.push(`### 4.${si++} API credentials encrypted at rest — **CRITICAL**
+
+Credential storage utilities encrypt secrets before persisting them (detected in \`${credSummary!.file}\`). This pattern must not be weakened.
+
+- **Flag**: storing raw API keys in the database or in Supabase without encryption; removal of encrypt/decrypt wrappers from the credential utilities.`);
+  } else if (hasNetlifyBackend) {
+    secItems.push(`### 4.${si++} API credentials must not be stored in plain text — **CRITICAL**
+
+No API keys or secrets should be stored in the database unencrypted. Confirm the credential storage strategy and document it here.
+
+- **Flag**: plain-text secrets in any database column; environment variables leaked to the client bundle.`);
+  }
+
+  if (hasSecurityHeaders) {
+    secItems.push(`### 4.${si++} Security headers must not be weakened — **CRITICAL**
+
+\`netlify.toml\` defines security headers (\`X-Frame-Options\`, \`Content-Security-Policy\`, etc.). These must not be removed or loosened without a documented security review.
+
+- **Flag**: removal of header blocks from \`netlify.toml\`; widening of \`Content-Security-Policy\` directives (e.g. adding \`unsafe-inline\` or \`unsafe-eval\`).`);
+  } else {
+    secItems.push(`### 4.${si++} Security headers — **HIGH**
+
+Security headers were not detected in \`netlify.toml\`. Add \`X-Frame-Options\`, \`X-Content-Type-Options\`, and \`Content-Security-Policy\` headers.
+
+- **Flag**: deployment without security headers on the root path.`);
+  }
+
+  secItems.push(`### 4.${si++} No hardcoded secrets — **CRITICAL**
+
+No API keys, tokens, or credentials may appear as string literals in source code.
+
+- **Flag**: strings matching patterns for API keys (e.g. \`sk-\`, \`Bearer \`, base64-encoded tokens) in \`.ts\`, \`.tsx\`, \`.js\`, or \`.jsx\` files outside test fixtures.`);
+
+  sections.push(`## 4. Security\n\n${secItems.join("\n\n")}`);
+
+  // ── Section 5: Analytics ──────────────────────────────────────────────────
+  if (hasPosthog || otherAnalytics.length > 0) {
+    const analyticsItems: string[] = [];
+    if (hasPosthog) {
+      analyticsItems.push(`### 5.1 \`posthog-js\` is the only approved analytics provider — **HIGH**
+
+PostHog is the analytics provider. Additional tracking SDKs must not be introduced without an explicit operator decision.
+
+- **Flag**: addition of Segment, Mixpanel, Amplitude, or any other analytics SDK; direct calls to analytics endpoints not proxied through PostHog.`);
+    } else {
+      analyticsItems.push(`### 5.1 Analytics provider constraint — **HIGH**
+
+Analytics SDKs are present (${otherAnalytics.join(", ")}). Confirm the approved provider list and add it here before activating.
+
+- **Flag**: introduction of additional analytics SDKs without documented approval.`);
+    }
+    sections.push(`## 5. Analytics\n\n${analyticsItems.join("\n\n")}`);
+  }
+
+  // ── Section 6: Code quality ───────────────────────────────────────────────
+  const qualityItems: string[] = [];
+  let qi = 1;
+
+  if (hasCustomEslint) {
+    const pluginRef = eslintPluginName ? `\`${eslintPluginName}\`` : "the project's custom ESLint plugin";
+    qualityItems.push(`### 6.${qi++} Custom ESLint rules must not be disabled — **CRITICAL if disabled**
+
+${pluginRef} enforces project-specific patterns. Disabling rules inline undermines architectural constraints the rules exist to protect.
+
+- **Flag**: \`// eslint-disable\` comments targeting rules from ${pluginRef}; removal of ${pluginRef} from \`.eslintrc\` or \`eslint.config.*\`; \`eslint-disable-next-line\` without a documented justification comment.`);
+  }
+
+  if (hasStorybook) {
+    qualityItems.push(`### 6.${qi++} Storybook coverage for new UI components — **STANDARD**
+
+The project has Storybook configured. New shared UI components should ship with a story.
+
+- **Flag**: new files under \`components/\` or \`ui/\` without a corresponding \`.stories.tsx\` file (advisory, not a hard block).`);
+  }
+
+  if (qualityItems.length > 0) {
+    sections.push(`## 6. Code Quality\n\n${qualityItems.join("\n\n")}`);
+  }
+
+  // ── Section 7: Out-of-scope paths ─────────────────────────────────────────
+  const oosItems: string[] = [];
+  if (hasArchive) {
+    oosItems.push(
+      "- `archive/` — historical snapshots; excluded from all audit scopes unless explicitly included."
+    );
+  }
+  if (snapshot.testFiles.length > 0) {
+    oosItems.push(
+      "- Test files (`*.test.*`, `*.spec.*`, `__tests__/`) — Lyra does not audit test logic unless the audit scope is `testing`."
+    );
+  }
+  if (hasStorybook) {
+    oosItems.push(
+      "- Storybook stories (`*.stories.*`) — excluded from security and architecture audits."
+    );
+  }
+  if (oosItems.length > 0) {
+    sections.push(`## 7. Out-of-Scope Paths\n\n${oosItems.join("\n")}`);
+  }
+
+  // ── Section 8: Audit mechanics ────────────────────────────────────────────
+  sections.push(`## 8. Audit Mechanics
+
+### 8.1 Scope
+Default scan roots: ${snapshot.scanRoots.length > 0 ? snapshot.scanRoots.map((r) => `\`${r}\``).join(", ") : "`./`"}
+
+Prefer \`file\`, \`directory\`, \`selection\`, or \`diff\` scopes when provided. \`project\` scope uses the roots above.
+
+### 8.2 Validation commands
 
 ${commands}
 
-## 5. Audit Expectations
+### 8.3 Evidence standard
+Every finding must cite file paths and, when possible, line anchors. Missing evidence lowers confidence.
 
-### 5.1 Review required before autonomous action
-Generated profile and expectations are draft artifacts until explicitly activated.
+### 8.4 Activation gate
+These expectations are a **draft** until explicitly activated. Only active expectations drive production audit runs.`);
 
-### 5.2 Scope-aware audits
-Lyra should prefer \`file\`, \`directory\`, \`selection\`, or \`diff\` scopes when provided. \`project\` scope should use the default scan roots above.
+  // ── Final document ────────────────────────────────────────────────────────
+  return `# ${snapshot.projectName} — Expectations Document
 
-### 5.3 Evidence standard
-Every finding should cite file paths and, when possible, line anchors from the scanned scope. Missing evidence should lower confidence.
+> Generated from repository inspection on ${new Date().toISOString().slice(0, 10)}
+> **Review required before activation.** Confirm each constraint reflects the operator's intent.
 
-### 5.4 Command safety
-If validation commands are unavailable or fail to run, Lyra should record the gap rather than claiming verification.
+---
 
-### 5.5 Activation gate
-Only active expectations should drive production audit runs. Draft expectations remain review artifacts.
-
-## 6. Notes For Operator Review
-
-- Confirm scan roots are correct for this repo.
-- Confirm commands before enabling automated validation.
-- Add project-specific rules after the first reviewed audit if needed.
+${sections.join("\n\n---\n\n")}
 `;
 }
 
