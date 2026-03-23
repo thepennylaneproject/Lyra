@@ -1,6 +1,8 @@
 import type { Project } from "@/lib/types";
 import { ProgressBar } from "./ProgressBar";
 import { STATUS_GROUPS } from "@/lib/constants";
+import { sortMaintenanceBacklog } from "@/lib/resolve-next-action";
+import { BACKLOG_NEXT_STEP_LABEL } from "@/lib/ui-copy";
 
 interface ProjectCardProps {
   project: Project;
@@ -10,6 +12,10 @@ interface ProjectCardProps {
 export function ProjectCard({ project, onClick }: ProjectCardProps) {
   const findings  = project.findings ?? [];
   const backlog = project.maintenanceBacklog ?? [];
+  const openBacklog = sortMaintenanceBacklog(
+    backlog.filter((item) => !["done", "deferred"].includes(item.canonical_status))
+  );
+  const topBacklog = openBacklog[0];
   const active    = findings.filter((f) => STATUS_GROUPS.active.includes(f.status));
   const pending   = findings.filter((f) => STATUS_GROUPS.pending.includes(f.status));
   const resolved  = findings.filter((f) => STATUS_GROUPS.resolved.includes(f.status));
@@ -138,9 +144,24 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
                 fontSize: "10px",
                 fontFamily: "var(--font-mono)",
                 color: "var(--ink-text-4)",
+                lineHeight: 1.4,
               }}
             >
-              {backlog.length} backlog item{backlog.length === 1 ? "" : "s"}
+              <div>
+                {backlog.length} backlog item{backlog.length === 1 ? "" : "s"}
+              </div>
+              {topBacklog ? (
+                <div style={{ marginTop: "0.25rem", color: "var(--ink-text-3)" }}>
+                  <span style={{ color: "var(--ink-text-4)" }}>Top:</span>{" "}
+                  {(topBacklog.title ?? "").slice(0, 72)}
+                  {(topBacklog.title ?? "").length > 72 ? "…" : ""}
+                  <span style={{ color: "var(--ink-text-4)" }}>
+                    {" "}
+                    · {BACKLOG_NEXT_STEP_LABEL[topBacklog.next_action] ?? topBacklog.next_action}
+                    {topBacklog.risk_class ? ` · risk ${topBacklog.risk_class}` : ""}
+                  </span>
+                </div>
+              ) : null}
             </div>
           )}
         </>

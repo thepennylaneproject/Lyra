@@ -84,6 +84,62 @@ export async function listRepairJobsForProject(
   });
 }
 
+/** Newest-first repair ledger rows for one finding (Postgres store only). */
+export async function listRepairJobsForFinding(
+  projectName: string,
+  findingId: string,
+  limit = 8
+): Promise<RepairJob[]> {
+  const rows = await pool().query(
+    `SELECT *
+       FROM lyra_repair_jobs
+      WHERE lower(trim(project_name)) = lower(trim($1))
+        AND finding_id = $2
+      ORDER BY created_at DESC
+      LIMIT $3`,
+    [projectName, findingId, limit]
+  );
+  return rows.map((row) => {
+    const repairPolicy = asJsonObject(row.repair_policy);
+    const payload = asJsonObject(row.payload);
+    return {
+      id: String(row.id),
+      finding_id: String(row.finding_id),
+      project_name: String(row.project_name),
+      queued_at:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+      status: String(row.status) as RepairJob["status"],
+      patch_applied:
+        typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
+      completed_at:
+        row.finished_at instanceof Date
+          ? row.finished_at.toISOString()
+          : row.finished_at != null
+            ? String(row.finished_at)
+            : undefined,
+      error: row.error != null ? String(row.error) : undefined,
+      targeted_files: Array.isArray(row.targeted_files)
+        ? (row.targeted_files as string[])
+        : [],
+      verification_commands: Array.isArray(row.verification_commands)
+        ? (row.verification_commands as string[])
+        : [],
+      rollback_notes:
+        row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+      repair_policy: {
+        ...repairPolicy,
+        ...asJsonObject(payload.repair_policy),
+      },
+      maintenance_task_id:
+        row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
+      backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
+      provenance: asJsonObject(row.provenance),
+    };
+  });
+}
+
 export async function listRecentRepairJobs(limit = 50): Promise<RepairJob[]> {
   const rows = await pool().query(
     `SELECT *
@@ -279,49 +335,95 @@ export async function upsertMaintenanceBacklogItems(
   projectName: string,
   items: MaintenanceBacklogItem[]
 ): Promise<void> {
+  if (items.length === 0) return;
+
+  const ids: string[]           = [];
+  const titles: string[]        = [];
+  const summaries: (string | null)[] = [];
+  const statuses: string[]      = [];
+  const sourceTypes: string[]   = [];
+  const priorities: string[]    = [];
+  const severities: string[]    = [];
+  const riskClasses: string[]   = [];
+  const nextActions: string[]   = [];
+  const findingIds: string[]    = [];
+  const dedupeKeys: string[]    = [];
+  const duplicateOfs: (string | null)[] = [];
+  const blockedReasons: (string | null)[] = [];
+  const provenances: string[]   = [];
+  const createdAts: (string | null)[] = [];
+
   for (const item of items) {
-    await pool().query(
-      `INSERT INTO lyra_maintenance_backlog (
-         id, project_name, title, summary, canonical_status, source_type,
-         priority, severity, risk_class, next_action, finding_ids, dedupe_keys,
-         duplicate_of, blocked_reason, provenance, created_at, updated_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15::jsonb, COALESCE($16::timestamptz, now()), now())
-       ON CONFLICT (id) DO UPDATE SET
-         title = EXCLUDED.title,
-         summary = EXCLUDED.summary,
-         canonical_status = EXCLUDED.canonical_status,
-         source_type = EXCLUDED.source_type,
-         priority = EXCLUDED.priority,
-         severity = EXCLUDED.severity,
-         risk_class = EXCLUDED.risk_class,
-         next_action = EXCLUDED.next_action,
-         finding_ids = EXCLUDED.finding_ids,
-         dedupe_keys = EXCLUDED.dedupe_keys,
-         duplicate_of = EXCLUDED.duplicate_of,
-         blocked_reason = EXCLUDED.blocked_reason,
-         provenance = EXCLUDED.provenance,
-         updated_at = now()`,
-      [
-        item.id,
-        projectName,
-        item.title,
-        item.summary ?? null,
-        item.canonical_status,
-        item.source_type,
-        item.priority,
-        item.severity,
-        item.risk_class,
-        item.next_action,
-        JSON.stringify(item.finding_ids ?? []),
-        JSON.stringify(item.dedupe_keys ?? []),
-        item.duplicate_of ?? null,
-        item.blocked_reason ?? null,
-        JSON.stringify(item.provenance ?? {}),
-        item.created_at ?? null,
-      ]
-    );
+    ids.push(item.id);
+    titles.push(item.title);
+    summaries.push(item.summary ?? null);
+    statuses.push(item.canonical_status);
+    sourceTypes.push(item.source_type);
+    priorities.push(item.priority);
+    severities.push(item.severity);
+    riskClasses.push(item.risk_class);
+    nextActions.push(item.next_action);
+    findingIds.push(JSON.stringify(item.finding_ids ?? []));
+    dedupeKeys.push(JSON.stringify(item.dedupe_keys ?? []));
+    duplicateOfs.push(item.duplicate_of ?? null);
+    blockedReasons.push(item.blocked_reason ?? null);
+    provenances.push(JSON.stringify(item.provenance ?? {}));
+    createdAts.push(item.created_at ?? null);
   }
+
+  await pool().query(
+    `INSERT INTO lyra_maintenance_backlog (
+       id, project_name, title, summary, canonical_status, source_type,
+       priority, severity, risk_class, next_action, finding_ids, dedupe_keys,
+       duplicate_of, blocked_reason, provenance, created_at, updated_at
+     )
+     SELECT
+       t.id, $2, t.title, t.summary, t.canonical_status, t.source_type,
+       t.priority, t.severity, t.risk_class, t.next_action,
+       t.finding_ids_json::jsonb, t.dedupe_keys_json::jsonb,
+       t.duplicate_of, t.blocked_reason, t.provenance_json::jsonb,
+       COALESCE(t.created_at_txt::timestamptz, now()), now()
+     FROM UNNEST(
+       $1::text[], $3::text[], $4::text[], $5::text[], $6::text[],
+       $7::text[], $8::text[], $9::text[], $10::text[], $11::text[],
+       $12::text[], $13::text[], $14::text[], $15::text[], $16::text[]
+     ) AS t(id, title, summary, canonical_status, source_type, priority, severity,
+            risk_class, next_action, finding_ids_json, dedupe_keys_json,
+            duplicate_of, blocked_reason, provenance_json, created_at_txt)
+     ON CONFLICT (id) DO UPDATE SET
+       title = EXCLUDED.title,
+       summary = EXCLUDED.summary,
+       canonical_status = EXCLUDED.canonical_status,
+       source_type = EXCLUDED.source_type,
+       priority = EXCLUDED.priority,
+       severity = EXCLUDED.severity,
+       risk_class = EXCLUDED.risk_class,
+       next_action = EXCLUDED.next_action,
+       finding_ids = EXCLUDED.finding_ids,
+       dedupe_keys = EXCLUDED.dedupe_keys,
+       duplicate_of = EXCLUDED.duplicate_of,
+       blocked_reason = EXCLUDED.blocked_reason,
+       provenance = EXCLUDED.provenance,
+       updated_at = now()`,
+    [
+      ids,           // $1
+      projectName,   // $2
+      titles,        // $3
+      summaries,     // $4
+      statuses,      // $5
+      sourceTypes,   // $6
+      priorities,    // $7
+      severities,    // $8
+      riskClasses,   // $9
+      nextActions,   // $10
+      findingIds,    // $11
+      dedupeKeys,    // $12
+      duplicateOfs,  // $13
+      blockedReasons, // $14
+      provenances,   // $15
+      createdAts,    // $16
+    ]
+  );
 }
 
 export async function createMaintenanceTask(

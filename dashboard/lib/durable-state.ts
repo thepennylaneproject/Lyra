@@ -179,10 +179,10 @@ export async function recordProjectSnapshot(
 export async function recordDurableEventBestEffort(event: DurableEvent): Promise<void> {
   try {
     await recordDurableEvent(event);
-  } catch (e) {
+  } catch (error) {
     console.warn(
       "[durable-state] recordDurableEvent skipped:",
-      e instanceof Error ? e.message : e
+      error instanceof Error ? error.message : error
     );
   }
 }
@@ -194,10 +194,10 @@ export async function recordProjectSnapshotBestEffort(
 ): Promise<void> {
   try {
     await recordProjectSnapshot(project, source, summary);
-  } catch (e) {
+  } catch (error) {
     console.warn(
       "[durable-state] recordProjectSnapshot skipped:",
-      e instanceof Error ? e.message : e
+      error instanceof Error ? error.message : error
     );
   }
 }

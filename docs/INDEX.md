@@ -16,6 +16,12 @@ Complete documentation for setting up, running, developing, and deploying Lyra.
   - Submitting PRs
   - Code standards
 
+## Planning & roadmap
+
+- **[LYRA_NEAR_TERM_THEMES.md](./LYRA_NEAR_TERM_THEMES.md)** - Default near-term theme priorities (implementation track)
+- **[REMEDIATION_PLAN.md](./REMEDIATION_PLAN.md)** - Phased plan to close latent-capability gaps (dashboard, worker, docs parity)
+- **[TRIAGE_PARITY.md](./TRIAGE_PARITY.md)** - How `session.py`, `portfolio.py`, and dashboard triage ordering differ (and why)
+
 ## Architecture & Features
 
 - **[REPAIR_ENGINE_INTEGRATION.md](./REPAIR_ENGINE_INTEGRATION.md)** - Repair workflow
@@ -150,7 +156,9 @@ lyra/
 │   ├── DOCKER_DEPLOYMENT.md
 │   ├── CI_CD.md
 │   ├── CI_CD_SETUP.md
-│   └── CI_CD_IMPLEMENTATION.md
+│   ├── CI_CD_IMPLEMENTATION.md
+│   ├── LYRA_NEAR_TERM_THEMES.md
+│   └── REMEDIATION_PLAN.md
 ├── .github/workflows/
 │   ├── ci.yml
 │   ├── deploy.yml
@@ -185,6 +193,8 @@ lyra/
 | CI_CD.md | Pipeline overview | Everyone |
 | CI_CD_SETUP.md | CI/CD configuration | Operators |
 | CI_CD_IMPLEMENTATION.md | Implementation details | Maintainers |
+| LYRA_NEAR_TERM_THEMES.md | Near-term implementation themes | Maintainers |
+| REMEDIATION_PLAN.md | Latent-capability remediation phases | Maintainers |
 
 ## Getting Help
 
@@ -205,4 +215,4 @@ When adding new documentation:
 
 ## Version
 
-Last updated: 2026-03-20
+Last updated: 2026-03-21

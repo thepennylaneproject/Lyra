@@ -1,21 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { apiFetch } from "@/lib/api-fetch";
 import type { RepairRunSummary } from "@/lib/audit-reader";
 import type { RoutingConfig } from "@/lib/routing-config";
+import type { RepairJob } from "@/lib/types";
+import { UI_COPY } from "@/lib/ui-copy";
 
-interface RepairJob {
-  finding_id: string;
-  project_name: string;
-  queued_at: string;
-  status: "queued" | "running" | "completed" | "failed";
-  patch_applied?: boolean;
-  cost_usd?: number;
-  provider_used?: string;
-  completed_at?: string;
-  error?: string;
-}
+const ENGINE_OPS_STORAGE_KEY = "lyra_engine_operations_open";
 
 interface EngineData {
   routing: RoutingConfig;
@@ -136,6 +129,25 @@ export function EngineView() {
   const [routingError,      setRoutingError]      = useState<string | null>(null);
   const [fullRoutingError,  setFullRoutingError]  = useState<string | null>(null);
   const [expandError,       setExpandError]       = useState(false);
+  const [operationsOpen,    setOperationsOpen]    = useState(false);
+
+  useEffect(() => {
+    try {
+      setOperationsOpen(sessionStorage.getItem(ENGINE_OPS_STORAGE_KEY) === "1");
+    } catch {
+      setOperationsOpen(false);
+    }
+  }, []);
+
+  const setOperationsOpenPersist = (open: boolean) => {
+    setOperationsOpen(open);
+    try {
+      if (open) sessionStorage.setItem(ENGINE_OPS_STORAGE_KEY, "1");
+      else sessionStorage.removeItem(ENGINE_OPS_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const fetchAll = useCallback(async () => {
     setRoutingError(null);
@@ -160,8 +172,8 @@ export function EngineView() {
         recentRuns:  status.recent_repair_runs ?? [],
         totalCost:   status.total_cost_usd ?? 0,
       });
-    } catch (e) {
-      setRoutingError(e instanceof Error ? e.message : "Could not load routing");
+    } catch (error) {
+      setRoutingError(error instanceof Error ? error.message : "Could not load routing");
     } finally {
       setLoading(false);
     }
@@ -192,9 +204,62 @@ export function EngineView() {
   const allJobs    = [...queue, ...recentRuns] as (RepairJob & RepairRunSummary)[];
 
   const totalCost  = data?.totalCost ?? 0;
+  const routingDegraded = Boolean(routingError);
 
   return (
     <div>
+      {routingError ? (
+        <div
+          role="alert"
+          style={{
+            marginBottom: "1.25rem",
+            padding: "0.65rem 0.85rem",
+            fontSize: "11px",
+            fontFamily: "var(--font-mono)",
+            lineHeight: 1.45,
+            color: "var(--ink-amber)",
+            background: "var(--ink-bg-sunken)",
+            border: "0.5px solid var(--ink-border-faint)",
+            borderRadius: "var(--radius-md)",
+          }}
+        >
+          <div style={{ marginBottom: "0.5rem", fontWeight: 500, color: "var(--ink-text-2)" }}>
+            {UI_COPY.engineRoutingDegradedTitle}
+          </div>
+          <div style={{ color: "var(--ink-text-3)", marginBottom: "0.5rem" }}>
+            {UI_COPY.engineRoutingDegradedBody}
+          </div>
+          <div style={{ color: "var(--ink-text-4)", marginBottom: "0.5rem" }}>{routingError}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
+            <button type="button" onClick={() => void fetchAll()} style={{ fontSize: "11px", padding: "3px 10px" }}>
+              Retry
+            </button>
+            {fullRoutingError ? (
+              <button
+                type="button"
+                onClick={() => setExpandError(true)}
+                style={{
+                  fontSize: "11px",
+                  border: "none",
+                  background: "none",
+                  color: "inherit",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                Show details in table
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        style={{
+          opacity: routingDegraded ? 0.55 : 1,
+          transition: "opacity 0.15s ease",
+        }}
+      >
       {/* Header */}
       <div style={{ marginBottom: "1.75rem" }}>
         <div
@@ -409,10 +474,11 @@ export function EngineView() {
           </div>
         </div>
       )}
+      </div>
 
-      {/* Repair pipeline */}
+      {/* Repair ledger */}
       <div>
-        <SectionLabel>Repair queue</SectionLabel>
+        <SectionLabel>{UI_COPY.ledgerSectionLabel}</SectionLabel>
         <div
           style={{
             fontSize:      "11px",
@@ -426,10 +492,7 @@ export function EngineView() {
             marginBottom:  "1rem",
           }}
         >
-          Queuing records work in the app; it does not run the Python repair engine on the server.
-          Next: apply or generate fixes in the target repo, then trigger a new audit here to verify.
-          Full loop: repository root{" "}
-          <span style={{ color: "var(--ink-text-2)" }}>docs/DASHBOARD.md</span>.
+          {UI_COPY.ledgerExplainer}
         </div>
         {allJobs.length === 0 ? (
           <div
@@ -440,7 +503,7 @@ export function EngineView() {
               padding:    "0.5rem 0",
             }}
           >
-            no jobs queued
+            {UI_COPY.ledgerEmpty}
           </div>
         ) : (
           <div
@@ -527,6 +590,30 @@ export function EngineView() {
             })}
           </div>
         )}
+      </div>
+
+      <div style={{ marginTop: "3rem" }}>
+        <button
+          type="button"
+          onClick={() => setOperationsOpenPersist(!operationsOpen)}
+          style={{
+            fontSize:     "11px",
+            fontFamily:   "var(--font-mono)",
+            border:       "none",
+            background:   "transparent",
+            padding:      0,
+            color:        "var(--ink-text-3)",
+            cursor:       "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          {operationsOpen ? "Hide worker operations" : "Show worker operations"}
+        </button>
+        {operationsOpen ? (
+          <div style={{ marginTop: "1.25rem" }}>
+            <OrchestrationPanel />
+          </div>
+        ) : null}
       </div>
     </div>
   );

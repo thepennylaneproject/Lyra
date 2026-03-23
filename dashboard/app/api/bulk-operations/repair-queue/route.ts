@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
-import { apiErrorMessage } from "@/lib/api-error";
+import { apiErrorMessage, isValidProjectName, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import { randomUUID } from "node:crypto";
 
@@ -31,11 +31,11 @@ import { randomUUID } from "node:crypto";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as {
+    const body = await parseJsonBody<{
       project_name?: string;
       finding_ids?: string[];
       priority?: string;
-    };
+    }>(request);
 
     const projectName = body.project_name
       ? String(body.project_name).trim()
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       : "normal";
 
     // Validation
-    if (!projectName || !projectName.match(/^[a-zA-Z0-9_\-]+$/)) {
+    if (!projectName || !isValidProjectName(projectName)) {
       return NextResponse.json(
         {
           error: "project_name is required and must be alphanumeric with underscore/hyphen",
@@ -110,8 +110,8 @@ export async function POST(request: Request) {
         try {
           await pool.query(insertQuery, row);
           queuedCount++;
-        } catch (e) {
-          console.warn("Failed to insert repair queue item:", e);
+        } catch (error) {
+          console.warn("Failed to insert repair queue item:", error);
         }
       }
     }
@@ -142,10 +142,10 @@ export async function POST(request: Request) {
           ? `Queued ${queuedCount} finding(s) for repair.${skippedCount > 0 ? ` ${skippedCount} were already queued.` : ""}`
           : "No new findings queued (all were already in queue).",
     });
-  } catch (e) {
-    console.error("POST /api/bulk-operations/repair-queue", e);
+  } catch (error) {
+    console.error("POST /api/bulk-operations/repair-queue", error);
     return NextResponse.json(
-      { error: apiErrorMessage(e) },
+      { error: apiErrorMessage(error) },
       { status: 500 }
     );
   }

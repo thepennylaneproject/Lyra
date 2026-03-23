@@ -11,9 +11,9 @@ function emptyState(): SyncState {
 
 function parseState(raw: unknown): SyncState {
   if (!raw || typeof raw !== "object") return emptyState();
-  const o = raw as Record<string, unknown>;
-  const mappings = o.mappings;
-  const last_sync = o.last_sync;
+  const stateRecord = raw as Record<string, unknown>;
+  const mappings = stateRecord.mappings;
+  const last_sync = stateRecord.last_sync;
   return {
     mappings:
       typeof mappings === "object" && mappings !== null && !Array.isArray(mappings)
@@ -26,8 +26,8 @@ function parseState(raw: unknown): SyncState {
 export async function getProjectSyncStateFromDb(
   projectName: string
 ): Promise<SyncState> {
-  const p = createPostgresPool();
-  const rows = await p.query(
+  const db = createPostgresPool();
+  const rows = await db.query(
     `SELECT state FROM lyra_linear_sync WHERE project_name = $1`,
     [projectName]
   );
@@ -39,8 +39,8 @@ export async function setProjectSyncStateInDb(
   projectName: string,
   projectState: SyncState
 ): Promise<void> {
-  const p = createPostgresPool();
-  await p.query(
+  const db = createPostgresPool();
+  await db.query(
     `INSERT INTO lyra_linear_sync (project_name, state, updated_at)
      VALUES ($1, $2::jsonb, now())
      ON CONFLICT (project_name) DO UPDATE SET

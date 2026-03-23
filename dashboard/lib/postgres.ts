@@ -135,9 +135,9 @@ export function readDatabaseConfig(): DatabaseConfig {
 /** Supabase pooler (session mode, port 5432) caps total clients at pool_size — one shared pool avoids exhausting it. */
 function resolvePoolMax(): number {
   const raw = process.env.PG_POOL_MAX ?? process.env.LYRA_PG_POOL_MAX ?? "5";
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 1) return 5;
-  return Math.min(n, 30);
+  const maxPoolSize = Number.parseInt(raw, 10);
+  if (!Number.isFinite(maxPoolSize) || maxPoolSize < 1) return 5;
+  return Math.min(maxPoolSize, 30);
 }
 
 export class PostgresPool {
@@ -161,6 +161,31 @@ export class PostgresPool {
   async query(sql: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
     const result = await this.pool.query(sql, params);
     return result.rows as Record<string, unknown>[];
+  }
+
+  /**
+   * Run statements on one connection with BEGIN/COMMIT (or ROLLBACK on error).
+   * Use for multi-step deletes so partial cleanup cannot leave inconsistent state.
+   */
+  async transaction<T>(
+    fn: (query: (sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>) => Promise<T>
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const query = async (sql: string, params: unknown[] = []) => {
+        const result = await client.query(sql, params);
+        return result.rows as Record<string, unknown>[];
+      };
+      const out = await fn(query);
+      await client.query("COMMIT");
+      return out;
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   /** Close all pool clients. Use in scripts (e.g. migrations); avoid on the shared app pool during requests. */
