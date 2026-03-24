@@ -247,22 +247,59 @@ const PORTFOLIO_SCAN_DIRS: Record<string, string> = {
   "sarahsahl.pro": "the_penny_lane_project/sarahsahl_pro",
 };
 
+/** Normalize a finding title for semantic deduplication (case/punctuation-insensitive). */
+function normalizeTitle(title: unknown): string {
+  return String(title ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function mergeFindings2(
   existing: Array<Record<string, unknown>>,
   incoming: Array<Record<string, unknown>>,
   repoRevision?: string
 ): { merged: Array<Record<string, unknown>>; added: number } {
   const byId = new Map<string, Record<string, unknown>>();
+  // Secondary index: normalized title → canonical finding_id
+  // Used to catch duplicates the LLM emits under different IDs.
+  const byTitle = new Map<string, string>();
   const now = new Date().toISOString();
+
   for (const f of existing) {
     const id = String(f.finding_id ?? "");
-    if (id) byId.set(id, { ...f });
+    if (!id) continue;
+    byId.set(id, { ...f });
+    const nt = normalizeTitle(f.title);
+    if (nt && !byTitle.has(nt)) byTitle.set(nt, id);
   }
+
   let added = 0;
   const incomingIds = new Set<string>();
+
   for (const f of incoming) {
     const id = String(f.finding_id ?? "");
     if (!id) continue;
+
+    // Check for a title-collision duplicate: same title, different ID.
+    const nt = normalizeTitle(f.title);
+    const canonicalId = byId.has(id) ? id : (nt ? byTitle.get(nt) : undefined);
+
+    if (canonicalId && canonicalId !== id) {
+      // Incoming finding is a duplicate of an existing one under a different ID.
+      // Register the new ID as an alias so stale-finding logic still works,
+      // but don't add it as a separate finding.
+      incomingIds.add(canonicalId);
+      incomingIds.add(id);
+      const old = byId.get(canonicalId)!;
+      byId.set(canonicalId, {
+        ...old,
+        last_seen_at: now,
+        last_seen_revision: repoRevision ?? old.last_seen_revision,
+      });
+      continue;
+    }
+
     incomingIds.add(id);
     if (!byId.has(id)) {
       byId.set(id, {
@@ -272,6 +309,7 @@ function mergeFindings2(
         last_seen_at: now,
         last_seen_revision: repoRevision ?? f.last_seen_revision,
       });
+      if (nt && !byTitle.has(nt)) byTitle.set(nt, id);
       added++;
     } else {
       // Upsert audit content fields but preserve local workflow state
