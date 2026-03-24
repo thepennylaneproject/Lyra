@@ -1,0 +1,9 @@
+Finding Type,Dashboard Count,Manual Count,Difference
+bug,14,1,13
+code quality,2,0,2
+code-quality,1,0,1
+config,17,0,17
+debt,3,18,-15
+logic,1,0,1
+security,25,0,25
+ux,6,0,6

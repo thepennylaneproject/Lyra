@@ -363,12 +363,18 @@ export function OrchestrationPanel() {
         </div>
       )}
 
-      <div style={{ marginBottom: "0.75rem" }}>
+      <form
+        onSubmit={(e) => e.preventDefault()}
+        autoComplete="off"
+        style={{ marginBottom: "0.75rem" }}
+      >
         <label style={{ fontSize: "9px", color: "var(--ink-text-4)", display: "block", marginBottom: "0.25rem" }}>
           ORCHESTRATION_ENQUEUE_SECRET (stored in session only)
         </label>
         <input
           type="password"
+          name="orchestration_enqueue_secret"
+          autoComplete="new-password"
           placeholder="paste secret to enable Run buttons"
           value={enqueueSecret}
           onChange={(e) => persistSecret(e.target.value)}
@@ -386,7 +392,7 @@ export function OrchestrationPanel() {
         >
           When set, requests from this panel send this secret. The rest of the dashboard uses your sign-in cookie only.
         </div>
-      </div>
+      </form>
 
       {data && (
         <div

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readRepairQueue, writeRepairQueue } from "@/lib/audit-reader";
 import {
+  deleteActiveRepairJobsForFinding,
   insertRepairJobRecord,
   listRecentRepairJobs,
   listRepairJobsForProject,

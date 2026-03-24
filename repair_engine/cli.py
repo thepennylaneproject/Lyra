@@ -29,6 +29,16 @@ def build_parser() -> argparse.ArgumentParser:
     worker = sub.add_parser("worker", help="Run queue worker")
     worker.add_argument("--limit", type=int, default=10)
 
+    dash_worker = sub.add_parser(
+        "dashboard-worker",
+        help="Run worker that drains the dashboard-backed repair queue (requires LYRA_DASHBOARD_URL)",
+    )
+    dash_worker.add_argument("--limit", type=int, default=10)
+    dash_worker.add_argument(
+        "--poll-interval", type=float, default=5.0,
+        help="Seconds to sleep between polls when the queue is empty",
+    )
+
     sub.add_parser("status", help="Print queue and config summary")
     return parser
 
@@ -93,6 +103,17 @@ def main() -> int:
     if args.command == "worker":
         outputs = engine.run_queue_worker(limit=args.limit)
         print(json.dumps({"worker_results": outputs}, indent=2))
+        return 0
+
+    if args.command == "dashboard-worker":
+        from .queue.worker import run_dashboard_worker_loop
+
+        stats = run_dashboard_worker_loop(
+            engine,
+            poll_interval=args.poll_interval,
+            max_jobs=args.limit,
+        )
+        print(json.dumps(stats, indent=2))
         return 0
 
     parser.print_help()

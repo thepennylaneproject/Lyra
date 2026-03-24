@@ -39,12 +39,13 @@ Return **only** valid JSON:
 }
 ```
 
-- `finding_id`: stable slug, e.g. `advocera-auth-missing-refresh`
+- `finding_id`: stable slug based on the **rule/pattern**, not the file. Format: `{project}-{rule}`, e.g. `codra-hardcoded-secrets`, `advocera-auth-missing-refresh`. Never include a domain or filename in the ID — the same rule violation across multiple files is ONE finding.
+- **One finding per rule, not one per file.** If a violation (e.g. hardcoded secrets, missing strict mode, absent security headers) appears in multiple files, emit a **single finding** with all affected locations listed in `proof_hooks`. Do NOT emit one finding per affected file.
 - Cite violated expectation text in `description`
 - Map audit severities: critical→blocker or major, warning→major or minor, suggestion→minor or nit
 - `coverage.files_reviewed` and `coverage.modules_reviewed` must only include items from the provided scope
 - If scope was fully examined, set `coverage_complete` true; otherwise false with `incomplete_reason`
-- Only report net-new findings. If a known finding is relevant, reference it in `known_findings_referenced` instead of re-reporting it.
+- Only report net-new findings. If a known finding is relevant, reference it in `known_findings_referenced` instead of re-reporting it. If the same rule was already reported under a different ID, use `known_findings_referenced` to reference the existing finding rather than creating a new one.
 
 ## Process
 

@@ -307,6 +307,60 @@ class RepairOrchestrator:
             results.append(self.run_for_finding(finding))
         return results
 
+    def run_dashboard_worker(self, limit: int = 10) -> list[dict[str, Any]]:
+        """
+        Process repair jobs queued in the dashboard (Postgres-backed queue).
+
+        Requires LYRA_DASHBOARD_URL to be configured. Calls
+        POST /api/engine/dequeue repeatedly to claim and process jobs one at a
+        time. Each job's completion is automatically reported back to the
+        dashboard via _report_to_dashboard (POST /api/engine/complete).
+
+        Args:
+            limit: Maximum number of jobs to process in this run.
+
+        Returns:
+            List of result dicts, one per processed job.
+        """
+        if not self.dashboard_client:
+            raise RuntimeError(
+                "LYRA_DASHBOARD_URL is not configured; "
+                "dashboard worker mode requires a reachable dashboard."
+            )
+
+        results: list[dict[str, Any]] = []
+        for _ in range(limit):
+            try:
+                payload = self.dashboard_client.dequeue_next_job()
+            except Exception as exc:
+                results.append({"status": "dequeue_error", "error": str(exc)})
+                break
+
+            if not payload:
+                break  # Queue is empty
+
+            finding_data = payload.get("finding")
+            job = payload.get("job", {})
+            finding_id = str(job.get("finding_id", ""))
+            project_name = str(job.get("project_name", ""))
+
+            if not finding_data or not finding_id:
+                results.append({
+                    "finding_id": finding_id,
+                    "status": "missing",
+                    "error": "No finding data returned by dashboard dequeue",
+                })
+                continue
+
+            # Inject project_name into raw finding dict so the engine can use it
+            if isinstance(finding_data, dict) and "project_name" not in finding_data:
+                finding_data = {**finding_data, "project_name": project_name}
+
+            finding = Finding.from_dict(finding_data)
+            results.append(self.run_for_finding(finding))
+
+        return results
+
     def run_selected(self, filters: IngestionFilters) -> list[dict[str, Any]]:
         findings, _data = load_findings(os.path.join(self.repo_root, self.config.artifacts.findings_file))
         selected = filter_findings(findings, filters)
