@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect, type CSSProperties } from "react";
+import { useState, useCallback, useEffect, useRef, type CSSProperties } from "react";
+import { apiFetch } from "@/lib/api-fetch";
 import type { Project, Finding, FindingStatus } from "@/lib/types";
 import { Badge } from "./Badge";
 import { MetricCard } from "./MetricCard";
@@ -78,6 +79,10 @@ export function ProjectView({
   const [actionError, setActionError] = useState<string | null>(null);
   /** Set to server error detail when save succeeded but refetch failed */
   const [refreshAfterSaveError, setRefreshAfterSaveError] = useState<string | null>(null);
+  const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(new Set());
+  const [batchQueuing, setBatchQueuing] = useState(false);
+  const [batchQueueResult, setBatchQueueResult] = useState<string | null>(null);
+  const batchResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setFindings(project.findings ?? []);
@@ -134,6 +139,55 @@ export function ProjectView({
     },
     [project.name, onUpdateFinding, refetchProject]
   );
+
+  const handleToggleSelect = useCallback((findingId: string, checked: boolean) => {
+    setSelectedFindingIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(findingId);
+      else next.delete(findingId);
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedFindingIds((prev) => {
+      const allIds = filtered.map((f) => f.finding_id);
+      if (allIds.every((id) => prev.has(id))) {
+        return new Set();
+      }
+      return new Set(allIds);
+    });
+  }, [filtered]);
+
+  const handleBatchQueueRepair = useCallback(async () => {
+    if (selectedFindingIds.size === 0 || batchQueuing) return;
+    setBatchQueuing(true);
+    setBatchQueueResult(null);
+    try {
+      const res = await apiFetch("/api/bulk-operations/repair-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_name: project.name,
+          finding_ids: Array.from(selectedFindingIds),
+          priority: "normal",
+        }),
+      });
+      const data = (await res.json()) as Record<string, unknown>;
+      if (!res.ok) throw new Error(String(data.error ?? `Failed (${res.status})`));
+      setSelectedFindingIds(new Set());
+      const msg = String(data.message ?? `Queued ${String(data.queued_count)} finding(s) for repair.`);
+      setBatchQueueResult(msg);
+      if (batchResultTimer.current) clearTimeout(batchResultTimer.current);
+      batchResultTimer.current = setTimeout(() => setBatchQueueResult(null), 4000);
+    } catch (err) {
+      setBatchQueueResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      if (batchResultTimer.current) clearTimeout(batchResultTimer.current);
+      batchResultTimer.current = setTimeout(() => setBatchQueueResult(null), 6000);
+    } finally {
+      setBatchQueuing(false);
+    }
+  }, [selectedFindingIds, batchQueuing, project.name]);
 
   const selectedFinding =
     selected && (findings.find((f) => f.finding_id === selected.finding_id) ?? selected);
@@ -588,6 +642,86 @@ export function ProjectView({
                 />
               </div>
 
+              {/* Batch action bar */}
+              {filtered.length > 0 && (
+                <div
+                  style={{
+                    display:      "flex",
+                    alignItems:   "center",
+                    gap:          "0.5rem",
+                    marginBottom: "0.5rem",
+                    minHeight:    "26px",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && filtered.every((f) => selectedFindingIds.has(f.finding_id))}
+                    ref={(el) => {
+                      if (el) {
+                        const someSelected = filtered.some((f) => selectedFindingIds.has(f.finding_id));
+                        const allSelected  = filtered.every((f) => selectedFindingIds.has(f.finding_id));
+                        el.indeterminate = someSelected && !allSelected;
+                      }
+                    }}
+                    onChange={handleSelectAll}
+                    aria-label="Select all visible findings"
+                    style={{ cursor: "pointer", accentColor: "var(--ink-text-2)" }}
+                  />
+                  <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
+                    {selectedFindingIds.size > 0 ? `${selectedFindingIds.size} selected` : "select all"}
+                  </span>
+                  {selectedFindingIds.size > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleBatchQueueRepair()}
+                        disabled={batchQueuing}
+                        style={{
+                          fontSize:        "10px",
+                          fontFamily:      "var(--font-mono)",
+                          padding:         "2px 10px",
+                          background:      "var(--ink-bg-raised)",
+                          border:          "0.5px solid var(--ink-border)",
+                          borderRadius:    "var(--radius-md)",
+                          cursor:          batchQueuing ? "not-allowed" : "pointer",
+                          color:           "var(--ink-text)",
+                          opacity:         batchQueuing ? 0.6 : 1,
+                        }}
+                      >
+                        {batchQueuing ? "queuing…" : `queue ${selectedFindingIds.size} for repair`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFindingIds(new Set())}
+                        style={{
+                          fontSize:     "10px",
+                          fontFamily:   "var(--font-mono)",
+                          padding:      "2px 6px",
+                          background:   "transparent",
+                          border:       "none",
+                          cursor:       "pointer",
+                          color:        "var(--ink-text-4)",
+                        }}
+                      >
+                        clear
+                      </button>
+                    </>
+                  )}
+                  {batchQueueResult && (
+                    <span
+                      style={{
+                        fontSize:   "10px",
+                        fontFamily: "var(--font-mono)",
+                        color:      batchQueueResult.startsWith("Error") ? "var(--ink-red)" : "var(--ink-green)",
+                        marginLeft: "0.25rem",
+                      }}
+                    >
+                      {batchQueueResult}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                 {filtered.length === 0 && (
                   <EmptyState
@@ -612,6 +746,8 @@ export function ProjectView({
                     key={f.finding_id}
                     finding={f}
                     onClick={() => setSelected(f)}
+                    selected={selectedFindingIds.has(f.finding_id)}
+                    onSelect={handleToggleSelect}
                   />
                 ))}
               </div>
