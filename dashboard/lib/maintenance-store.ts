@@ -472,6 +472,49 @@ export async function updateMaintenanceBacklogStatus(
 }
 
 /**
+ * Mark a queued repair job as running.
+ * Called by the repair engine when it dequeues and begins processing a job.
+ */
+export async function markRepairJobRunning(
+  findingId: string,
+  projectName: string
+): Promise<RepairJob | null> {
+  const rows = await pool().query(
+    `UPDATE lyra_repair_jobs
+        SET status = 'running',
+            payload = payload || jsonb_build_object('started_at', now()::text)
+      WHERE finding_id = $1 AND lower(trim(project_name)) = lower(trim($2)) AND status = 'queued'
+      RETURNING *`,
+    [findingId, projectName]
+  );
+  if (!rows[0]) return null;
+  const row = rows[0];
+  return {
+    id: row.id != null ? String(row.id) : undefined,
+    finding_id: String(row.finding_id),
+    project_name: String(row.project_name),
+    queued_at:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at),
+    status: "running",
+    targeted_files: Array.isArray(row.targeted_files)
+      ? (row.targeted_files as string[])
+      : [],
+    verification_commands: Array.isArray(row.verification_commands)
+      ? (row.verification_commands as string[])
+      : [],
+    rollback_notes:
+      row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+    repair_policy: asJsonObject(row.repair_policy),
+    maintenance_task_id:
+      row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
+    backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
+    provenance: asJsonObject(row.provenance),
+  };
+}
+
+/**
  * Update a repair job with completion status and metadata from the repair engine.
  * Called by the Python repair engine when a repair run completes.
  */
@@ -494,7 +537,7 @@ export async function updateRepairJobCompletion(args: {
               'applied_files', COALESCE($4::jsonb, payload->'applied_files', '[]'::jsonb),
               'run_id', COALESCE($5, payload->>'run_id')
             ) || (payload - 'applied_files' - 'run_id')
-      WHERE finding_id = $6 AND project_name = $7 AND status = 'queued'
+      WHERE finding_id = $6 AND lower(trim(project_name)) = lower(trim($7)) AND status IN ('queued', 'running')
       RETURNING *`,
     [
       args.status,
