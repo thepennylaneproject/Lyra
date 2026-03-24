@@ -259,6 +259,142 @@ function gitDiffFiles(
   }
 }
 
+/**
+ * Build a curated "architecture anchor" context for intelligence extraction.
+ *
+ * Instead of domain-chunked passes (8 files at a time), this collects the
+ * files that best reveal a project's overall architecture:
+ *   - package.json (dependencies, name, scripts) — up to 3 levels
+ *   - README.md, MISSION.md, CHANGELOG.md at root
+ *   - Prisma schema and first few migrations
+ *   - Main entry points (main.ts, index.ts, app.ts) at key depths
+ *   - .env.example (environment variable inventory)
+ *   - Dockerfiles and docker-compose files
+ *   - CI workflow files
+ *   - tsconfig.json, turbo.json at root
+ *   - Architecture / design docs (docs/*.md)
+ *   - Any existing intelligence report excerpt
+ */
+export function buildIntelligenceContext(
+  repoRoot: string,
+  scanRoots: string[]
+): string {
+  const MAX_CHARS = 10_000;
+  const collected: Array<{ path: string; priority: number }> = [];
+
+  function tryAdd(relPath: string, priority: number): void {
+    const full = join(repoRoot, relPath);
+    if (existsSync(full) && statSync(full).isFile()) {
+      collected.push({ path: full, priority });
+    }
+  }
+
+  function scanForPattern(
+    dir: string,
+    depth: number,
+    maxDepth: number,
+    test: (name: string, rel: string) => number | false
+  ): void {
+    if (depth > maxDepth || !existsSync(dir)) return;
+    let entries: string[];
+    try { entries = readdirSync(dir); } catch { return; }
+    for (const name of entries) {
+      if (["node_modules", ".git", "dist", "build", ".next", "coverage", "playwright-report", "test-results"].includes(name)) continue;
+      const full = join(dir, name);
+      let st: ReturnType<typeof statSync>;
+      try { st = statSync(full); } catch { continue; }
+      const rel = full.replace(repoRoot + "/", "");
+      if (st.isFile()) {
+        const pri = test(name, rel);
+        if (pri !== false) collected.push({ path: full, priority: pri });
+      } else if (st.isDirectory() && depth < maxDepth) {
+        scanForPattern(full, depth + 1, maxDepth, test);
+      }
+    }
+  }
+
+  // Anchor files by explicit path
+  tryAdd("README.md", 100);
+  tryAdd("MISSION.md", 95);
+  tryAdd("CHANGELOG.md", 60);
+  tryAdd(".env.example", 90);
+  tryAdd("tsconfig.json", 70);
+  tryAdd("turbo.json", 70);
+  tryAdd("docker-compose.yml", 65);
+  tryAdd("docker-compose.yaml", 65);
+  tryAdd("docker/docker-compose.prod.yml", 65);
+
+  // package.json files (root + app-level)
+  scanForPattern(repoRoot, 0, 2, (name) =>
+    name === "package.json" ? 85 : false
+  );
+
+  // Prisma schema
+  scanForPattern(repoRoot, 0, 4, (name, rel) =>
+    name.endsWith(".prisma") ? 80 : false
+  );
+
+  // First 3 SQL migrations (chronological)
+  const migrations: string[] = [];
+  scanForPattern(repoRoot, 0, 6, (name, rel) => {
+    if (name === "migration.sql" && migrations.length < 3) {
+      migrations.push(rel);
+      return 50;
+    }
+    return false;
+  });
+
+  // Main entry points
+  scanForPattern(repoRoot, 0, 4, (name) =>
+    name === "main.ts" || name === "index.ts" || name === "app.ts" ? 75 : false
+  );
+
+  // CI workflows
+  scanForPattern(join(repoRoot, ".github", "workflows"), 0, 1, (name) =>
+    name.endsWith(".yml") || name.endsWith(".yaml") ? 55 : false
+  );
+
+  // Dockerfiles
+  scanForPattern(repoRoot, 0, 3, (name) =>
+    name === "Dockerfile" || name.startsWith("Dockerfile.") ? 60 : false
+  );
+
+  // Architecture docs
+  scanForPattern(join(repoRoot, "docs"), 0, 2, (name) =>
+    name.endsWith(".md") ? 45 : false
+  );
+
+  // Also scan scan roots for any top-level README / docs
+  for (const scanRoot of scanRoots) {
+    tryAdd(join(scanRoot, "README.md").replace(repoRoot + "/", ""), 70);
+  }
+
+  // Dedupe, sort by priority desc, limit to 50 files
+  const seen = new Set<string>();
+  const ordered = collected
+    .filter(({ path }) => { if (seen.has(path)) return false; seen.add(path); return true; })
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, 50);
+
+  const parts: string[] = [];
+  for (const { path } of ordered) {
+    const rel = path.replace(repoRoot + "/", "");
+    try {
+      let text = readFileSync(path, "utf-8");
+      if (text.length > MAX_CHARS) text = text.slice(0, MAX_CHARS) + "\n/* truncated */";
+      parts.push(`--- ${rel} ---\n${text}`);
+    } catch { /* skip */ }
+  }
+
+  // Also add existing intelligence report if present
+  for (const scanRoot of scanRoots) {
+    const excerpt = readIntelligenceReportExcerpt(repoRoot, scanRoot);
+    if (excerpt) { parts.unshift(excerpt); break; }
+  }
+
+  return parts.join("\n\n") || "(no architecture anchor files found)";
+}
+
 export function readExpectations(repoRoot: string, expectationsPath: string): string {
   const full = join(repoRoot, expectationsPath);
   if (!existsSync(full)) {
