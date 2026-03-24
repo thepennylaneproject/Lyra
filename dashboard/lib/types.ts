@@ -420,7 +420,7 @@ export interface RepairJob {
   finding_id: string;
   project_name: string;
   queued_at: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   patch_applied?: boolean;
   cost_usd?: number;
   provider_used?: string;
