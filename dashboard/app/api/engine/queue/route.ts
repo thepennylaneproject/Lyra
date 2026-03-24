@@ -131,32 +131,70 @@ export async function DELETE(request: Request) {
       typeof body.finding_id === "string" ? body.finding_id.trim() : "";
     const projectName =
       typeof body.project_name === "string" ? body.project_name.trim() : "";
-    if (!findingId) {
+    const jobId =
+      typeof body.id === "string" ? body.id.trim() : "";
+
+    if (!findingId && !jobId) {
       return NextResponse.json(
-        { error: "finding_id is required" },
+        { error: "finding_id or id is required" },
         { status: 400 }
       );
     }
 
     if (jobsStoreConfigured()) {
-      const removed = await deleteActiveRepairJobsForFinding({
-        finding_id: findingId,
-        project_name: projectName || undefined,
-      });
-      return NextResponse.json({ removed });
+      const { createPostgresPool } = await import("@/lib/postgres");
+      const pool = createPostgresPool();
+
+      // Cancel jobs that are queued or running (stuck). Completed/failed jobs
+      // are left as-is to preserve the audit trail — they are already terminal.
+      let rows: Record<string, unknown>[];
+      if (jobId) {
+        rows = await pool.query(
+          `UPDATE lyra_repair_jobs
+              SET status      = 'cancelled',
+                  error       = 'Cancelled by user',
+                  finished_at = now()
+            WHERE id = $1
+              AND status IN ('queued', 'running')
+            RETURNING id, finding_id, project_name, status`,
+          [jobId]
+        );
+      } else if (projectName) {
+        rows = await pool.query(
+          `UPDATE lyra_repair_jobs
+              SET status      = 'cancelled',
+                  error       = 'Cancelled by user',
+                  finished_at = now()
+            WHERE finding_id   = $1
+              AND lower(trim(project_name)) = lower(trim($2))
+              AND status IN ('queued', 'running')
+            RETURNING id, finding_id, project_name, status`,
+          [findingId, projectName]
+        );
+      } else {
+        rows = await pool.query(
+          `UPDATE lyra_repair_jobs
+              SET status      = 'cancelled',
+                  error       = 'Cancelled by user',
+                  finished_at = now()
+            WHERE finding_id = $1
+              AND status IN ('queued', 'running')
+            RETURNING id, finding_id, project_name, status`,
+          [findingId]
+        );
+      }
+
+      return NextResponse.json({ removed: rows.length, cancelled: rows });
     }
 
+    // JSON file store path
     const queue = readRepairQueue();
-    // Remove by composite key (project_name, finding_id) when project_name is provided,
-    // fall back to finding_id-only match for backwards compatibility.
     let next: typeof queue;
     if (projectName) {
       next = queue.filter(
         (j) => !(j.finding_id === findingId && j.project_name === projectName)
       );
     } else {
-      // Legacy path: no project_name supplied. Warn and fall back to finding_id only.
-      // This may remove entries from multiple projects if finding_ids are reused.
       console.warn(
         `DELETE /api/engine/queue called without project_name for finding_id=${findingId}. ` +
           "Provide project_name to scope the removal correctly."
