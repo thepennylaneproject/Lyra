@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readRepairQueue, writeRepairQueue } from "@/lib/audit-reader";
 import {
+  deleteActiveRepairJobsForFinding,
   insertRepairJobRecord,
   listRecentRepairJobs,
   listRepairJobsForProject,
@@ -125,12 +126,6 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    if (jobsStoreConfigured()) {
-      return NextResponse.json(
-        { error: "DELETE is not implemented for Postgres-backed repair jobs yet" },
-        { status: 501 }
-      );
-    }
     const body = await request.json();
     const findingId =
       typeof body.finding_id === "string" ? body.finding_id.trim() : "";
@@ -138,9 +133,17 @@ export async function DELETE(request: Request) {
       typeof body.project_name === "string" ? body.project_name.trim() : "";
     if (!findingId) {
       return NextResponse.json(
-        { error: "finding_id and project_name are required" },
+        { error: "finding_id is required" },
         { status: 400 }
       );
+    }
+
+    if (jobsStoreConfigured()) {
+      const removed = await deleteActiveRepairJobsForFinding({
+        finding_id: findingId,
+        project_name: projectName || undefined,
+      });
+      return NextResponse.json({ removed });
     }
 
     const queue = readRepairQueue();

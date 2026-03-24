@@ -251,6 +251,41 @@ export async function insertRepairJobRecord(args: {
   };
 }
 
+/**
+ * Remove queued/running repair jobs for a finding (cancel from queue).
+ * Completed/failed rows are kept for the ledger.
+ */
+export async function deleteActiveRepairJobsForFinding(args: {
+  finding_id: string;
+  project_name?: string;
+}): Promise<number> {
+  const findingId = args.finding_id.trim();
+  const projectName = args.project_name?.trim() ?? "";
+  if (projectName) {
+    const rows = await pool().query(
+      `DELETE FROM lyra_repair_jobs
+        WHERE finding_id = $1
+          AND lower(trim(project_name)) = lower(trim($2))
+          AND status IN ('queued', 'running')
+        RETURNING id`,
+      [findingId, projectName]
+    );
+    return rows.length;
+  }
+  console.warn(
+    `deleteActiveRepairJobsForFinding called without project_name for finding_id=${findingId}. ` +
+      "Removing active jobs across all projects with this finding_id."
+  );
+  const rows = await pool().query(
+    `DELETE FROM lyra_repair_jobs
+      WHERE finding_id = $1
+        AND status IN ('queued', 'running')
+      RETURNING id`,
+    [findingId]
+  );
+  return rows.length;
+}
+
 function rowToBacklog(row: Record<string, unknown>): MaintenanceBacklogItem {
   return {
     id: String(row.id),

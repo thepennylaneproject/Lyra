@@ -300,7 +300,12 @@ export function JobQueueView() {
         const res = await apiFetch("/api/engine/queue", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ finding_id: job.repairJob!.finding_id }),
+          body: JSON.stringify({
+            finding_id: job.repairJob!.finding_id,
+            ...(job.repairJob!.project_name
+              ? { project_name: job.repairJob!.project_name }
+              : {}),
+          }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
