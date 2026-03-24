@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
+import { getRepository } from "@/lib/repository-instance";
 import { apiErrorMessage, isValidProjectName, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 
@@ -69,19 +70,10 @@ export async function POST(request: Request) {
 
     const pool = createPostgresPool();
 
-    // Load findings from the project JSON so we can build proper backlog rows
-    const projectRows = await pool.query(
-      `SELECT project_json FROM lyra_projects WHERE lower(trim(name)) = lower(trim($1)) LIMIT 1`,
-      [projectName]
-    );
-
-    const projectJson =
-      projectRows[0]?.project_json as Record<string, unknown> | undefined;
-    const allFindings: Array<Record<string, unknown>> = Array.isArray(
-      projectJson?.findings
-    )
-      ? (projectJson.findings as Array<Record<string, unknown>>)
-      : [];
+    // Load findings via the same repository the rest of the app uses (Postgres or JSON file store).
+    const repo = getRepository();
+    const project = await repo.getByName(projectName);
+    const allFindings: Array<Record<string, unknown>> = (project?.findings ?? []) as Array<Record<string, unknown>>;
 
     // Index findings by finding_id for fast lookup
     const findingMap = new Map<string, Record<string, unknown>>();
