@@ -75,6 +75,14 @@ export async function POST(request: Request) {
     const project = await repo.getByName(projectName);
     const allFindings: Array<Record<string, unknown>> = (project?.findings ?? []) as Array<Record<string, unknown>>;
 
+    if (allFindings.length === 0) {
+      console.warn(
+        `[repair-queue] No findings returned for project "${projectName}". ` +
+        `project found: ${project != null}, ` +
+        `findings array length: ${project?.findings?.length ?? "undefined"}`
+      );
+    }
+
     // Index findings by finding_id for fast lookup
     const findingMap = new Map<string, Record<string, unknown>>();
     for (const f of allFindings) {
@@ -175,6 +183,15 @@ export async function POST(request: Request) {
 
     const skippedCount = findingIds.length - queuedCount;
 
+    if (skippedCount > 0) {
+      const knownIds = [...findingMap.keys()].slice(0, 5);
+      console.warn(
+        `[repair-queue] ${skippedCount} finding(s) skipped for project "${projectName}". ` +
+        `Requested IDs: ${JSON.stringify(findingIds)}. ` +
+        `Known IDs (first 5 of ${findingMap.size}): ${JSON.stringify(knownIds)}`
+      );
+    }
+
     await recordDurableEventBestEffort({
       event_type: "bulk_operation_repair_queue",
       project_name: projectName,
@@ -186,6 +203,8 @@ export async function POST(request: Request) {
         skipped_count: skippedCount,
         priority: dbPriority,
         total_requested: findingIds.length,
+        skipped_ids: skippedCount > 0 ? findingIds.filter((id) => !findingMap.has(id)) : [],
+        known_id_count: findingMap.size,
       },
     });
 
