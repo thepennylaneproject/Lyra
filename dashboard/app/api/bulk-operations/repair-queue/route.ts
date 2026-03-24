@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
-import { getRepository } from "@/lib/repository-instance";
 import { apiErrorMessage, isValidProjectName, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 
@@ -12,19 +11,17 @@ import { recordDurableEventBestEffort } from "@/lib/durable-state";
  * 2. Upserts them into lyra_maintenance_backlog with next_action='queue_repair'
  * 3. Returns count of successfully queued items
  *
+ * Finding metadata (title, severity, etc.) is loaded via a direct JSONB query
+ * against lyra_projects so the result is consistent with what is actually in the
+ * database, regardless of which repository store (Postgres vs JSON file) is active.
+ * Findings not found in the project are still queued with placeholder data — the
+ * worker's next audit run will enrich them via upsertMaintenanceBacklogFromFindings.
+ *
  * Request body:
  *   {
  *     "project_name": "ProjectName" (required),
- *     "finding_ids": ["uuid1", "uuid2", ...] (required),
- *     "priority": "normal" | "high" | "low" (optional; mapped to P1/P0/P2)
- *   }
- *
- * Response:
- *   {
- *     "ok": true,
- *     "queued_count": N,
- *     "skipped_count": M,
- *     "project_name": "ProjectName"
+ *     "finding_ids": ["id1", "id2", ...] (required),
+ *     "priority": "normal" | "high" | "low" (optional; mapped to P2/P1/P3)
  *   }
  */
 export async function POST(request: Request) {
@@ -38,7 +35,9 @@ export async function POST(request: Request) {
     const projectName = body.project_name
       ? String(body.project_name).trim()
       : null;
-    const findingIds = Array.isArray(body.finding_ids) ? body.finding_ids.map(String) : [];
+    const findingIds = Array.isArray(body.finding_ids)
+      ? body.finding_ids.map(String).filter(Boolean)
+      : [];
     const priorityInput = body.priority
       ? String(body.priority).toLowerCase().trim()
       : "normal";
@@ -64,86 +63,67 @@ export async function POST(request: Request) {
       );
     }
 
-    // Map caller-friendly priority labels to the DB constraint values
     const priorityMap: Record<string, string> = { high: "P1", normal: "P2", low: "P3" };
     const dbPriority = priorityMap[priorityInput] ?? "P2";
 
     const pool = createPostgresPool();
 
-    // Load findings via the same repository the rest of the app uses (Postgres or JSON file store).
-    const repo = getRepository();
-    const project = await repo.getByName(projectName);
-    const allFindings: Array<Record<string, unknown>> = (project?.findings ?? []) as Array<Record<string, unknown>>;
+    // Fetch metadata for the requested finding IDs directly from the project JSONB.
+    // This is always consistent with the DB regardless of which repository layer is active.
+    const metaRows = await pool.query(
+      `SELECT
+         f->>'finding_id'  AS finding_id,
+         f->>'title'       AS title,
+         f->>'description' AS description,
+         f->>'severity'    AS severity,
+         f->'repair_policy' AS repair_policy
+       FROM lyra_projects,
+            jsonb_array_elements(COALESCE(project_json->'findings', '[]'::jsonb)) AS f
+       WHERE lower(trim(name)) = lower(trim($1))
+         AND f->>'finding_id' = ANY($2::text[])`,
+      [projectName, findingIds]
+    );
 
-    if (allFindings.length === 0) {
-      console.warn(
-        `[repair-queue] No findings returned for project "${projectName}". ` +
-        `project found: ${project != null}, ` +
-        `findings array length: ${project?.findings?.length ?? "undefined"}`
-      );
+    // Index the enrichment data by finding_id
+    const metaMap = new Map<string, Record<string, unknown>>();
+    for (const row of metaRows) {
+      const fid = String(row.finding_id ?? "").trim();
+      if (fid) metaMap.set(fid, row as Record<string, unknown>);
     }
 
-    // Index findings by finding_id for fast lookup
-    const findingMap = new Map<string, Record<string, unknown>>();
-    for (const f of allFindings) {
-      const fid = String(f.finding_id ?? "").trim();
-      if (fid) findingMap.set(fid, f);
-    }
-
-    // Infer risk_class from severity / repair_policy
-    function inferRiskClass(f: Record<string, unknown>): string {
+    function inferRiskClass(meta: Record<string, unknown> | undefined): string {
       const rp =
-        typeof f.repair_policy === "object" && f.repair_policy
-          ? (f.repair_policy as Record<string, unknown>)
+        typeof meta?.repair_policy === "object" && meta.repair_policy
+          ? (meta.repair_policy as Record<string, unknown>)
           : {};
       const rc = rp.risk_class;
-      if (rc === "low" || rc === "medium" || rc === "high" || rc === "critical")
-        return rc;
-      const sev = String(f.severity ?? "minor").toLowerCase();
+      if (rc === "low" || rc === "medium" || rc === "high" || rc === "critical") return rc;
+      const sev = String(meta?.severity ?? "minor").toLowerCase();
       if (sev === "blocker") return "critical";
       if (sev === "major") return "high";
       if (sev === "minor") return "medium";
       return "low";
     }
 
-    // Build rows to upsert — one backlog item per finding using deterministic ID
-    const rows: Array<{
-      id: string;
-      title: string;
-      summary: string | null;
-      severity: string;
-      riskClass: string;
-      findingIds: string;
-      dedupeKeys: string;
-      provenance: string;
-    }> = [];
-
-    const skipped: string[] = [];
+    // Upsert one backlog item per requested finding. If metadata isn't available
+    // (project not yet in DB, or finding was recently added), use placeholder values —
+    // the next audit run will update them via upsertMaintenanceBacklogFromFindings.
+    let queuedCount = 0;
+    const failedIds: string[] = [];
 
     for (const fid of findingIds) {
-      const f = findingMap.get(fid);
-      if (!f) {
-        skipped.push(fid);
-        continue;
-      }
-      const title = String(f.title ?? fid).trim();
-      rows.push({
-        id:        `backlog-${projectName}-${fid}`,
-        title,
-        summary:   typeof f.description === "string" ? f.description : null,
-        severity:  String(f.severity ?? "minor"),
-        riskClass: inferRiskClass(f),
-        findingIds: JSON.stringify([fid]),
-        dedupeKeys: JSON.stringify([
-          `finding:${fid}`,
-          `title:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-        ]),
-        provenance: JSON.stringify({ finding_id: fid, source_type: "finding" }),
-      });
-    }
+      const meta = metaMap.get(fid);
+      const title = meta ? String(meta.title ?? fid).trim() : fid;
+      const summary = meta && typeof meta.description === "string" ? meta.description : null;
+      const severity = meta ? String(meta.severity ?? "minor") : "minor";
+      const riskClass = inferRiskClass(meta);
+      const backlogId = `backlog-${projectName}-${fid}`;
+      const dedupeKeys = JSON.stringify([
+        `finding:${fid}`,
+        `title:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      ]);
+      const provenance = JSON.stringify({ finding_id: fid, source_type: "finding" });
 
-    let queuedCount = 0;
-    for (const row of rows) {
       try {
         await pool.query(
           `INSERT INTO lyra_maintenance_backlog (
@@ -154,59 +134,56 @@ export async function POST(request: Request) {
            VALUES ($1, $2, $3, $4, 'open', 'finding', $5, $6, $7, 'queue_repair',
                    $8::jsonb, $9::jsonb, $10::jsonb, now(), now())
            ON CONFLICT (id) DO UPDATE SET
-             next_action    = 'queue_repair',
+             next_action      = 'queue_repair',
              canonical_status = CASE
                WHEN lyra_maintenance_backlog.canonical_status = 'done' THEN 'open'
                ELSE lyra_maintenance_backlog.canonical_status
              END,
-             priority       = EXCLUDED.priority,
-             updated_at     = now()`,
+             priority         = EXCLUDED.priority,
+             updated_at       = now()`,
           [
-            row.id,
+            backlogId,
             projectName,
-            row.title,
-            row.summary,
+            title,
+            summary,
             dbPriority,
-            row.severity,
-            row.riskClass,
-            row.findingIds,
-            row.dedupeKeys,
-            row.provenance,
+            severity,
+            riskClass,
+            JSON.stringify([fid]),
+            dedupeKeys,
+            provenance,
           ]
         );
         queuedCount++;
       } catch (err) {
-        console.warn("Failed to upsert repair backlog item:", err);
-        skipped.push(row.id);
+        console.error(`[repair-queue] Failed to upsert backlog item for ${fid}:`, err);
+        failedIds.push(fid);
       }
     }
 
-    const skippedCount = findingIds.length - queuedCount;
-
-    if (skippedCount > 0) {
-      const knownIds = [...findingMap.keys()].slice(0, 5);
-      console.warn(
-        `[repair-queue] ${skippedCount} finding(s) skipped for project "${projectName}". ` +
-        `Requested IDs: ${JSON.stringify(findingIds)}. ` +
-        `Known IDs (first 5 of ${findingMap.size}): ${JSON.stringify(knownIds)}`
-      );
-    }
+    const skippedCount = failedIds.length;
+    const enrichedCount = metaMap.size;
 
     await recordDurableEventBestEffort({
       event_type: "bulk_operation_repair_queue",
       project_name: projectName,
       source: "bulk_operations_api",
-      summary: `Queued ${queuedCount} finding(s) for repair (${skippedCount} skipped)`,
+      summary: `Queued ${queuedCount} finding(s) for repair (${skippedCount} failed)`,
       payload: {
         project_name: projectName,
         queued_count: queuedCount,
         skipped_count: skippedCount,
+        enriched_count: enrichedCount,
         priority: dbPriority,
         total_requested: findingIds.length,
-        skipped_ids: skippedCount > 0 ? findingIds.filter((id) => !findingMap.has(id)) : [],
-        known_id_count: findingMap.size,
+        failed_ids: failedIds,
       },
     });
+
+    const enrichmentNote =
+      enrichedCount < queuedCount
+        ? ` ${queuedCount - enrichedCount} queued with placeholder data (finding metadata not yet in DB).`
+        : "";
 
     return NextResponse.json({
       ok: true,
@@ -215,8 +192,8 @@ export async function POST(request: Request) {
       project_name: projectName,
       message:
         queuedCount > 0
-          ? `Queued ${queuedCount} finding(s) for repair.${skippedCount > 0 ? ` ${skippedCount} could not be found in the project and were skipped.` : ""}`
-          : "No findings queued — none of the provided IDs matched findings in this project.",
+          ? `Queued ${queuedCount} finding(s) for repair.${enrichmentNote}${skippedCount > 0 ? ` ${skippedCount} failed to write.` : ""}`
+          : `No findings queued — all ${findingIds.length} insert(s) failed. Check server logs.`,
     });
   } catch (error) {
     console.error("POST /api/bulk-operations/repair-queue", error);
