@@ -19,6 +19,13 @@ describe("readPortfolioStateFromSearch", () => {
     });
   });
 
+  it("reads jobs when no project", () => {
+    expect(readPortfolioStateFromSearch("?view=jobs")).toEqual({
+      project: null,
+      activeView: "jobs",
+    });
+  });
+
   it("defaults to portfolio without view param", () => {
     expect(readPortfolioStateFromSearch("?project=foo")).toEqual({
       project: "foo",
@@ -36,5 +43,13 @@ describe("searchStringForPortfolioState", () => {
 
   it("emits view=engine only without project", () => {
     expect(searchStringForPortfolioState("engine", null, "/")).toBe("/?view=engine");
+  });
+
+  it("does not emit view=jobs with an active project", () => {
+    expect(searchStringForPortfolioState("jobs", "my-app", "/")).toBe("/?project=my-app");
+  });
+
+  it("emits view=jobs only without project", () => {
+    expect(searchStringForPortfolioState("jobs", null, "/")).toBe("/?view=jobs");
   });
 });

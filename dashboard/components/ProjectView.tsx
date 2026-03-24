@@ -133,7 +133,7 @@ export function ProjectView({
         }
       } catch (e) {
         const msg =
-          error instanceof Error ? error.message : "Could not update finding. Check connection and try again.";
+          e instanceof Error ? e.message : "Could not update finding. Check connection and try again.";
         setActionError(msg);
       }
     },

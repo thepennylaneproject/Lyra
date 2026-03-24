@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       if (errors.length === 0) {
         validFindings.push(f as Finding);
       } else {
-        const raw = f as Record<string, unknown>;
+        const raw = f as unknown as Record<string, unknown>;
         invalidFindings.push({
           finding_id: raw.finding_id ?? null,
           auditor: raw.agent_name ?? raw.auditor ?? null,

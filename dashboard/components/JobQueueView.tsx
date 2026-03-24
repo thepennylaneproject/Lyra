@@ -7,7 +7,7 @@ import type { LyraAuditJobRow, LyraAuditRunRow } from "@/lib/orchestration-jobs"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type JobStatus = "queued" | "running" | "completed" | "failed";
+type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 interface UnifiedJob {
   id: string;
@@ -41,10 +41,11 @@ const STATUS_MARK: Record<JobStatus, { symbol: string; color: string }> = {
   running:   { symbol: "◎",  color: "var(--ink-blue)" },
   completed: { symbol: "✓",  color: "var(--ink-green)" },
   failed:    { symbol: "✗",  color: "var(--ink-red)" },
+  cancelled: { symbol: "⊘",  color: "var(--ink-text-4)" },
 };
 
 const STATUS_ORDER: Record<JobStatus, number> = {
-  running: 0, queued: 1, completed: 2, failed: 2,
+  running: 0, queued: 1, completed: 2, failed: 2, cancelled: 2,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -325,7 +326,12 @@ export function JobQueueView() {
   const running = jobs.filter((j) => j.status === "running");
   const queued  = jobs.filter((j) => j.status === "queued");
   const recent  = jobs
-    .filter((j) => j.status === "completed" || j.status === "failed")
+    .filter(
+      (j) =>
+        j.status === "completed" ||
+        j.status === "failed" ||
+        j.status === "cancelled"
+    )
     .slice(0, 20);
 
   // ── Renderers ─────────────────────────────────────────────────────────────
