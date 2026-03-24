@@ -19,9 +19,11 @@ const TYPE_ICONS: Record<string, string> = {
 interface FindingRowProps {
   finding: Finding;
   onClick: () => void;
+  selected?: boolean;
+  onSelect?: (findingId: string, checked: boolean) => void;
 }
 
-export function FindingRow({ finding, onClick }: FindingRowProps) {
+export function FindingRow({ finding, onClick, selected, onSelect }: FindingRowProps) {
   const stripe  = SEVERITY_STRIPE[finding.severity ?? ""] ?? "var(--ink-border)";
   const isActive = STATUS_GROUPS.active.includes(finding.status);
 
@@ -46,14 +48,33 @@ export function FindingRow({ finding, onClick }: FindingRowProps) {
         borderLeft:    `2.5px solid ${stripe}`,
         opacity:       isActive ? 1 : 0.45,
         transition:    "background 0.1s ease",
+        background:    selected ? "var(--ink-bg-raised)" : "transparent",
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLDivElement).style.background = "var(--ink-bg-raised)";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.background = "transparent";
+        (e.currentTarget as HTMLDivElement).style.background = selected ? "var(--ink-bg-raised)" : "transparent";
       }}
     >
+      {onSelect && (
+        <input
+          type="checkbox"
+          checked={selected ?? false}
+          onChange={(e) => {
+            e.stopPropagation();
+            onSelect(finding.finding_id, e.target.checked);
+          }}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select finding: ${finding.title}`}
+          style={{
+            marginTop:   "2px",
+            flexShrink:  0,
+            cursor:      "pointer",
+            accentColor: "var(--ink-text-2)",
+          }}
+        />
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Title */}
         <div
