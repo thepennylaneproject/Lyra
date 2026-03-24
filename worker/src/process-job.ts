@@ -144,6 +144,27 @@ function loadPrompts(): { core: string; auditAgent: string } {
 }
 
 
+/**
+ * Run an array of async tasks with a maximum concurrency limit.
+ * Preserves input order in the returned results array.
+ */
+async function runWithConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number
+): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < tasks.length) {
+      const i = next++;
+      results[i] = await tasks[i]();
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
+
 const ACTIVE_FINDING_STATUSES = new Set([
   "open",
   "accepted",
@@ -541,46 +562,56 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
         const passResults: AuditPassResult[] = [];
         let findings: Array<Record<string, unknown>> = [];
 
-        for (const pass of passes) {
-          const passScope: AuditScope = {
-            ...execution.scope,
-            files: pass.files,
-            scopePaths: pass.files,
-            maxFiles:
-              typeof payload.max_files === "number"
-                ? payload.max_files
-                : Math.max(pass.files.length, 1),
-          };
-          const code = buildCodeContextForAudit(
-            execution.repoRoot,
-            scanRoots,
-            passScope
-          );
-          const llm = await auditWithLlm(
-            core,
-            auditAgent,
-            expectations,
-            code,
-            project.name,
-            visualOnly,
-            typeof payload.audit_kind === "string" ? payload.audit_kind : undefined,
-            {
-              scopeLabel: pass.label,
-              filesInScope: pass.files,
-              knownFindingIds: knownFindingIds(existing),
-              checklistId: execution.checklistId,
-              manifestRevision: execution.manifestRevision,
-            }
-          );
+        // Run domain passes in parallel (up to PASS_CONCURRENCY at a time).
+        // Each pass is a fully independent LLM call over a different file chunk,
+        // so there is no ordering dependency between them.
+        const PASS_CONCURRENCY = Number(process.env.LYRA_PASS_CONCURRENCY ?? 5);
+        const auditKindStr = typeof payload.audit_kind === "string" ? payload.audit_kind : undefined;
+        const cluster = getClusterFromAuditKind(auditKindStr);
+
+        const passTaskResults = await runWithConcurrency(
+          passes.map((pass) => async () => {
+            const passScope: AuditScope = {
+              ...execution.scope,
+              files: pass.files,
+              scopePaths: pass.files,
+              maxFiles:
+                typeof payload.max_files === "number"
+                  ? payload.max_files
+                  : Math.max(pass.files.length, 1),
+            };
+            const code = buildCodeContextForAudit(
+              execution.repoRoot,
+              scanRoots,
+              passScope
+            );
+            const llm = await auditWithLlm(
+              core,
+              auditAgent,
+              expectations,
+              code,
+              project.name,
+              visualOnly,
+              auditKindStr,
+              {
+                scopeLabel: pass.label,
+                filesInScope: pass.files,
+                knownFindingIds: knownFindingIds(existing),
+                checklistId: execution.checklistId,
+                manifestRevision: execution.manifestRevision,
+              }
+            );
+            return { llm, pass };
+          }),
+          PASS_CONCURRENCY
+        );
+
+        for (const { llm, pass } of passTaskResults) {
           auditModel = llm.model || auditModel;
-          const mappedFindings = llm.findings.map((finding) => ({
-            ...finding,
-            repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
-          }));
           passResults.push({
             findings: llm.findings.map((finding) => ({
               ...finding,
-              cluster: getClusterFromAuditKind(typeof payload.audit_kind === "string" ? payload.audit_kind : undefined),
+              cluster,
               repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
             })),
             coverage: {
@@ -605,7 +636,7 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
           findings = findings.concat(
             llm.findings.map((finding) => ({
               ...finding,
-              cluster: getClusterFromAuditKind(typeof payload.audit_kind === "string" ? payload.audit_kind : undefined),
+              cluster,
               repair_policy: inferRepairPolicy(finding as unknown as Record<string, unknown>),
             })) as Array<Record<string, unknown>>
           );
