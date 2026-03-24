@@ -425,9 +425,15 @@ export function ProjectAuditHistory({ projectName, projectStatus }: ProjectAudit
           <summary style={{ cursor: "pointer", marginBottom: "0.5rem" }}>
             Advanced: override access key
           </summary>
-          <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "0.5px solid var(--ink-border-faint)" }}>
+          <form
+            onSubmit={(e) => e.preventDefault()}
+            autoComplete="off"
+            style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "0.5px solid var(--ink-border-faint)" }}
+          >
             <input
               type="password"
+              name="audit_enqueue_secret_override"
+              autoComplete="new-password"
               placeholder="Access key (optional override)"
               value={enqueueSecret}
               onChange={(e) => persistSecret(e.target.value)}
@@ -442,7 +448,7 @@ export function ProjectAuditHistory({ projectName, projectStatus }: ProjectAudit
             <div style={{ fontSize: "9px", color: "var(--ink-text-4)" }}>
               Usually not needed if you&apos;re logged in. Use this to bypass with a different key.
             </div>
-          </div>
+          </form>
         </details>
         {dispatchError && (
           <div style={{ marginTop: "0.45rem", fontSize: "10px", color: "var(--ink-red)", fontFamily: "var(--font-mono)" }}>

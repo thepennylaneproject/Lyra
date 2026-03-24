@@ -1,0 +1,89 @@
+Source,Finding ID,Type,Category,Title,Priority,Severity,Description,Status
+Dashboard,codra-security-headers-missing,security,security,Missing Security Headers,P1,minor,Security headers were not detected in `netlify.toml`. It is important to add sec,open
+Dashboard,codra-auth-direct-supabase-calls,logic,architecture,Direct Supabase Calls for Authentication,P0,blocker,Direct calls to Supabase for authentication operations are present in `src/lib/a,open
+Dashboard,codra-plain-text-api-keys,security,security,Potential Plain Text API Keys in Code,P0,blocker,"There are potential instances of plain text API keys or secrets in the code, whi",open
+Dashboard,codra-eslint-plugin-disabled,config,code quality,ESLint Plugin Codra Disabled,P1,major,"The `eslint-plugin-codra` is not enforced in the codebase, which could lead to d",open
+Dashboard,codra-security-plaintext-api-keys,security,security,Plaintext API Key Storage,P0,blocker,API keys are being sent in plaintext to the server in `createCredential` and `ro,open
+Dashboard,codra-security-missing-security-headers,security,security,Missing Security Headers in Deployment,P1,major,"Security headers such as `X-Frame-Options`, `X-Content-Type-Options`, and `Conte",open
+Dashboard,codra-security-hardcoded-secrets,security,security,Hardcoded Secrets Detected,P0,blocker,"Potential hardcoded secrets detected in the source code, which violates the expe",open
+Dashboard,codra-ux-offline-queue-logging,ux,ux,Verbose Logging in Offline Queue,P3,minor,The `OfflineQueue` class in `src/lib/api/offline-queue.ts` logs extensively to t,open
+Dashboard,codra-security-no-hardcoded-secrets,security,security,Hardcoded Secrets in Source Code,P0,blocker,The source code contains potential hardcoded secrets. Strings matching patterns ,open
+Dashboard,codra-auth-no-strict-mode,config,code-quality,TypeScript Strict Mode Not Enabled,P2,minor,The project uses TypeScript but strict mode is not enabled in `tsconfig.json`. E,open
+Dashboard,codra-auth-no-security-headers,config,security,Missing Security Headers in Netlify Configuration,P1,minor,"Security headers such as `X-Frame-Options`, `X-Content-Type-Options`, and `Conte",open
+Dashboard,codra-auth-hardcoded-secrets,security,security,Potential Hardcoded Secrets in Authenticity Detector,P0,blocker,The `authenticity-detector.ts` file contains patterns that could match hardcoded,open
+Dashboard,codra-auth-no-jwt-verification,security,security,Missing JWT/Session Verification,P0,blocker,Ensure that every Netlify Function that reads or writes user data verifies the c,open
+Dashboard,codra-auth-missing-jwt-verification,security,security,Missing JWT/Session Verification in AuthCallback,P0,blocker,The `AuthCallback` component handles authentication callbacks but does not verif,open
+Dashboard,codra-typescript-strict-mode,config,config,TypeScript Strict Mode Not Enabled,P1,major,"The project uses TypeScript, but strict mode was not detected in `tsconfig.json`",open
+Dashboard,codra-security-headers,security,security,Missing Security Headers,P1,minor,Security headers were not detected in `netlify.toml`. It is recommended to add `,open
+Dashboard,codra-no-hardcoded-secrets,security,security,Hardcoded Secrets Detected,P0,blocker,"No API keys, tokens, or credentials should appear as string literals in source c",open
+Dashboard,codra-cloudinary-credentials-plain-text,security,security,Cloudinary Credentials Stored in Plain Text,P0,blocker,The Cloudinary credentials are parsed from environment variables but are not enc,open
+Dashboard,codra-eslint-rules-disabled,code quality,code quality,Custom ESLint Rules Disabled,P0,blocker,Custom ESLint rules from `eslint-plugin-codra` must not be disabled. Check for a,open
+Dashboard,codra-react-version-check,config,config,React Version Downgrade Risk,P0,blocker,The project targets React 18. Any change to package.json that downgrades react o,open
+Dashboard,codra-hardcoded-secrets,security,security,Potential Hardcoded Secrets,P0,blocker,"Check for any hardcoded API keys or tokens in the source code, as they may appea",open
+Dashboard,codra-jwt-verification-missing,security,security,Missing JWT Verification,P0,blocker,Every Netlify Function that reads or writes user data must verify the caller's s,open
+Dashboard,codra-api-credentials-plain-text,bug,security,API Credentials Stored in Plain Text,P0,blocker,API keys or secrets should not be stored in the database unencrypted. Confirm th,open
+Dashboard,codra-netlify-functions-only,bug,architecture,Server-side Logic Outside Netlify Functions,P0,blocker,All server-side logic must reside in `netlify/functions/`. Any new server-side l,open
+Dashboard,codra-strict-mode-flag,config,config,TypeScript Strict Mode Not Enabled,P1,major,"The project uses TypeScript, but strict mode was not detected in `tsconfig.json`",open
+Dashboard,codra-strict-mode-missing,config,config,TypeScript Strict Mode Not Enabled,P1,major,The project uses TypeScript but strict mode was not detected in `tsconfig.json`.,open
+Dashboard,codra-uses-plain-js,config,config,TypeScript Strict Mode Not Enabled,P1,major,The project uses TypeScript but strict mode is not detected in `tsconfig.json`. ,open
+Dashboard,codra-jwt-verification,security,security,Missing JWT Verification,P0,blocker,Netlify Functions must verify the caller's session token before processing reque,open
+Dashboard,codra-inline-completion-provider-unauthenticated,bug,logic,Inline Completion Provider Requires Authentication,P1,major,The inline completion provider requires an access token but does not handle case,open
+Dashboard,codra-posthog-only-analytics,config,analytics,PostHog is the Only Approved Analytics Provider,P1,minor,Ensure that PostHog is the only analytics provider used. No other analytics SDKs,open
+Dashboard,codra-jwt-session-verification-missing,security,security,Missing JWT/Session Verification,P0,blocker,The function `uploadAsset` in `src/lib/assets/upload.ts` reads user data without,open
+Dashboard,codra-eslint-plugin-codra-disabled,code-quality,code-quality,Custom ESLint Rules Disabled,P0,blocker,The project should not disable custom ESLint rules from `eslint-plugin-codra` as,open
+Dashboard,codra-no-strict-mode-tsconfig,config,code-quality,TypeScript Strict Mode Not Enabled,P2,minor,The `tsconfig.json` file does not have strict mode enabled. Enabling strict mode,open
+Dashboard,codra-hardcoded-api-keys,security,security,Potential Hardcoded API Keys,P0,blocker,There are string literals in the source code that may resemble API keys or secre,open
+Dashboard,codra-glass-opacity-check,ux,ux,Glass Opacity Calculation,P2,major,The glass opacity calculation may not meet accessibility standards. Ensure that ,open
+Dashboard,codra-accent-usage-validation,bug,logic,Accent Color Usage Validation,P0,blocker,Direct usage of coral accent colors outside approved components detected. Ensure,open
+Dashboard,codra-code-quality-eslint-disable,debt,code quality,ESLint Rules Disabled Without Justification,P0,blocker,There are instances where ESLint rules from `eslint-plugin-codra` are disabled w,open
+Dashboard,codra-duplicate-keys-in-promotion,bug,logic,Duplicate keys in promotion metadata,P2,minor,The promotion metadata may contain duplicate keys which could lead to unexpected,open
+Dashboard,codra-strict-mode-not-enabled,config,config,TypeScript Strict Mode Not Enabled,P1,major,The project uses TypeScript but strict mode was not detected in `tsconfig.json`.,open
+Dashboard,codra-netlify-functions-only-flag,bug,logic,Server-side Logic Outside Netlify Functions,P0,blocker,All server-side logic must reside in `netlify/functions/`. Any new server-side l,open
+Dashboard,codra-eslint-rules,code quality,code quality,Custom ESLint Rules Disabled,P0,blocker,Custom ESLint rules from eslint-plugin-codra must not be disabled. Check for any,open
+Dashboard,codra-api-credentials-plaintext,security,security,Potential Plaintext Storage of API Credentials,P0,blocker,API keys or secrets should not be stored in plaintext in the database. Ensure th,open
+Dashboard,codra-no-strict-mode,config,code quality,TypeScript Strict Mode Not Enabled,P2,minor,The `tsconfig.json` does not have strict mode enabled. Enabling strict mode can ,open
+Dashboard,codra-localstorage-usage,bug,logic,LocalStorage Usage Without Fallback for Server-Side Rendering,P1,major,"The `StorageKeyAdapter` class uses `localStorage` directly, which can cause issu",open
+Dashboard,codra-hardcoded-strings,security,security,Potential Hardcoded Secrets in Source Code,P0,blocker,There are string literals in the source code that could potentially be secrets. ,open
+Dashboard,codra-flag-stripe-usage,bug,logic,Stripe operations outside Netlify Functions,P0,blocker,Stripe API calls must occur only inside `netlify/functions/`. Found potential us,open
+Dashboard,codra-flag-jwt-verification,bug,security,Missing JWT verification in Netlify Functions,P0,blocker,Every Netlify Function that reads or writes user data must verify the caller's s,open
+Dashboard,codra-flag-plain-text-credentials,bug,security,API credentials stored in plain text,P0,blocker,No API keys or secrets should be stored in the database unencrypted. Found poten,open
+Dashboard,codra-stripe-api-restriction,bug,logic,Stripe API Calls Outside Netlify Functions,P0,blocker,Stripe API calls must only occur inside `netlify/functions/`. Ensure no direct c,open
+Dashboard,codra-stripe-api-outside-functions,bug,logic,Stripe API calls outside Netlify Functions,P0,blocker,Stripe API calls must only occur inside `netlify/functions/`. Found potential St,open
+Dashboard,codra-ai-enricher-direct-api-call,bug,logic,Direct API call to Anthropic in AI Enricher,P0,blocker,The AI Enricher makes a direct API call to Anthropic in `src/pipeline/enrichment,open
+Dashboard,codra-cache-persistence-issue,bug,persistence,Cache Persistence Issue,P1,major,The `ContentHashCache` class in `src/pipeline/enrichment/cache.ts` does not hand,open
+Dashboard,codra-no-strict-mode-typescript,config,code-quality,TypeScript Strict Mode Not Enabled,P3,minor,The TypeScript configuration does not have strict mode enabled. Enabling strict ,open
+Dashboard,codra-tsconfig-strict-mode,config,code-quality,TypeScript Strict Mode Not Enabled,P2,minor,The project uses TypeScript but does not have strict mode enabled in `tsconfig.j,open
+Dashboard,codra-hardcoded-secrets-check,security,security,Potential Hardcoded Secrets in Source Code,P0,blocker,Source code should not contain hardcoded secrets such as API keys or tokens. Rev,open
+Dashboard,codra-missing-security-headers,security,security,Missing Security Headers in Netlify Configuration,P1,major,"Security headers such as `X-Frame-Options`, `X-Content-Type-Options`, and `Conte",open
+Dashboard,codra-typescript-strict-mode-disabled,config,code quality,TypeScript Strict Mode Not Enabled,P2,minor,The `tsconfig.json` does not have strict mode enabled. Enabling strict mode can ,open
+Dashboard,codra-ui-missing-storybook,ux,code-quality,Missing Storybook Stories for UI Components,P3,minor,New UI components in `src/components/ui/` do not have corresponding Storybook st,open
+Dashboard,codra-ui-hardcoded-colors,ux,code-quality,Hardcoded Colors in UI Components,P3,minor,UI components contain hardcoded color values instead of using CSS variables or t,open
+Dashboard,codra-ui-accessibility-aria,ux,accessibility,Accessibility: Missing ARIA Attributes,P2,major,"Some interactive elements lack ARIA attributes to enhance accessibility, such as",open
+Dashboard,codra-ui-hardcoded-secrets,security,security,Potential Hardcoded Secrets in UI Code,P0,blocker,The UI code should not contain any hardcoded secrets or API keys. Ensure that al,open
+Dashboard,codra-ui-storybook-coverage,debt,code_quality,Missing Storybook Coverage for New UI Components,P3,minor,New UI components should have corresponding Storybook stories to ensure proper d,open
+Dashboard,codra-ui-security-headers,config,security,Missing Security Headers in Deployment,P1,major,"Security headers such as `X-Frame-Options`, `X-Content-Type-Options`, and `Conte",open
+Dashboard,codra-ui-missing-security-headers,security,security,Missing Security Headers in UI Components,P1,major,"Security headers such as `X-Frame-Options`, `X-Content-Type-Options`, and `Conte",open
+Dashboard,codra-strict-mode-not-detected,config,config,TypeScript Strict Mode Not Enabled,P1,major,The project uses TypeScript but strict mode was not detected in `tsconfig.json`.,open
+Dashboard,codra-analytics-provider,ux,ux,Unapproved Analytics Provider Detected,P1,major,The project must only use `posthog-js` as the analytics provider. Check for any ,open
+Dashboard,codra-ui-missing-storybook-coverage,debt,ux,Missing Storybook Coverage for New UI Components,P3,nit,New UI components in the workspace directory do not have corresponding Storybook,open
+Dashboard,codra-ui-no-security-headers,security,security,Missing Security Headers in UI Components,P1,major,"The UI components do not include security headers such as `X-Frame-Options`, `X-",open
+Dashboard,codra-ui-hardcoded-strings,security,security,Hardcoded Strings in UI Components,P2,minor,"There are hardcoded strings in the UI components, which could potentially includ",open
+Manual,f-foreign-keys-missing-on-delete-01,debt,constraint-violation,Foreign Keys Missing ON DELETE Behaviors,P2,minor,Multiple foreign key constraints are defined without explicit ON DELETE behavior,open
+Manual,SYNTH-DEBT-008,debt,synth-debt,Schema Violation in runtime-bug-hunter output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-010,debt,synth-debt,Schema Violation in runtime-bug-hunter output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-011,debt,synth-debt,Schema Violation in runtime-bug-hunter output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-012,debt,synth-debt,Schema Violation in ux-flow-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-013,debt,synth-debt,Schema Violation in ux-flow-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-014,debt,synth-debt,Schema Violation in ux-flow-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-015,debt,synth-debt,Schema Violation in ux-flow-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-016,debt,synth-debt,Schema Violation in ux-flow-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-017,debt,synth-debt,Schema Violation in ux-flow-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-018,debt,synth-debt,Schema Violation in ux-flow-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-019,debt,synth-debt,Schema Violation in performance-cost-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-020,debt,synth-debt,Schema Violation in performance-cost-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-021,debt,synth-debt,Schema Violation in performance-cost-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-022,debt,synth-debt,Schema Violation in security-privacy-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-023,debt,synth-debt,Schema Violation in security-privacy-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,SYNTH-DEBT-024,debt,synth-debt,Schema Violation in security-privacy-auditor output,P2,minor,Normalized placeholder description.,open
+Manual,f-4e388587,bug,type-error,tsc fails: missing generated assets-index-enriched.json import,P0,blocker,`canonical-registry.ts` dynamically imports `../../../out/assets-index-enriched.,open
+Manual,f-7f705a16,debt,missing-validation,"Pipeline AI enrichment calls Anthropic API directly, not via AIRouter",P1,major,Expectations 2.2 requires AI provider calls to go through the AIRouter abstracti,open

@@ -1,0 +1,16 @@
+Category,Dashboard Count,Manual Count,Dashboard Focus,Manual Focus
+accessibility,1,0,True,False
+analytics,1,0,True,False
+architecture,2,0,True,False
+code quality,6,0,True,False
+code-quality,7,0,True,False
+code_quality,1,0,True,False
+config,7,0,True,False
+constraint-violation,0,1,False,True
+logic,9,0,True,False
+missing-validation,0,1,False,True
+persistence,1,0,True,False
+security,30,0,True,False
+synth-debt,0,16,False,True
+type-error,0,1,False,True
+ux,4,0,True,False

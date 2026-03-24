@@ -89,7 +89,7 @@ export async function POST(request: Request) {
          SELECT $1, t.finding_id, '', $2
          FROM UNNEST($3::text[]) AS t(finding_id)
          ON CONFLICT (project_name, finding_id) DO UPDATE SET
-           linear_team_key = COALESCE($3, lyra_linear_sync_new.linear_team_key),
+           linear_team_key = COALESCE($2, lyra_linear_sync_new.linear_team_key),
            updated_at = now()`,
         [projectName, teamKey, toSync]
       );
