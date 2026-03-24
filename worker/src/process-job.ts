@@ -598,9 +598,13 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
         // CI config) — not 8-file domain slices. We bypass buildDomainPasses
         // entirely and run one LLM call over the curated anchor context.
         if (auditKindStr === "intelligence") {
+          // execution.repoRoot is already the project-specific directory (resolved
+          // from PORTFOLIO_SCAN_DIRS or localPath). scanRoots are relative to the
+          // Lyra workspace root, so passing them to buildIntelligenceContext would
+          // double-apply the path. Use ["./"] to scan within execution.repoRoot.
           const intelligenceContext = buildIntelligenceContext(
             execution.repoRoot,
-            scanRoots
+            ["./"]
           );
           const llm = await auditWithLlm(
             core,
