@@ -9,6 +9,7 @@ import {
   readExpectations,
   resolveScopeFiles,
   type AuditScope,
+  buildIntelligenceContext,
 } from "./context.js";
 import { auditWithLlm, resolveModelChain } from "./llm.js";
 import {
@@ -109,9 +110,44 @@ function loadClusterPrompts(auditKind?: string): { core: string; auditAgent: str
       agentBody = prompt("code-debt.md") || base;
       break;
 
-    case "intelligence":
-      agentBody = prompt("intelligence_extraction_prompt.md") || base;
+    case "intelligence": {
+      // Intelligence extraction must NOT be combined with audit-agent.md —
+      // audit-agent.md's "Return ONLY valid JSON: {findings}" output contract
+      // directly conflicts with the intelligence prompt's prose document format.
+      // We return early with a standalone prompt + JSON wrapper.
+      const intelligencePrompt = prompt("intelligence_extraction_prompt.md");
+      if (intelligencePrompt) {
+        const jsonWrapper = `
+
+## Output Format
+
+You MUST return valid JSON in this exact structure. Place the complete 10-section
+markdown report as a string inside the "description" field:
+
+{
+  "coverage": {
+    "coverage_complete": true,
+    "confidence": "high",
+    "files_reviewed": [],
+    "modules_reviewed": []
+  },
+  "findings": [{
+    "finding_id": "intelligence-report",
+    "title": "Codebase Intelligence Report",
+    "description": "## SECTION 1: PROJECT IDENTITY\\n\\n... (full report here as a JSON string) ...",
+    "type": "intelligence",
+    "severity": "minor",
+    "priority": "P2",
+    "status": "open"
+  }]
+}
+
+Use \\n for newlines inside the "description" string. Do not include any text outside the JSON.`;
+        return { core, auditAgent: intelligencePrompt + jsonWrapper };
+      }
+      agentBody = base;
       break;
+    }
 
     // ── Domain cluster ───────────────────────────────────────────────────
     case "domain_manifest":
@@ -553,6 +589,65 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
         const prev = await loadProject(pool, project.name);
         const existing = (prev?.findings ?? []) as Array<Record<string, unknown>>;
         const scanRoots = project.auditConfig?.scanRoots ?? ["./"];
+        const auditKindStr = typeof payload.audit_kind === "string" ? payload.audit_kind : undefined;
+        const cluster = getClusterFromAuditKind(auditKindStr);
+
+        // ── Intelligence extraction: single wide-context pass ──────────────
+        // Intelligence runs BEFORE domain chunking. It needs to see the full
+        // architecture (package.json, README, schema, entry points, Dockerfiles,
+        // CI config) — not 8-file domain slices. We bypass buildDomainPasses
+        // entirely and run one LLM call over the curated anchor context.
+        if (auditKindStr === "intelligence") {
+          const intelligenceContext = buildIntelligenceContext(
+            execution.repoRoot,
+            scanRoots
+          );
+          const llm = await auditWithLlm(
+            core,
+            auditAgent,
+            expectations,
+            intelligenceContext,
+            project.name,
+            false,
+            auditKindStr,
+            {
+              scopeLabel: "intelligence:full-repo-anchor",
+              filesInScope: [],
+              knownFindingIds: knownFindingIds(existing),
+              checklistId: execution.checklistId,
+              manifestRevision: execution.manifestRevision,
+            }
+          );
+          auditModel = llm.model || auditModel;
+          const mappedFindings = llm.findings.map((f) => ({
+            ...f,
+            cluster,
+            repair_policy: inferRepairPolicy(f as unknown as Record<string, unknown>),
+          })) as Array<Record<string, unknown>>;
+          const { merged, added } = mergeFindings2(existing, mappedFindings, execution.manifestRevision);
+          totalAdded += added;
+          await saveProject(pool, {
+            ...(prev ?? {}),
+            name: project.name,
+            findings: merged,
+            manifest: { ...execution.manifest },
+            decisionHistory: Array.isArray(prev?.decisionHistory)
+              ? [...(prev.decisionHistory as Array<Record<string, unknown>>), {
+                  id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  timestamp: new Date().toISOString(),
+                  actor: "worker",
+                  event_type: "intelligence_extracted",
+                  model: auditModel,
+                  after: { findings: merged.length },
+                }]
+              : [],
+            lastUpdated: new Date().toISOString(),
+          });
+          summaries.push(`${project.name}: intelligence extraction complete (+${added} findings)`);
+          continue; // skip domain-pass loop for this project
+        }
+        // ──────────────────────────────────────────────────────────────────
+
         const passes = buildDomainPasses(
           execution.repoRoot,
           scanRoots,
@@ -566,8 +661,6 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
         // Each pass is a fully independent LLM call over a different file chunk,
         // so there is no ordering dependency between them.
         const PASS_CONCURRENCY = Number(process.env.LYRA_PASS_CONCURRENCY ?? 5);
-        const auditKindStr = typeof payload.audit_kind === "string" ? payload.audit_kind : undefined;
-        const cluster = getClusterFromAuditKind(auditKindStr);
 
         const passTaskResults = await runWithConcurrency(
           passes.map((pass) => async () => {
