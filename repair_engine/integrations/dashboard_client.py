@@ -108,6 +108,26 @@ class DashboardClient:
         return self._make_request("POST", "/api/engine/complete", payload)
 
 
+    def dequeue_next_job(self) -> dict[str, Any] | None:
+        """
+        Claim the next queued repair job from the dashboard.
+
+        Calls POST /api/engine/dequeue which atomically marks the job as
+        running and returns both the job record and the full finding payload.
+
+        Returns:
+            A dict with keys "job" and "finding" when a job is available,
+            or None when the queue is empty.
+
+        Raises:
+            RuntimeError: If the API call fails.
+        """
+        result = self._make_request("POST", "/api/engine/dequeue")
+        if not result.get("job"):
+            return None
+        return result
+
+
 def get_dashboard_client(base_url: str | None = None) -> DashboardClient:
     """
     Get or create a dashboard API client.
