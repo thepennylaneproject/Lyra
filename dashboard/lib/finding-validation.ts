@@ -66,6 +66,12 @@ export function validateFinding(f: unknown): ValidationError[] {
       message: `priority must be one of: ${VALID_PRIORITIES.join(", ")}`,
     });
   }
+  if (!Array.isArray(finding.proof_hooks) || (finding.proof_hooks as unknown[]).length === 0) {
+    errors.push({ field: "proof_hooks", message: "proof_hooks is required and must be a non-empty array" });
+  }
+  if (!Array.isArray(finding.history) || (finding.history as unknown[]).length === 0) {
+    errors.push({ field: "history", message: "history is required and must be a non-empty array" });
+  }
 
   return errors;
 }

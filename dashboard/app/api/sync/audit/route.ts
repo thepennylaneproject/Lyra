@@ -5,6 +5,7 @@ import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import type { Project, Finding } from "@/lib/types";
 import { apiErrorMessage } from "@/lib/api-error";
 import { normalizeProjectName } from "@/lib/project-identity";
+import { validateFinding } from "@/lib/finding-validation";
 
 /**
  * GET  /api/sync/audit — preview what's available to import.
@@ -57,15 +58,45 @@ export async function POST(request: Request) {
       }
     }
 
-    if (findings.length === 0) {
+    // Validate each finding against the required schema before importing.
+    // Malformed findings (missing proof_hooks, history, etc.) are rejected so
+    // broken auditor output never silently enters the dashboard.
+    const validFindings: Finding[] = [];
+    const invalidFindings: Array<{ finding_id: unknown; auditor: unknown; errors: string[] }> = [];
+    for (const f of findings) {
+      const errors = validateFinding(f);
+      if (errors.length === 0) {
+        validFindings.push(f as Finding);
+      } else {
+        const raw = f as Record<string, unknown>;
+        invalidFindings.push({
+          finding_id: raw.finding_id ?? null,
+          auditor: raw.agent_name ?? raw.auditor ?? null,
+          errors: errors.map((e) => `${e.field}: ${e.message}`),
+        });
+      }
+    }
+
+    if (validFindings.length === 0 && findings.length === 0) {
       return NextResponse.json({
         projects_updated: 0,
         findings_imported: 0,
+        findings_rejected: 0,
         message: "No findings found in audit output. Run an audit first.",
       });
     }
 
-    const groups = groupByProject(findings, fallbackProject);
+    if (validFindings.length === 0) {
+      return NextResponse.json({
+        projects_updated: 0,
+        findings_imported: 0,
+        findings_rejected: invalidFindings.length,
+        invalid_findings: invalidFindings,
+        message: `All ${invalidFindings.length} findings were rejected due to schema violations. Check auditor output.`,
+      });
+    }
+
+    const groups = groupByProject(validFindings, fallbackProject);
     const repo = getRepository();
     const existingProjects = await repo.list();
     const existingByName = new Map(
@@ -151,10 +182,12 @@ export async function POST(request: Request) {
     return NextResponse.json({
       projects_updated: projectsUpdated,
       findings_imported: findingsImported,
+      findings_rejected: invalidFindings.length,
+      ...(invalidFindings.length > 0 && { invalid_findings: invalidFindings }),
       message:
         findingsImported > 0
-          ? `Imported ${findingsImported} findings across ${projectsUpdated} project(s).`
-          : "All findings already present — nothing new to import.",
+          ? `Imported ${findingsImported} findings across ${projectsUpdated} project(s).${invalidFindings.length > 0 ? ` ${invalidFindings.length} rejected (schema violations).` : ""}`
+          : `All findings already present — nothing new to import.${invalidFindings.length > 0 ? ` ${invalidFindings.length} rejected (schema violations).` : ""}`,
     });
   } catch (error) {
     console.error("POST /api/sync/audit", error);
