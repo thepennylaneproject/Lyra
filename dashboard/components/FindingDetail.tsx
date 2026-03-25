@@ -15,7 +15,7 @@ interface FindingLifecyclePayload {
   repair_jobs: RepairJob[];
 }
 
-function repairLedgerCaption(jobs: RepairJob[], queuedInUi: boolean): string {
+function repairStatusCaption(jobs: RepairJob[], queuedInUi: boolean): string {
   const j = jobs[0];
   if (j) {
     if (j.status === "queued") return UI_COPY.lifecycleRepairQueued;
@@ -273,7 +273,7 @@ export function FindingDetail({
               </li>
               <li>
                 <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.lifecycleRepairLedger}: </span>
-                {repairLedgerCaption(lifecycle.repair_jobs ?? [], isQueued)}
+                {repairStatusCaption(lifecycle.repair_jobs ?? [], isQueued)}
               </li>
               <li>
                 <span style={{ color: "var(--ink-text-4)" }}>{UI_COPY.lifecycleLinear}: </span>

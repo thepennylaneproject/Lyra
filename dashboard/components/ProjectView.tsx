@@ -72,8 +72,30 @@ export function ProjectView({
     history: false,
   });
   const [tab, setTab] = useState<ProjectTab>("findings");
-  const [filter,   setFilter]   = useState<FilterKey>("active");
-  const [search,   setSearch]   = useState("");
+  const filterStorageKey = `lyra_pv_filter_${project.name}`;
+  const searchStorageKey = `lyra_pv_search_${project.name}`;
+  const [filter, setFilterState] = useState<FilterKey>(() => {
+    try {
+      const saved = sessionStorage.getItem(filterStorageKey);
+      if (saved && ["active", "pending", "resolved", "all"].includes(saved)) return saved as FilterKey;
+    } catch { /* ignore */ }
+    return "active";
+  });
+  const [search, setSearchState] = useState(() => {
+    try { return sessionStorage.getItem(searchStorageKey) ?? ""; }
+    catch { return ""; }
+  });
+  const setFilter = (v: FilterKey) => {
+    setFilterState(v);
+    try { sessionStorage.setItem(filterStorageKey, v); } catch { /* ignore */ }
+  };
+  const setSearch = (v: string) => {
+    setSearchState(v);
+    try {
+      if (v) sessionStorage.setItem(searchStorageKey, v);
+      else sessionStorage.removeItem(searchStorageKey);
+    } catch { /* ignore */ }
+  };
   const [selected, setSelected] = useState<Finding | null>(null);
   const [findings, setFindings] = useState<Finding[]>(project.findings ?? []);
   const [actionError, setActionError] = useState<string | null>(null);

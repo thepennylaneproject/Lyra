@@ -1,0 +1,178 @@
+name: Constraint Audit
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  schedule:
+    # Run daily audit at 2 AM UTC
+    - cron: "0 2 * * *"
+
+permissions:
+  contents: read
+  checks: write
+  statuses: write
+
+jobs:
+  audit:
+    name: Run Constraint Audit
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run easy constraint checks
+        id: easy
+        run: npx ts-node dashboard/lib/constraint-checks/demo.ts . easy || true
+        continue-on-error: true
+
+      - name: Run moderate constraint checks
+        id: moderate
+        run: npx ts-node dashboard/lib/constraint-checks/demo.ts . moderate || true
+        continue-on-error: true
+
+      - name: Run complex constraint checks
+        id: complex
+        run: npx ts-node dashboard/lib/constraint-checks/demo.ts . complex || true
+        continue-on-error: true
+
+      - name: Save audit results
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Run audit and save to database
+          npm run audit:save -- --project embr || true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        continue-on-error: true
+
+  # Critical checks gate (blocks if constraints fail)
+  gate:
+    name: Constraint Gate
+    runs-on: ubuntu-latest
+    needs: audit
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check critical constraints
+        id: critical
+        run: |
+          # Run only critical constraints
+          npx ts-node dashboard/lib/constraint-checks/demo.ts . all
+        continue-on-error: true
+
+      - name: Comment PR on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Constraint audit failed. Review the audit results and fix constraint violations before merging.\n\nRun locally: `npx ts-node dashboard/lib/constraint-checks/demo.ts . all`'
+            })
+
+      - name: Set status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const state = '${{ steps.critical.outcome }}' === 'failure' ? 'failure' : 'success';
+            const description = state === 'failure'
+              ? 'Critical constraints failed'
+              : 'All constraint checks passed';
+
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              description: description,
+              context: 'Constraint Audit'
+            });
+
+  # Production deployment gate
+  production-gate:
+    name: Production Deployment Gate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run production constraints
+        run: |
+          # Check critical constraints before production deployment
+          echo "🔒 Running production constraint checks..."
+
+          # These must all pass for production deployment
+          npx ts-node dashboard/lib/constraint-checks/demo.ts . easy
+          npx ts-node dashboard/lib/constraint-checks/demo.ts . moderate
+
+          # Complex checks should pass but can override
+          npx ts-node dashboard/lib/constraint-checks/demo.ts . complex || true
+
+      - name: Block deployment on critical failure
+        if: failure()
+        run: |
+          echo "❌ DEPLOYMENT BLOCKED: Critical constraints failed"
+          echo "Production deployment is blocked until constraints pass"
+          exit 1
+
+  # Report summary
+  summary:
+    name: Audit Summary
+    runs-on: ubuntu-latest
+    needs: [audit]
+    if: always()
+
+    steps:
+      - name: Create summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('Constraint audit completed');
+            console.log('📊 Check the audit results in the workflow logs');
+
+# Environment variables
+env:
+  NODE_ENV: test
+  CI: true

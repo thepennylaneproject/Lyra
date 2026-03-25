@@ -4,47 +4,47 @@
 
 export const UI_COPY = {
   navPortfolio: "Portfolio",
-  /** Sidebar + engine: dashboard record of repairs, not the worker runtime. */
-  navRepairLedger: "Repair ledger",
+  /** Sidebar + engine view nav label */
+  navRepairLedger: "Repair engine",
   /** Count badge next to nav item */
-  navLedgerCountTitle: "Findings recorded in the repair ledger",
+  navLedgerCountTitle: "Findings queued for auto-repair",
   /** Engine footer / queue section */
-  ledgerSectionLabel: "Repair ledger",
+  ledgerSectionLabel: "Repair queue",
   ledgerExplainer:
-    "Queuing records intent in this app. The TypeScript audit worker does not drain the repair ledger; patches run separately via the Python repair engine on your checkout (see docs/DASHBOARD.md § “After you queue a repair”).",
-  ledgerEmpty: "No ledger entries",
+    "Queued findings are dispatched automatically through the model router. The worker applies patches as capacity allows.",
+  ledgerEmpty: "No queued repairs",
   /** Next action / finding detail */
-  addToLedger: "Add to ledger →",
-  ledgerAdding: "recording…",
-  onLedger: "on repair ledger",
+  addToLedger: "Queue repair →",
+  ledgerAdding: "queuing…",
+  onLedger: "queued for repair",
   ledgerIntentHint:
-    "Records intent in the dashboard repair ledger only. The audit worker does not apply patches; run the repair engine locally or edit the repo yourself.",
+    "Queues this finding for automatic repair through the model router.",
   nextActionOpenProject: "Open in project",
   /** Portfolio Patterns panel (fragile files) */
   nextActionViewPatterns: "View portfolio patterns",
-  ledgerRecorded: "Recorded on repair ledger",
-  /** Finding detail — closure loop (align with docs/DASHBOARD.md) */
+  ledgerRecorded: "Queued for repair",
+  /** Finding detail — closure loop */
   lifecycleSection: "Closure loop",
   lifecycleLyra: "Lyra record",
-  lifecycleRepairLedger: "Repair ledger",
+  lifecycleRepairLedger: "Repair queue",
   lifecycleLinear: "Linear",
-  lifecycleNextHeading: "What you run outside this app",
+  lifecycleNextHeading: "What happens next",
   lifecycleLinearNotConfigured: "Linear integration not configured.",
   lifecycleLinearNoIssue: "No Linear issue linked for this finding.",
   lifecycleLinearDrift:
     "Linear last saw a different status than Lyra does now — push an update from the Linear panel if you use issues for tracking.",
-  lifecycleRepairNone: "Not on the repair ledger.",
+  lifecycleRepairNone: "Not queued for repair.",
   lifecycleRepairQueued:
-    "Ledger row: queued — the Python repair engine (or your editor) still needs to run outside this dashboard.",
-  lifecycleRepairRunning: "Ledger row: running (reported externally).",
-  lifecycleRepairCompleted: "Ledger row: completed.",
-  lifecycleRepairFailed: "Ledger row: failed — see repair queue for detail.",
+    "Queued — the worker will dispatch this automatically through the model router.",
+  lifecycleRepairRunning: "Running — repair in progress.",
+  lifecycleRepairCompleted: "Completed.",
+  lifecycleRepairFailed: "Failed — see activity for detail.",
   lifecycleRepairIntentOnly:
-    "Marked on ledger in this session; full job list still loading.",
+    "Queued this session; job list still loading.",
   lifecycleNextSteps: [
-    "Implement or generate fixes in the target checkout (manually or via the Python repair engine with audits/open_findings.json).",
-    "Verify the fix, then update Lyra status here when appropriate.",
-    "Re-audit from Orchestration or run python3 audits/session.py reaudit in the repo before release.",
+    "The model router selects the best provider and generates a patch automatically.",
+    "Once complete, verify the fix and update status here.",
+    "Re-audit from Orchestration to confirm the fix holds.",
   ],
   /** Import modal — merge summary */
   importSummaryHeading: "Import summary",

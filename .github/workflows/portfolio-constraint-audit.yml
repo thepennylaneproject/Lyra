@@ -1,0 +1,174 @@
+name: Portfolio Constraint Audit
+
+on:
+  # Schedule: Run nightly at 2 AM UTC
+  schedule:
+    - cron: "0 2 * * *"
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      difficulty:
+        description: "Audit difficulty level"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - easy
+          - moderate
+          - complex
+          - all
+  # Run on PR
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+  # Run on push to main
+  push:
+    branches:
+      - main
+
+env:
+  NODE_VERSION: "18"
+
+jobs:
+  # Audit all projects
+  audit-portfolio:
+    name: Audit All Projects
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    outputs:
+      summary: ${{ steps.audit.outputs.summary }}
+      compliance: ${{ steps.audit.outputs.compliance }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run portfolio audit
+        id: audit
+        run: |
+          DIFFICULTY="${{ inputs.difficulty || 'all' }}"
+          RESULT=$(npx ts-node scripts/audit-portfolio.ts --difficulty=$DIFFICULTY --format=json)
+          echo "summary=$RESULT" >> $GITHUB_OUTPUT
+          COMPLIANCE=$(echo "$RESULT" | jq '.aggregatedStats.portfolioCompliance' || echo "0")
+          echo "compliance=$COMPLIANCE" >> $GITHUB_OUTPUT
+
+      - name: Upload audit results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: audit-results
+          path: audit-results.json
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(process.env.AUDIT_SUMMARY);
+
+            const compliance = results.aggregatedStats.portfolioCompliance;
+            const status = compliance >= 90 ? '✅' : compliance >= 75 ? '⚠️' : '❌';
+
+            const comment = `## Portfolio Constraint Audit
+
+            ${status} **Overall Compliance: ${compliance.toFixed(1)}%**
+
+            ### Per-Project Status
+            ${results.projectResults.map(p =>
+              `- ${p.projectName}: ${p.compliancePercentage.toFixed(1)}% (${p.passed}/${p.totalConstraints})`
+            ).join('\n')}
+
+            ### Summary
+            - Total Constraints: ${results.aggregatedStats.totalConstraints}
+            - Passed: ${results.aggregatedStats.totalPassed}
+            - Failed: ${results.aggregatedStats.totalFailed}
+            - Warnings: ${results.aggregatedStats.totalWarnings}
+
+            ${results.criticalViolations.length > 0 ? `### Critical Violations (${results.criticalViolations.length})\n${results.criticalViolations.slice(0, 5).map(v => `- **${v.projectId}**: ${v.violation.remediation}`).join('\n')}` : ''}`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+        env:
+          AUDIT_SUMMARY: ${{ steps.audit.outputs.summary }}
+
+  # Gate: Block PR if critical violations
+  gate-pr:
+    name: Gate PR on Critical Violations
+    runs-on: ubuntu-latest
+    needs: audit-portfolio
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check PR gate
+        run: |
+          COMPLIANCE=${{ needs.audit-portfolio.outputs.compliance }}
+          if (( $(echo "$COMPLIANCE < 90" | bc -l) )); then
+            echo "❌ PR compliance $COMPLIANCE% is below 90% SLA"
+            exit 1
+          fi
+          echo "✅ PR passed constraint audit gate"
+
+  # Gate: Block production deployment if critical violations
+  gate-production:
+    name: Gate Production Deployment
+    runs-on: ubuntu-latest
+    needs: audit-portfolio
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Check production gate
+        run: |
+          COMPLIANCE=${{ needs.audit-portfolio.outputs.compliance }}
+          if (( $(echo "$COMPLIANCE < 95" | bc -l) )); then
+            echo "❌ Production deployment blocked: compliance $COMPLIANCE% is below 95% SLA"
+            exit 1
+          fi
+          echo "✅ Production deployment cleared - all constraints passing"
+
+  # Summary
+  audit-summary:
+    name: Audit Summary
+    runs-on: ubuntu-latest
+    needs: audit-portfolio
+    if: always()
+    steps:
+      - name: Print summary
+        run: |
+          echo "Portfolio Audit Complete"
+          echo "Compliance: ${{ needs.audit-portfolio.outputs.compliance }}%"
+
+      - name: Notify Slack (optional)
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "Portfolio Constraint Audit Complete",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Portfolio Constraint Audit*\nCompliance: ${{ needs.audit-portfolio.outputs.compliance }}%"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

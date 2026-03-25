@@ -392,6 +392,20 @@ export function OrchestrationPanel() {
         >
           When set, requests from this panel send this secret. The rest of the dashboard uses your sign-in cookie only.
         </div>
+        <div
+          style={{
+            fontSize: "10px",
+            fontFamily: "var(--font-mono)",
+            color: "var(--ink-text-4)",
+            marginTop: "0.25rem",
+            lineHeight: 1.45,
+            maxWidth: "420px",
+          }}
+        >
+          This is the same value as <code style={{ fontSize: "9px" }}>ORCHESTRATION_ENQUEUE_SECRET</code> or{" "}
+          <code style={{ fontSize: "9px" }}>DASHBOARD_API_SECRET</code> from your environment.
+          Your login cookie handles all other dashboard actions — this field only unlocks job dispatch.
+        </div>
       </form>
 
       {data && (
@@ -403,10 +417,10 @@ export function OrchestrationPanel() {
             marginBottom: "1rem",
           }}
         >
-          <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Projects</div><div style={{ fontSize: "22px" }}>{data.summary.total_projects}</div></div>
-          <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Onboarding</div><div style={{ fontSize: "22px" }}>{data.summary.onboarding}</div></div>
-          <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Visual gaps</div><div style={{ fontSize: "22px" }}>{data.summary.visual_audit_missing}</div></div>
-          <div><div className="text-[9px] uppercase tracking-[0.1em] text-[var(--ink-text-4)]">Re-audit due</div><div style={{ fontSize: "22px" }}>{data.summary.audit_due}</div></div>
+          <div><div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--ink-text-4)" }}>Projects</div><div style={{ fontSize: "22px" }}>{data.summary.total_projects}</div></div>
+          <div><div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--ink-text-4)" }}>Onboarding</div><div style={{ fontSize: "22px" }}>{data.summary.onboarding}</div></div>
+          <div><div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--ink-text-4)" }}>Visual gaps</div><div style={{ fontSize: "22px" }}>{data.summary.visual_audit_missing}</div></div>
+          <div><div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--ink-text-4)" }}>Re-audit due</div><div style={{ fontSize: "22px" }}>{data.summary.audit_due}</div></div>
         </div>
       )}
 

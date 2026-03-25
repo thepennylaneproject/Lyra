@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
 import { apiErrorMessage, isValidProjectName, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
+import { insertAuditJob, updateAuditJobStatus } from "@/lib/orchestration-jobs";
+import { Queue } from "bullmq";
+import { bullmqConnectionFromEnv } from "@/lib/redis-bullmq";
 
 /**
  * POST /api/bulk-operations/repair-queue
@@ -91,19 +94,7 @@ export async function POST(request: Request) {
       if (fid) metaMap.set(fid, row as Record<string, unknown>);
     }
 
-    function inferRiskClass(meta: Record<string, unknown> | undefined): string {
-      const rp =
-        typeof meta?.repair_policy === "object" && meta.repair_policy
-          ? (meta.repair_policy as Record<string, unknown>)
-          : {};
-      const rc = rp.risk_class;
-      if (rc === "low" || rc === "medium" || rc === "high" || rc === "critical") return rc;
-      const sev = String(meta?.severity ?? "minor").toLowerCase();
-      if (sev === "blocker") return "critical";
-      if (sev === "major") return "high";
-      if (sev === "minor") return "medium";
-      return "low";
-    }
+
 
     // Upsert one backlog item per requested finding. If metadata isn't available
     // (project not yet in DB, or finding was recently added), use placeholder values —
@@ -114,50 +105,48 @@ export async function POST(request: Request) {
     for (const fid of findingIds) {
       const meta = metaMap.get(fid);
       const title = meta ? String(meta.title ?? fid).trim() : fid;
-      const summary = meta && typeof meta.description === "string" ? meta.description : null;
-      const severity = meta ? String(meta.severity ?? "minor") : "minor";
-      const riskClass = inferRiskClass(meta);
-      const backlogId = `backlog-${projectName}-${fid}`;
-      const dedupeKeys = JSON.stringify([
-        `finding:${fid}`,
-        `title:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-      ]);
-      const provenance = JSON.stringify({ finding_id: fid, source_type: "finding" });
+
+
+      const conn = bullmqConnectionFromEnv();
+      const bq = conn ? new Queue("lyra-audit", { connection: conn }) : null;
 
       try {
-        await pool.query(
-          `INSERT INTO lyra_maintenance_backlog (
-             id, project_name, title, summary, canonical_status, source_type,
-             priority, severity, risk_class, next_action,
-             finding_ids, dedupe_keys, provenance, created_at, updated_at
-           )
-           VALUES ($1, $2, $3, $4, 'open', 'finding', $5, $6, $7, 'queue_repair',
-                   $8::jsonb, $9::jsonb, $10::jsonb, now(), now())
-           ON CONFLICT (id) DO UPDATE SET
-             next_action      = 'queue_repair',
-             canonical_status = CASE
-               WHEN lyra_maintenance_backlog.canonical_status = 'done' THEN 'open'
-               ELSE lyra_maintenance_backlog.canonical_status
-             END,
-             priority         = EXCLUDED.priority,
-             updated_at       = now()`,
-          [
-            backlogId,
-            projectName,
-            title,
-            summary,
-            dbPriority,
-            severity,
-            riskClass,
-            JSON.stringify([fid]),
-            dedupeKeys,
-            provenance,
-          ]
-        );
+        const payload = {
+          finding_id: fid,
+          finding_title: title,
+          repair_policy: meta && typeof meta.repair_policy === "object" ? meta.repair_policy : {},
+          provenance: {
+            finding_id: fid,
+            source_type: "finding",
+          },
+        };
+
+        const row = await insertAuditJob("repair_finding", {
+          project_name: projectName,
+          payload,
+        });
+
+        if (bq) {
+          try {
+            await bq.add(
+              "process",
+              { dbJobId: row.id },
+              { jobId: row.id, removeOnComplete: true, removeOnFail: false }
+            );
+          } catch (redisErr) {
+            const msg = redisErr instanceof Error ? redisErr.message : String(redisErr);
+            console.error(`[bulk-repair] Redis enqueue failed for ${row.id}:`, msg);
+            await updateAuditJobStatus(row.id, "failed", `Redis enqueue error: ${msg}`);
+            // Count as failure if Redis fails 
+            throw new Error(`Redis enqueue failed: ${msg}`);
+          }
+        }
         queuedCount++;
       } catch (err) {
-        console.error(`[repair-queue] Failed to upsert backlog item for ${fid}:`, err);
+        console.error(`[bulk-repair-queue] Failed to enqueue job for ${fid}:`, err);
         failedIds.push(fid);
+      } finally {
+        if (bq) await bq.close();
       }
     }
 

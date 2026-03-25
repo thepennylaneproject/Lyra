@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
+import { Queue } from "bullmq";
+import { bullmqConnectionFromEnv } from "@/lib/redis-bullmq";
+import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import { readRepairQueue, writeRepairQueue } from "@/lib/audit-reader";
 import {
-  deleteActiveRepairJobsForFinding,
-  insertRepairJobRecord,
   listRecentRepairJobs,
-  listRepairJobsForProject,
 } from "@/lib/maintenance-store";
-import { jobsStoreConfigured } from "@/lib/orchestration-jobs";
+import { 
+  jobsStoreConfigured, 
+  insertAuditJob, 
+  listRecentAuditJobs,
+  updateAuditJobStatus 
+} from "@/lib/orchestration-jobs";
 import { getRepository } from "@/lib/repository-instance";
 import type { RepairJob } from "@/lib/types";
 import { apiErrorMessage } from "@/lib/api-error";
@@ -20,8 +25,16 @@ import { apiErrorMessage } from "@/lib/api-error";
 export async function GET() {
   try {
     if (jobsStoreConfigured()) {
-      const queue = await listRecentRepairJobs(100);
-      return NextResponse.json({ queue, size: queue.length });
+      const dbQueue = await listRecentRepairJobs(100);
+      const auditJobs = await listRecentAuditJobs(100);
+      const mappedAuditJobs = auditJobs
+        .filter((j) => j.job_type === "repair_finding" && (j.status === "queued" || j.status === "running"))
+        .map((j) => ({
+          finding_id: j.payload?.finding_id as string | undefined ?? "",
+          project_name: j.project_name ?? "",
+        }));
+      const combined = [...dbQueue, ...mappedAuditJobs];
+      return NextResponse.json({ queue: combined, size: combined.length });
     }
     const queue = readRepairQueue();
     return NextResponse.json({ queue, size: queue.length });
@@ -59,19 +72,10 @@ export async function POST(request: Request) {
       const repo = getRepository();
       const project = await repo.getByName(projectName);
       const finding = project?.findings.find((item) => item.finding_id === findingId);
-      const existing = (await listRepairJobsForProject(projectName, 50)).find(
-        (job) => job.finding_id === findingId && job.project_name === projectName
-      );
-      if (existing) {
-        return NextResponse.json({ job: existing, added: false });
-      }
-      const job = await insertRepairJobRecord({
-        project_name: projectName,
+      const payload = {
         finding_id: findingId,
-        repair_policy:
-          finding?.repair_policy != null
-            ? (finding.repair_policy as Record<string, unknown>)
-            : {},
+        finding_title: finding?.title,
+        repair_policy: finding?.repair_policy ?? {},
         targeted_files: finding?.suggested_fix?.affected_files ?? [],
         verification_commands:
           finding?.repair_policy?.verification_commands ??
@@ -89,11 +93,46 @@ export async function POST(request: Request) {
           manifest_revision: finding?.last_seen_revision,
           source_type: "finding",
         },
-        payload: {
-          finding_title: finding?.title,
-        },
+      };
+
+      const row = await insertAuditJob("repair_finding", {
+        project_name: projectName,
+        payload,
       });
-      return NextResponse.json({ job, added: true });
+
+      const connection = bullmqConnectionFromEnv();
+      if (connection) {
+        const queue = new Queue("lyra-audit", { connection });
+        try {
+          await queue.add(
+            "process",
+            { dbJobId: row.id },
+            { jobId: row.id, removeOnComplete: true, removeOnFail: false }
+          );
+        } catch (redisErr) {
+          const msg = redisErr instanceof Error ? redisErr.message : String(redisErr);
+          try {
+            await updateAuditJobStatus(row.id, "failed", `Redis enqueue error: ${msg}`);
+          } catch {}
+          await queue.close();
+          return NextResponse.json(
+            { error: `Redis enqueue failed: ${msg}` },
+            { status: 502 }
+          );
+        } finally {
+          await queue.close();
+        }
+      }
+
+      await recordDurableEventBestEffort({
+        event_type: "repair_job_enqueued",
+        project_name: projectName,
+        source: "engine_api",
+        summary: `Enqueued repair_finding job ${row.id} for finding ${findingId}`,
+        payload: { job_id: row.id, finding_id: findingId, bullmq: connection != null },
+      });
+
+      return NextResponse.json({ job: row, added: true });
     }
 
     const queue = readRepairQueue();

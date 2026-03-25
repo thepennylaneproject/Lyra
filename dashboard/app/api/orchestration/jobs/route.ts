@@ -20,6 +20,7 @@ const JOB_TYPES: LyraJobType[] = [
   "re_audit_project",
   "synthesize_project",
   "audit_project",
+  "repair_finding",
 ];
 
 /** True only if REDIS_URL/LYRA_REDIS_URL is set and parses to a non-empty host. */

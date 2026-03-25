@@ -3,18 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { OrchestrationPanel } from "@/components/OrchestrationPanel";
 import { apiFetch } from "@/lib/api-fetch";
-import type { RepairRunSummary } from "@/lib/audit-reader";
 import type { RoutingConfig } from "@/lib/routing-config";
-import type { RepairJob } from "@/lib/types";
 import { UI_COPY } from "@/lib/ui-copy";
 
 const ENGINE_OPS_STORAGE_KEY = "lyra_engine_operations_open";
 
 interface EngineData {
   routing: RoutingConfig;
-  queue: RepairJob[];
-  recentRuns: RepairRunSummary[];
-  totalCost: number;
 }
 
 const MODEL_TIER: Record<string, string> = {
@@ -50,13 +45,6 @@ const TIER_COLOR: Record<string, string> = {
   pro:        "var(--ink-amber)",
   reasoning:  "var(--ink-red)",
   opus:       "var(--ink-red)",
-};
-
-const STATUS_MARK: Record<string, { symbol: string; color: string }> = {
-  queued:    { symbol: "·",  color: "var(--ink-text-4)" },
-  running:   { symbol: "◎",  color: "var(--ink-blue)" },
-  completed: { symbol: "✓",  color: "var(--ink-green)" },
-  failed:    { symbol: "✗",  color: "var(--ink-red)" },
 };
 
 const TASK_LABELS: Record<string, string> = {
@@ -152,25 +140,16 @@ export function EngineView() {
   const fetchAll = useCallback(async () => {
     setRoutingError(null);
     try {
-      const [routingRes, statusRes, queueRes] = await Promise.all([
-        apiFetch("/api/engine/routing"),
-        apiFetch("/api/engine/status"),
-        apiFetch("/api/engine/queue"),
-      ]);
+      const routingRes = await apiFetch("/api/engine/routing");
       if (!routingRes.ok) {
         const errText = await routingRes.text();
         setFullRoutingError(errText);
         setRoutingError(`Could not load routing (${routingRes.status})`);
       }
-      const routing     = routingRes.ok  ? await routingRes.json()  : {};
-      const status      = statusRes.ok   ? await statusRes.json()   : {};
-      const queueData   = queueRes.ok    ? await queueRes.json()    : {};
+      const routing = routingRes.ok ? await routingRes.json() : {};
 
       setData({
         routing,
-        queue:       queueData.queue ?? [],
-        recentRuns:  status.recent_repair_runs ?? [],
-        totalCost:   status.total_cost_usd ?? 0,
       });
     } catch (error) {
       setRoutingError(error instanceof Error ? error.message : "Could not load routing");
@@ -199,11 +178,6 @@ export function EngineView() {
   const catalog: RoutingConfig["catalog"] | null = data?.routing?.catalog ?? null;
   const strategy   = data?.routing?.strategy ?? "balanced";
   const sources    = data?.routing?.sources ?? { env: false, file: false };
-  const queue      = data?.queue ?? [];
-  const recentRuns = data?.recentRuns ?? [];
-  const allJobs    = [...queue, ...recentRuns] as (RepairJob & RepairRunSummary)[];
-
-  const totalCost  = data?.totalCost ?? 0;
   const routingDegraded = Boolean(routingError);
 
   return (
@@ -451,16 +425,7 @@ export function EngineView() {
                 </div>
               </div>
             )}
-            {totalCost > 0 && (
-              <div>
-                <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
-                  total spent
-                </div>
-                <div style={{ fontSize: "18px", fontWeight: 300, color: "var(--ink-green)", fontVariantNumeric: "tabular-nums" }}>
-                  ${totalCost.toFixed(4)}
-                </div>
-              </div>
-            )}
+
             {rules.auto_escalate != null && (
               <div>
                 <div style={{ fontSize: "9px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "0.2rem" }}>
@@ -474,122 +439,6 @@ export function EngineView() {
           </div>
         </div>
       )}
-      </div>
-
-      {/* Repair ledger */}
-      <div>
-        <SectionLabel>{UI_COPY.ledgerSectionLabel}</SectionLabel>
-        <div
-          style={{
-            fontSize:      "11px",
-            fontFamily:    "var(--font-mono)",
-            lineHeight:    1.45,
-            color:         "var(--ink-text-3)",
-            background:    "var(--ink-bg-sunken)",
-            border:        "0.5px solid var(--ink-border-faint)",
-            borderRadius:  "var(--radius-md)",
-            padding:       "0.65rem 0.75rem",
-            marginBottom:  "1rem",
-          }}
-        >
-          {UI_COPY.ledgerExplainer}
-        </div>
-        {allJobs.length === 0 ? (
-          <div
-            style={{
-              fontSize:   "12px",
-              fontFamily: "var(--font-mono)",
-              color:      "var(--ink-text-4)",
-              padding:    "0.5rem 0",
-            }}
-          >
-            {UI_COPY.ledgerEmpty}
-          </div>
-        ) : (
-          <div
-            style={{
-              display:       "flex",
-              flexDirection: "column",
-              borderTop:     "0.5px solid var(--ink-border-faint)",
-            }}
-          >
-            {allJobs.map((job, i) => {
-              const status = (job.status as string) ?? "queued";
-              const mark   = STATUS_MARK[status] ?? STATUS_MARK.queued;
-              const cost   = job.cost_usd ?? (job as RepairRunSummary).total_cost_usd;
-              const model  = job.provider_used ?? (job as RepairRunSummary).provider_alias;
-              const fid    = job.finding_id;
-              const proj   = job.project_name;
-
-              return (
-                <div
-                  key={i}
-                  style={{
-                    display:      "grid",
-                    gridTemplateColumns: "16px 1fr auto",
-                    alignItems:   "center",
-                    gap:          "0.75rem",
-                    padding:      "0.5rem 0",
-                    borderBottom: "0.5px solid var(--ink-border-faint)",
-                  }}
-                >
-                  {/* Status mark */}
-                  <span
-                    style={{
-                      fontSize:   "13px",
-                      fontFamily: "var(--font-mono)",
-                      color:      mark.color,
-                      animation:  status === "running" ? "pulse-dot 1.5s ease-in-out infinite" : undefined,
-                    }}
-                  >
-                    {mark.symbol}
-                  </span>
-
-                  <div>
-                    <div
-                      style={{
-                        fontSize:   "11px",
-                        fontFamily: "var(--font-mono)",
-                        color:      "var(--ink-text-2)",
-                        marginBottom: "1px",
-                      }}
-                    >
-                      {fid}
-                    </div>
-                    <div
-                      style={{
-                        fontSize:   "10px",
-                        fontFamily: "var(--font-mono)",
-                        color:      "var(--ink-text-4)",
-                      }}
-                    >
-                      {proj}
-                      {model && <> · {model}</>}
-                      {job.patch_applied === true && (
-                        <span style={{ color: "var(--ink-green)" }}> · patch applied</span>
-                      )}
-                      {job.error && (
-                        <span style={{ color: "var(--ink-red)" }}> · {job.error.slice(0, 40)}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {cost != null && cost > 0 && (
-                    <span
-                      style={{
-                        fontSize:   "10px",
-                        fontFamily: "var(--font-mono)",
-                        color:      "var(--ink-text-4)",
-                      }}
-                    >
-                      ${cost.toFixed(4)}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       <div style={{ marginTop: "3rem" }}>

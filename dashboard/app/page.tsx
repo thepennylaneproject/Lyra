@@ -49,7 +49,6 @@ export default function Home() {
 
   const {
     queuedFindingIds,
-    setQueuedFindingIds,
     queueError,
     setQueueError,
     fetchQueue,
@@ -58,9 +57,9 @@ export default function Home() {
   const {
     queueRepair,
     runQueueRepair,
-    ledgerQueueError,
-    setLedgerQueueError,
-    ledgerQueueing,
+    queueActionError,
+    setQueueActionError,
+    queueing,
   } = useQueueRepair({ fetchQueue });
 
   const [activeProject,   setActiveProject]     = useState<string | null>(null);
@@ -105,6 +104,18 @@ export default function Home() {
 
   useSyncUrlToPortfolioState(setActiveProject, setActiveView);
   useSyncPortfolioUrl(activeView, activeProject, pathname, router);
+
+  useEffect(() => {
+    if (activeProject) {
+      document.title = `${activeProject} — Lyra`;
+    } else if (activeView === "engine") {
+      document.title = "Engine — Lyra";
+    } else if (activeView === "jobs") {
+      document.title = "Activity — Lyra";
+    } else {
+      document.title = "Portfolio — Lyra";
+    }
+  }, [activeView, activeProject]);
 
   const shellNavHighlight: NavView = activeProject ? "portfolio" : activeView;
 
@@ -344,7 +355,7 @@ export default function Home() {
         <ProjectView
           project={currentProject}
           onBack={() => {
-            setLedgerQueueError(null);
+            setQueueActionError(null);
             setActiveProject(null);
           }}
           onUpdateFinding={onUpdateFinding}
@@ -416,9 +427,38 @@ export default function Home() {
         onNavigate={handleNavigate}
         onAuditSynced={onAuditSynced}
       >
-        <span style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "var(--ink-text-4)" }}>
-          loading…
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          <div className="skeleton-bar" style={{ width: "120px", height: "12px" }} />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))",
+              gap: "0 2rem",
+            }}
+          >
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                <div className="skeleton-bar" style={{ width: "50px", height: "8px" }} />
+                <div className="skeleton-bar" style={{ width: "36px", height: "18px" }} />
+              </div>
+            ))}
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: "0.625rem",
+            }}
+          >
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="skeleton-bar"
+                style={{ height: "80px", borderRadius: "var(--radius-md)" }}
+              />
+            ))}
+          </div>
+        </div>
       </Shell>
     );
   }
@@ -634,12 +674,12 @@ export default function Home() {
             void runQueueRepair(nextAction.findingId, nextAction.projectName)
           }
           onOpen={() => {
-            setLedgerQueueError(null);
+            setQueueActionError(null);
             setActiveProject(nextAction.projectName);
           }}
-          queueError={ledgerQueueError}
-          onDismissQueueError={() => setLedgerQueueError(null)}
-          queueing={ledgerQueueing}
+          queueError={queueActionError}
+          onDismissQueueError={() => setQueueActionError(null)}
+          queueing={queueing}
           backlogRiskClass={
             nextAction.source === "backlog" ? nextAction.backlogRiskClass : undefined
           }

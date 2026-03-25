@@ -32,7 +32,9 @@ export default function Error({
         Something went wrong
       </h1>
       <p style={{ fontSize: "12px", color: "var(--ink-text-3)", marginBottom: "1.25rem", maxWidth: "360px", textAlign: "center" }}>
-        {error.message || "An unexpected error occurred."}
+        {process.env.NODE_ENV === "production"
+          ? "An unexpected error occurred. Please try again or return to the portfolio."
+          : error.message || "An unexpected error occurred."}
       </p>
       <div style={{ display: "flex", gap: "0.75rem" }}>
         <button

@@ -20,6 +20,7 @@ interface ShellProps {
 
 export function Shell({ children, activeView, navHighlightView, onNavigate, onAuditSynced }: ShellProps) {
   const highlightView = navHighlightView ?? activeView;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
   const [engineStatusError, setEngineStatusError] = useState<string | null>(null);
   const [syncing,      setSyncing]      = useState(false);
@@ -92,8 +93,43 @@ export function Shell({ children, activeView, navHighlightView, onNavigate, onAu
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--ink-bg)" }}>
+      {/* ── Mobile top bar ── */}
+      <div className="shell-mobile-bar">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+          style={{
+            border: "none",
+            background: "none",
+            padding: "2px 4px",
+            fontSize: "18px",
+            color: "var(--ink-text-3)",
+            cursor: "pointer",
+            lineHeight: 1,
+          }}
+        >
+          {sidebarOpen ? "×" : "☰"}
+        </button>
+        <span
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: "16px",
+            fontStyle: "italic",
+            color: "var(--ink-text)",
+          }}
+        >
+          Lyra
+        </span>
+      </div>
+      {/* ── Mobile backdrop ── */}
+      <div
+        className={`shell-sidebar-backdrop${sidebarOpen ? " open" : ""}`}
+        onClick={() => setSidebarOpen(false)}
+      />
       {/* ── Sidebar ── */}
       <aside
+        className={`shell-sidebar${sidebarOpen ? " open" : ""}`}
         style={{
           width:         "var(--sidebar-width)",
           minWidth:      "var(--sidebar-width)",
@@ -137,7 +173,10 @@ export function Shell({ children, activeView, navHighlightView, onNavigate, onAu
               <button
                 key={key}
                 type="button"
-                onClick={() => onNavigate(key)}
+                onClick={() => {
+                onNavigate(key);
+                setSidebarOpen(false);
+              }}
                 style={{
                   textAlign:    "left",
                   fontSize:     "13px",
@@ -302,7 +341,7 @@ export function Shell({ children, activeView, navHighlightView, onNavigate, onAu
               <span>{engineStatus.repair_run_count} repairs</span>
               {queueSize > 0 && (
                 <span style={{ color: "var(--ink-amber)" }} title={UI_COPY.navLedgerCountTitle}>
-                  {" · "}{queueSize} on ledger
+                  {" · "}{queueSize} queued
                 </span>
               )}
               <br />
@@ -331,6 +370,7 @@ export function Shell({ children, activeView, navHighlightView, onNavigate, onAu
 
       {/* ── Main ── */}
       <main
+        className="shell-main"
         style={{
           flex:     1,
           minWidth: 0,

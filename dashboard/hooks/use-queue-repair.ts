@@ -11,8 +11,8 @@ type Args = {
  * Single path for POST /api/engine/queue + server reconciliation via fetchQueue.
  */
 export function useQueueRepair({ fetchQueue }: Args) {
-  const [ledgerQueueError, setLedgerQueueError] = useState<string | null>(null);
-  const [ledgerQueueing, setLedgerQueueing] = useState(false);
+  const [queueActionError, setQueueActionError] = useState<string | null>(null);
+  const [queueing, setQueueing] = useState(false);
 
   const queueRepair = useCallback(
     async (findingId: string, projectName: string) => {
@@ -37,16 +37,16 @@ export function useQueueRepair({ fetchQueue }: Args) {
 
   const runQueueRepair = useCallback(
     async (findingId: string, projectName: string) => {
-      setLedgerQueueError(null);
-      setLedgerQueueing(true);
+      setQueueActionError(null);
+      setQueueing(true);
       try {
         await queueRepair(findingId, projectName);
       } catch (e) {
-        setLedgerQueueError(
+        setQueueActionError(
           e instanceof Error ? e.message : "Could not queue repair."
         );
       } finally {
-        setLedgerQueueing(false);
+        setQueueing(false);
       }
     },
     [queueRepair]
@@ -55,8 +55,8 @@ export function useQueueRepair({ fetchQueue }: Args) {
   return {
     queueRepair,
     runQueueRepair,
-    ledgerQueueError,
-    setLedgerQueueError,
-    ledgerQueueing,
+    queueActionError,
+    setQueueActionError,
+    queueing,
   };
 }

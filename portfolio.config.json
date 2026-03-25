@@ -1,0 +1,166 @@
+{
+  "name": "Portfolio",
+  "version": "1.0.0",
+  "projects": [
+    {
+      "id": "embr",
+      "name": "Embr",
+      "type": "app",
+      "stack": ["node", "react", "postgres", "redis", "stripe"],
+      "path": ".",
+      "description": "Creator revenue platform",
+      "owner": "Engineering Team"
+    },
+    {
+      "id": "codra",
+      "name": "Codra",
+      "type": "app",
+      "stack": ["node", "react", "postgres"],
+      "path": "projects/codra",
+      "description": "Code analysis platform",
+      "owner": "Engineering Team"
+    },
+    {
+      "id": "relevnt",
+      "name": "Relevnt",
+      "type": "app",
+      "stack": ["node", "react", "postgres", "elasticsearch"],
+      "path": "projects/relevnt",
+      "description": "Job matching platform",
+      "owner": "Engineering Team"
+    },
+    {
+      "id": "advocera",
+      "name": "Advocera",
+      "type": "website",
+      "stack": ["node", "react", "postgres"],
+      "path": "projects/advocera",
+      "description": "Advocacy platform",
+      "owner": "Product Team"
+    },
+    {
+      "id": "project-5",
+      "name": "Project 5",
+      "type": "app",
+      "stack": ["node", "postgres"],
+      "path": "projects/project-5",
+      "description": "TBD",
+      "owner": "TBD"
+    },
+    {
+      "id": "project-6",
+      "name": "Project 6",
+      "type": "website",
+      "stack": ["next", "react"],
+      "path": "projects/project-6",
+      "description": "TBD",
+      "owner": "TBD"
+    },
+    {
+      "id": "project-7",
+      "name": "Project 7",
+      "type": "app",
+      "stack": ["node", "postgres"],
+      "path": "projects/project-7",
+      "description": "TBD",
+      "owner": "TBD"
+    },
+    {
+      "id": "project-8",
+      "name": "Project 8",
+      "type": "website",
+      "stack": ["next", "react"],
+      "path": "projects/project-8",
+      "description": "TBD",
+      "owner": "TBD"
+    },
+    {
+      "id": "project-9",
+      "name": "Project 9",
+      "type": "app",
+      "stack": ["node", "postgres"],
+      "path": "projects/project-9",
+      "description": "TBD",
+      "owner": "TBD"
+    },
+    {
+      "id": "project-10",
+      "name": "Project 10",
+      "type": "website",
+      "stack": ["next", "react"],
+      "path": "projects/project-10",
+      "description": "TBD",
+      "owner": "TBD"
+    },
+    {
+      "id": "project-11",
+      "name": "Project 11",
+      "type": "app",
+      "stack": ["node", "postgres"],
+      "path": "projects/project-11",
+      "description": "TBD",
+      "owner": "TBD"
+    },
+    {
+      "id": "project-12",
+      "name": "Project 12",
+      "type": "website",
+      "stack": ["next", "react"],
+      "path": "projects/project-12",
+      "description": "TBD",
+      "owner": "TBD"
+    },
+    {
+      "id": "project-13",
+      "name": "Project 13",
+      "type": "app",
+      "stack": ["node", "postgres"],
+      "path": "projects/project-13",
+      "description": "TBD",
+      "owner": "TBD"
+    }
+  ],
+  "sla": {
+    "minimumCompliance": {
+      "perProject": 0.9,
+      "portfolio": 0.95,
+      "critical": 1.0
+    },
+    "responseTime": {
+      "critical": "1 hour",
+      "major": "4 hours",
+      "minor": "24 hours"
+    },
+    "escalation": {
+      "level1": "Auto-fix via repair engine",
+      "level2": "Alert engineering lead + Slack",
+      "level3": "Block PR/deployment if critical",
+      "level4": "Executive report if SLA breached"
+    }
+  },
+  "audit": {
+    "schedule": {
+      "frequency": "nightly",
+      "time": "02:00",
+      "timezone": "UTC"
+    },
+    "difficulty": "all",
+    "notifications": {
+      "slack": {
+        "enabled": true,
+        "channel": "#constraint-audits"
+      },
+      "email": {
+        "enabled": true,
+        "recipients": ["engineering@company.com"]
+      }
+    }
+  },
+  "repository": {
+    "type": "supabase",
+    "retention": {
+      "audits": "90 days",
+      "violations": "1 year"
+    }
+  }
+}

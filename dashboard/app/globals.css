@@ -210,3 +210,65 @@ textarea::placeholder {
 .animate-fade-in {
   animation: fade-in 0.2s ease forwards;
 }
+
+/* ─── Skeleton Shimmer ───────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+.skeleton-bar {
+  background: linear-gradient(90deg, var(--ink-bg-sunken) 25%, var(--ink-bg-raised) 50%, var(--ink-bg-sunken) 75%);
+  background-size: 200px 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-md);
+}
+
+/* ─── Responsive / Mobile ────────────────────────────────── */
+.shell-mobile-bar {
+  display: none;
+}
+
+.shell-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .shell-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 100;
+    width: var(--sidebar-width-mobile, 220px) !important;
+    min-width: var(--sidebar-width-mobile, 220px) !important;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.08);
+  }
+  .shell-sidebar.open {
+    transform: translateX(0);
+  }
+  .shell-sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    background: rgba(0, 0, 0, 0.25);
+  }
+  .shell-sidebar-backdrop.open {
+    display: block;
+  }
+  .shell-mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 1rem;
+    border-bottom: 0.5px solid var(--ink-border-faint);
+    background: var(--ink-bg);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .shell-main {
+    padding: 1.25rem 1rem !important;
+  }
+}

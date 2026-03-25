@@ -11,7 +11,8 @@ export type LyraJobType =
   | "onboard_repository"
   | "re_audit_project"
   | "synthesize_project"
-  | "audit_project";
+  | "audit_project"
+  | "repair_finding";
 
 export type LyraJobStatus = "queued" | "running" | "completed" | "failed";
 
