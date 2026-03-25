@@ -83,6 +83,7 @@ export interface JobRow {
   project_name: string | null;
   repository_url: string | null;
   status: string;
+  created_at?: string;
   manifest_revision?: string | null;
   checklist_id?: string | null;
   repo_ref?: string | null;
@@ -94,10 +95,10 @@ export async function claimJob(
   jobId: string
 ): Promise<JobRow | null> {
   const r = await pool.query(
-    `UPDATE lyra_audit_jobs
-     SET status = 'running', started_at = COALESCE(started_at, now())
-     WHERE id = $1 AND status = 'queued'
-     RETURNING id, job_type, project_name, repository_url, status, manifest_revision, checklist_id, repo_ref, payload`,
+     `UPDATE lyra_audit_jobs
+      SET status = 'running', started_at = COALESCE(started_at, now())
+      WHERE id = $1 AND status = 'queued'
+      RETURNING id, job_type, project_name, repository_url, status, created_at, manifest_revision, checklist_id, repo_ref, payload`,
     [jobId]
   );
   if (r.rows.length === 0) return null;
@@ -108,6 +109,12 @@ export async function claimJob(
     project_name: row.project_name,
     repository_url: row.repository_url,
     status: row.status,
+    created_at:
+      row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : row.created_at != null
+          ? String(row.created_at)
+          : undefined,
     manifest_revision: row.manifest_revision,
     checklist_id: row.checklist_id,
     repo_ref: row.repo_ref,
@@ -312,13 +319,14 @@ export async function loadLatestProjectManifest(
   pool: pg.Pool,
   projectName: string
 ): Promise<Record<string, unknown> | null> {
+  const projectNameKey = normalizeProjectName(projectName);
   const result = await pool.query(
     `SELECT manifest
        FROM lyra_project_manifests
-      WHERE lower(trim(project_name)) = lower(trim($1))
-      ORDER BY generated_at DESC
-      LIMIT 1`,
-    [projectName]
+       WHERE lower(trim(project_name)) = $1
+       ORDER BY generated_at DESC
+       LIMIT 1`,
+    [projectNameKey]
   );
   return (result.rows[0]?.manifest as Record<string, unknown> | undefined) ?? null;
 }

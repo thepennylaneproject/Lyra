@@ -1,4 +1,9 @@
-import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
+import {
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  fetchWithTimeout,
+} from "./base.js";
 
 /**
  * AIMLAPI provider — unified multi-model gateway (OpenAI-compatible).
@@ -61,7 +66,7 @@ export class AimlapiProvider extends LLMProvider {
       body.response_format = { type: "json_object" };
     }
 
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
+    const res = await fetchWithTimeout(this.name, `${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,

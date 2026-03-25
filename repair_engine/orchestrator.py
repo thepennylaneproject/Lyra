@@ -10,7 +10,11 @@ import uuid
 from .apply import apply_candidate_to_root, update_finding_after_apply
 from .config import EngineConfig
 from .evaluator.docker_runner import DockerEvaluator
-from .generation import generate_root_candidates, refine_candidates
+from .generation import (
+    generate_root_candidates,
+    recommended_refinements_per_parent,
+    refine_candidates,
+)
 from .ingestion import IngestionFilters, filter_findings, load_findings
 from .integrations.dashboard_client import DashboardClient
 from .localization import localize_fault
@@ -134,8 +138,20 @@ class RepairOrchestrator:
             eval_count += 1
             should_prune(node, self.config.search, seen_fingerprints)
 
+        strong_pass_threshold = float(os.getenv("LYRA_STRONG_PASS_SCORE", "0.93"))
         depth = 0
         while depth < self.config.search.max_depth and eval_count < self.config.search.max_evals_per_finding:
+            strong_passing = next(
+                (
+                    node for node in tree.nodes.values()
+                    if node.eval_summary
+                    and node.eval_summary.result.passed
+                    and node.eval_summary.score.score >= strong_pass_threshold
+                ),
+                None,
+            )
+            if strong_passing is not None:
+                break
             parents = [node for node in tree.best_nodes(self.config.search.beam_width)
                        if not node.pruned and node.depth == depth]
             if not parents:
@@ -149,7 +165,12 @@ class RepairOrchestrator:
                 child_seed = parent.candidate
                 child_seed.parent_node_id = parent.node_id
                 refine_inputs.append((child_seed, feedback))
-            refined = refine_candidates(finding, refine_inputs, self.router, refinements_per_parent=2)
+            refined = refine_candidates(
+                finding,
+                refine_inputs,
+                self.router,
+                refinements_per_parent=recommended_refinements_per_parent(finding, 2),
+            )
 
             for candidate in refined:
                 parent_id = candidate.parent_node_id

@@ -4,6 +4,7 @@
 
 import { createPostgresPool, readDatabaseConfig } from "./postgres";
 import { randomUUID } from "node:crypto";
+import { normalizeProjectName } from "./project-identity";
 
 export type LyraJobType =
   | "weekly_audit"
@@ -185,13 +186,14 @@ export async function listAuditRunsForProject(
   limit = 30
 ): Promise<LyraAuditRunRow[]> {
   const db = pool();
+  const projectNameKey = normalizeProjectName(projectName);
   const rows = await db.query(
     `SELECT * FROM lyra_audit_runs
      WHERE project_name IS NOT NULL
-       AND LOWER(TRIM(project_name)) = LOWER(TRIM($1))
+       AND LOWER(TRIM(project_name)) = $1
      ORDER BY created_at DESC
      LIMIT $2`,
-    [projectName, limit]
+    [projectNameKey, limit]
   );
   return rows.map(rowRun);
 }
@@ -202,13 +204,14 @@ export async function listAuditJobsForProject(
   limit = 20
 ): Promise<LyraAuditJobRow[]> {
   const db = pool();
+  const projectNameKey = normalizeProjectName(projectName);
   const rows = await db.query(
     `SELECT * FROM lyra_audit_jobs
      WHERE project_name IS NOT NULL
-       AND LOWER(TRIM(project_name)) = LOWER(TRIM($1))
+       AND LOWER(TRIM(project_name)) = $1
      ORDER BY created_at DESC
      LIMIT $2`,
-    [projectName, limit]
+    [projectNameKey, limit]
   );
   return rows.map(rowJob);
 }

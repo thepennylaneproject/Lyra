@@ -16,6 +16,7 @@ import {
   claimJob,
   completeJob,
   loadProject,
+  loadLatestProjectManifest,
   saveProject,
   saveProjectManifest,
   listAllProjects,
@@ -24,12 +25,22 @@ import {
 import { getRegistry } from "./providers/registry.js";
 import {
   buildProjectManifest,
+  resolveRepoRevision,
   resolveScopePathsFromManifest,
   summarizeCoverageFromManifest,
   type ProjectManifest,
 } from "./manifest.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const promptFileCache = new Map<string, string>();
+
+function readCachedPrompt(filePath: string): string {
+  const cached = promptFileCache.get(filePath);
+  if (cached !== undefined) return cached;
+  const text = existsSync(filePath) ? readFileSync(filePath, "utf-8") : "";
+  promptFileCache.set(filePath, text);
+  return text;
+}
 
 function repoRoot(): string {
   const env = process.env.LYRA_REPO_ROOT?.trim();
@@ -52,7 +63,7 @@ function loadClusterPrompts(auditKind?: string): { core: string; auditAgent: str
   if (!existsSync(corePath)) {
     throw new Error(`core_system_prompt.md not found at ${corePath}`);
   }
-  const core = readFileSync(corePath, "utf-8");
+  const core = readCachedPrompt(corePath);
 
   const promptsDir = join(root, "audits", "prompts");
 
@@ -62,7 +73,7 @@ function loadClusterPrompts(auditKind?: string): { core: string; auditAgent: str
    */
   function prompt(filename: string): string {
     const p = join(promptsDir, filename);
-    return existsSync(p) ? readFileSync(p, "utf-8") : "";
+    return readCachedPrompt(p);
   }
 
   // Map audit_kind → prompt file(s), concatenated
@@ -367,6 +378,7 @@ interface ProjectAuditExecution {
   scope: AuditScope;
   manifestRevision: string;
   checklistId: string;
+  manifestReused: boolean;
 }
 
 function inferRepairPolicy(finding: Record<string, unknown>): Record<string, unknown> {
@@ -416,9 +428,42 @@ function findingPaths(findings: Array<Record<string, unknown>>): string[] {
 }
 
 function knownFindingIds(findings: Array<Record<string, unknown>>): string[] {
-  return findings
+  return knownFindingIdsForScope(findings);
+}
+
+function knownFindingIdsForScope(
+  findings: Array<Record<string, unknown>>,
+  scopeFiles: string[] = []
+): string[] {
+  const limit = Math.max(
+    1,
+    Number.parseInt(process.env.LYRA_KNOWN_FINDING_SCOPE_LIMIT?.trim() || "120", 10) || 120
+  );
+  const scopedFiles = new Set(scopeFiles.map((file) => file.trim()).filter(Boolean));
+  const filtered = scopedFiles.size === 0
+    ? findings
+    : findings.filter((finding) => {
+        const paths = findingPaths([finding]);
+        return paths.some((path) => scopedFiles.has(path));
+      });
+  return filtered
     .map((finding) => String(finding.finding_id ?? "").trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function asProjectManifest(value: Record<string, unknown> | null): ProjectManifest | null {
+  if (!value) return null;
+  const revision = typeof value.revision === "string" ? value.revision : "";
+  const generatedAt = typeof value.generated_at === "string" ? value.generated_at : "";
+  const sourceRoot = typeof value.source_root === "string" ? value.source_root : "";
+  const exhaustiveness =
+    value.exhaustiveness === "exhaustive" ? "exhaustive" : null;
+  const checklistId = typeof value.checklist_id === "string" ? value.checklist_id : "";
+  if (!revision || !generatedAt || !sourceRoot || !exhaustiveness || !checklistId) {
+    return null;
+  }
+  return value as unknown as ProjectManifest;
 }
 
 function normalizeScopePaths(
@@ -495,26 +540,44 @@ async function executeProjectAudit(
     typeof payload.checklist_id === "string"
       ? payload.checklist_id
       : project.auditConfig?.checklistId ?? "lyra-bounded-audit-v1";
-  const manifest = buildProjectManifest(
-    repoAccess.repoRoot,
-    project.auditConfig?.scanRoots ?? ["./"],
-    project.auditConfig?.entrypoints ?? [],
-    checklistId
-  );
-  manifest.domains = summarizeCoverageFromManifest(
-    manifest,
-    [],
-    [],
-    manifest.generated_at
-  );
-  await saveProjectManifest(pool, {
-    projectName: project.name,
-    repoRevision: manifest.revision,
-    sourceRoot: manifest.source_root,
-    checklistId: manifest.checklist_id,
-    exhaustiveness: manifest.exhaustiveness,
-    manifest: manifest as unknown as Record<string, unknown>,
-  });
+  const currentRevision = resolveRepoRevision(repoAccess.repoRoot);
+  const cachedManifest =
+    currentRevision !== "workspace"
+      ? asProjectManifest(await loadLatestProjectManifest(pool, project.name))
+      : null;
+  const manifest =
+    cachedManifest &&
+    cachedManifest.revision === currentRevision &&
+    cachedManifest.checklist_id === checklistId &&
+    cachedManifest.exhaustiveness === "exhaustive"
+      ? cachedManifest
+      : buildProjectManifest(
+          repoAccess.repoRoot,
+          project.auditConfig?.scanRoots ?? ["./"],
+          project.auditConfig?.entrypoints ?? [],
+          checklistId
+        );
+  const manifestReused = manifest === cachedManifest;
+  if (!manifestReused) {
+    manifest.domains = summarizeCoverageFromManifest(
+      manifest,
+      [],
+      [],
+      manifest.generated_at
+    );
+    await saveProjectManifest(pool, {
+      projectName: project.name,
+      repoRevision: manifest.revision,
+      sourceRoot: manifest.source_root,
+      checklistId: manifest.checklist_id,
+      exhaustiveness: manifest.exhaustiveness,
+      manifest: manifest as unknown as Record<string, unknown>,
+    });
+  } else {
+    console.log(
+      `[lyra-worker] reused manifest for ${project.name} revision ${manifest.revision}`
+    );
+  }
   return {
     repoRoot: repoAccess.repoRoot,
     cleanup: repoAccess.cleanup,
@@ -522,6 +585,7 @@ async function executeProjectAudit(
     scope,
     manifestRevision: manifest.revision,
     checklistId,
+    manifestReused,
   };
 }
 
@@ -559,8 +623,14 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
 
   let core: string;
   let auditAgent: string;
+  const jobStartedAt = Date.now();
   const payload = job.payload || {};
   const visualOnly = Boolean(payload.visual_only);
+  const queueWaitMs = (() => {
+    if (!job.created_at) return null;
+    const createdAt = Date.parse(job.created_at);
+    return Number.isFinite(createdAt) ? Math.max(0, jobStartedAt - createdAt) : null;
+  })();
 
   try {
     ({ core, auditAgent } = loadClusterPrompts(
@@ -588,11 +658,6 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       await runClusterSynthesize(pool, job, core, auditAgent, cluster);
       return;
     }
-    if (job.job_type === "cluster_synthesize") {
-      const cluster = getClusterFromAuditKind(typeof payload.audit_kind === "string" ? payload.audit_kind : undefined);
-      await runClusterSynthesize(pool, job, core, auditAgent, cluster);
-      return;
-    }
     if (job.job_type === "meta_synthesize") {
       await runMetaSynthesize(pool, job, core, auditAgent);
       return;
@@ -613,6 +678,20 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
     let jobConfidence: string | null = "high";
     let jobManifestRevision: string | null = job.manifest_revision ?? null;
     let jobChecklistId: string | null = job.checklist_id ?? null;
+    const jobMetrics = {
+      queue_wait_ms: queueWaitMs,
+      total_llm_cost_usd: 0,
+      total_llm_input_tokens: 0,
+      total_llm_output_tokens: 0,
+      llm_cache_hits: 0,
+      llm_fallback_calls: 0,
+      llm_attempts: 0,
+      manifest_reuse_count: 0,
+      manifest_rebuild_count: 0,
+      prompt_context_chars: 0,
+      prompt_scope_file_count: 0,
+      pass_count: 0,
+    };
     const projects = await resolveProjectsForJob(pool, job.project_name);
 
     for (const project of projects) {
@@ -623,6 +702,11 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
       try {
         jobManifestRevision = execution.manifestRevision;
         jobChecklistId = execution.checklistId;
+        if (execution.manifestReused) {
+          jobMetrics.manifest_reuse_count += 1;
+        } else {
+          jobMetrics.manifest_rebuild_count += 1;
+        }
         const expectations = readProjectExpectations(project, execution.repoRoot);
         const prev = await loadProject(pool, project.name);
         const existing = (prev?.findings ?? []) as Array<Record<string, unknown>>;
@@ -660,6 +744,13 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
               manifestRevision: execution.manifestRevision,
             }
           );
+          jobMetrics.total_llm_cost_usd += llm.costUsd ?? 0;
+          jobMetrics.total_llm_input_tokens += llm.inputTokens ?? 0;
+          jobMetrics.total_llm_output_tokens += llm.outputTokens ?? 0;
+          jobMetrics.llm_cache_hits += llm.cacheHit ? 1 : 0;
+          jobMetrics.llm_fallback_calls += llm.fallbackCount ?? 0;
+          jobMetrics.llm_attempts += llm.attemptCount ?? 0;
+          jobMetrics.prompt_context_chars += intelligenceContext.length;
           auditModel = llm.model || auditModel;
           const mappedFindings = llm.findings.map((f) => ({
             ...f,
@@ -710,6 +801,7 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
               ...execution.scope,
               files: pass.files,
               scopePaths: pass.files,
+              includeReportExcerpt: false,
               maxFiles:
                 typeof payload.max_files === "number"
                   ? payload.max_files
@@ -731,17 +823,26 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
               {
                 scopeLabel: pass.label,
                 filesInScope: pass.files,
-                knownFindingIds: knownFindingIds(existing),
+                knownFindingIds: knownFindingIdsForScope(existing, pass.files),
                 checklistId: execution.checklistId,
                 manifestRevision: execution.manifestRevision,
               }
             );
-            return { llm, pass };
+            return { llm, pass, codeContextChars: code.length };
           }),
           PASS_CONCURRENCY
         );
 
-        for (const { llm, pass } of passTaskResults) {
+        jobMetrics.pass_count += passes.length;
+        for (const { llm, pass, codeContextChars } of passTaskResults) {
+          jobMetrics.total_llm_cost_usd += llm.costUsd ?? 0;
+          jobMetrics.total_llm_input_tokens += llm.inputTokens ?? 0;
+          jobMetrics.total_llm_output_tokens += llm.outputTokens ?? 0;
+          jobMetrics.llm_cache_hits += llm.cacheHit ? 1 : 0;
+          jobMetrics.llm_fallback_calls += llm.fallbackCount ?? 0;
+          jobMetrics.llm_attempts += llm.attemptCount ?? 0;
+          jobMetrics.prompt_context_chars += codeContextChars;
+          jobMetrics.prompt_scope_file_count += pass.files.length;
           auditModel = llm.model || auditModel;
           passResults.push({
             findings: llm.findings.map((finding) => ({
@@ -856,6 +957,17 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
           coverage_complete: coverageComplete,
           completion_confidence: confidence,
           known_finding_ids: knownFindingIds(existing),
+          metrics: {
+            manifest_reused: execution.manifestReused,
+            llm_cost_usd: passTaskResults.reduce((sum, result) => sum + (result.llm.costUsd ?? 0), 0),
+            llm_input_tokens: passTaskResults.reduce((sum, result) => sum + (result.llm.inputTokens ?? 0), 0),
+            llm_output_tokens: passTaskResults.reduce((sum, result) => sum + (result.llm.outputTokens ?? 0), 0),
+            llm_cache_hits: passTaskResults.filter((result) => result.llm.cacheHit).length,
+            llm_fallback_calls: passTaskResults.reduce((sum, result) => sum + (result.llm.fallbackCount ?? 0), 0),
+            llm_attempts: passTaskResults.reduce((sum, result) => sum + (result.llm.attemptCount ?? 0), 0),
+            pass_count: passes.length,
+            prompt_context_chars: passTaskResults.reduce((sum, result) => sum + result.codeContextChars, 0),
+          },
           files_in_scope: normalizeScopePaths(
             execution.repoRoot,
             scanRoots,
@@ -900,6 +1012,10 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
         visual_only: visualOnly,
         audit_kind: payload.audit_kind ?? (visualOnly ? "visual" : "full"),
         audit_model: auditModel,
+        audit_metrics: {
+          ...jobMetrics,
+          duration_ms: Date.now() - jobStartedAt,
+        },
         project_audit_details: projectAuditDetails,
       },
     });

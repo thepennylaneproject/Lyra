@@ -1,4 +1,9 @@
-import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
+import {
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  fetchWithTimeout,
+} from "./base.js";
 
 /**
  * HuggingFace Serverless Inference provider.
@@ -61,7 +66,7 @@ export class HuggingFaceProvider extends LLMProvider {
     }
     messages.push({ role: "user", content: request.userPrompt });
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetchWithTimeout(this.name, `${baseUrl}/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({

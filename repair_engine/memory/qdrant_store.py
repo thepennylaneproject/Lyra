@@ -30,6 +30,7 @@ class QdrantMemoryStore:
         self.base_url = base_url.rstrip("/")
         self.collection = collection
         self.vector_size = vector_size
+        self._collection_ready = False
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
@@ -48,8 +49,11 @@ class QdrantMemoryStore:
             raise RuntimeError(f"Qdrant {method} {path} failed ({exc.code}): {text[:400]}") from exc
 
     def ensure_collection(self) -> None:
+        if self._collection_ready:
+            return
         payload = {"vectors": {"size": self.vector_size, "distance": "Cosine"}}
         self._request("PUT", f"/collections/{self.collection}", payload)
+        self._collection_ready = True
 
     def remember_success(self, finding: Finding, candidate: PatchCandidate, score: float) -> None:
         point_id = int(hashlib.sha1(candidate.candidate_id.encode("utf-8")).hexdigest()[:12], 16)
@@ -81,4 +85,3 @@ class QdrantMemoryStore:
         for point in result.get("result", []):
             hits.append(MemoryHit(score=float(point.get("score", 0.0)), payload=point.get("payload", {})))
         return hits
-

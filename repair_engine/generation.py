@@ -17,6 +17,36 @@ ROOT_SCHEMA_HINT = """{
 }"""
 
 
+def _is_narrow_high_confidence_finding(finding: Finding) -> bool:
+    confidence = finding.confidence.strip().lower()
+    affected_files = [str(path).strip() for path in finding.affected_files if str(path).strip()]
+    hook_files = {
+        str(hook.file).strip()
+        for hook in finding.proof_hooks
+        if hook.file and str(hook.file).strip()
+    }
+    narrow_scope = len(affected_files) <= 1 and len(hook_files) <= 1
+    return narrow_scope and confidence in {"evidence", "confirmed", "high"}
+
+
+def recommended_root_candidate_count(finding: Finding, requested: int) -> int:
+    if requested <= 1:
+        return max(1, requested)
+    if _is_narrow_high_confidence_finding(finding):
+        return min(requested, 2)
+    if len(finding.affected_files) <= 2 and len(finding.proof_hooks) >= 2:
+        return min(requested, 3)
+    return requested
+
+
+def recommended_refinements_per_parent(finding: Finding, requested: int) -> int:
+    if requested <= 1:
+        return max(1, requested)
+    if _is_narrow_high_confidence_finding(finding):
+        return 1
+    return requested
+
+
 def _extract_json(text: str) -> dict[str, Any] | None:
     if not text.strip():
         return None
@@ -136,14 +166,15 @@ def generate_root_candidates(
     router: Any,
     count: int,
 ) -> list[PatchCandidate]:
-    prompts = [_build_root_prompt(finding, slice_, idx) for idx in range(count)]
+    effective_count = recommended_root_candidate_count(finding, count)
+    prompts = [_build_root_prompt(finding, slice_, idx) for idx in range(effective_count)]
     texts = _complete_texts(
         router,
         prompts,
         task_type="patch_generation",
         temperature=0.7,
         max_tokens=2000,
-        concurrency=min(8, count),
+        concurrency=min(8, effective_count),
     )
     candidates: list[PatchCandidate] = []
     seen = set()
@@ -168,12 +199,19 @@ def refine_candidates(
     router: Any,
     refinements_per_parent: int = 2,
 ) -> list[PatchCandidate]:
+    effective_refinements = recommended_refinements_per_parent(
+        finding,
+        refinements_per_parent,
+    )
     prompts: list[str] = []
     owners: list[str] = []
     for candidate, feedback in parent_nodes:
-        for _ in range(refinements_per_parent):
+        for _ in range(effective_refinements):
             prompts.append(_build_refine_prompt(finding, candidate, feedback))
             owners.append(candidate.parent_node_id or candidate.candidate_id)
+
+    if not prompts:
+        return []
 
     texts = _complete_texts(
         router,

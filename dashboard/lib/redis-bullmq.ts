@@ -3,6 +3,8 @@
  * (dashboard uses host/port object; worker uses ioredis URL — same Redis instance).
  */
 
+import { Queue } from "bullmq";
+
 export type BullmqRedisConnection = {
   host: string;
   port: number;
@@ -36,4 +38,22 @@ export function bullmqConnectionFromEnv(): BullmqRedisConnection | null {
   } catch {
     return null;
   }
+}
+
+let lyraAuditQueue: Queue | null = null;
+
+export function getLyraAuditQueue(): Queue | null {
+  if (lyraAuditQueue) return lyraAuditQueue;
+  const connection = bullmqConnectionFromEnv();
+  if (!connection) return null;
+  lyraAuditQueue = new Queue("lyra-audit", { connection });
+  return lyraAuditQueue;
+}
+
+export function requireLyraAuditQueue(): Queue {
+  const queue = getLyraAuditQueue();
+  if (!queue) {
+    throw new Error("BullMQ queue is unavailable despite Redis being configured");
+  }
+  return queue;
 }

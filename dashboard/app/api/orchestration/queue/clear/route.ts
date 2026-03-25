@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
-import { Queue } from "bullmq";
-import { bullmqConnectionFromEnv } from "@/lib/redis-bullmq";
+import { bullmqConnectionFromEnv, requireLyraAuditQueue } from "@/lib/redis-bullmq";
 import { failAllQueuedJobs, jobsStoreConfigured } from "@/lib/orchestration-jobs";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import { apiErrorMessage } from "@/lib/api-error";
+import { invalidateRuntimeCache } from "@/lib/runtime-cache";
 
 const CANCEL_MSG =
   "Cancelled: queue cleared from dashboard (BullMQ + DB queued rows).";
+const STATUS_CACHE_KEYS = [
+  "api:orchestration",
+  "api:engine-status",
+  "api:orchestration-jobs",
+];
 
 /**
  * POST — obliterate BullMQ `lyra-audit` (if Redis configured) and mark all DB
@@ -29,7 +34,7 @@ export async function POST(request: Request) {
 
     const connection = bullmqConnectionFromEnv();
     if (connection && !skipRedis) {
-      const queue = new Queue("lyra-audit", { connection });
+      const queue = requireLyraAuditQueue();
       try {
         await queue.obliterate({ force: true });
         bullmqCleared = true;
@@ -37,8 +42,6 @@ export async function POST(request: Request) {
         bullmqError =
           error instanceof Error ? error.message : String(error);
         console.warn("[orchestration/queue/clear] BullMQ obliterate failed:", bullmqError);
-      } finally {
-        await queue.close();
       }
     }
 
@@ -55,6 +58,8 @@ export async function POST(request: Request) {
         bullmq_error: bullmqError,
       },
     });
+
+    invalidateRuntimeCache(...STATUS_CACHE_KEYS);
 
     return NextResponse.json({
       ok: true,

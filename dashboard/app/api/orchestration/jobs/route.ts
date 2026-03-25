@@ -11,7 +11,8 @@ import {
 } from "@/lib/orchestration-jobs";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import { apiErrorMessage } from "@/lib/api-error";
-import { bullmqConnectionFromEnv } from "@/lib/redis-bullmq";
+import { bullmqConnectionFromEnv, requireLyraAuditQueue } from "@/lib/redis-bullmq";
+import { getOrSetRuntimeCache, invalidateRuntimeCache } from "@/lib/runtime-cache";
 
 const JOB_TYPES: LyraJobType[] = [
   "weekly_audit",
@@ -28,6 +29,14 @@ function redisConfigured(): boolean {
   return bullmqConnectionFromEnv() != null;
 }
 
+const ORCHESTRATION_JOBS_CACHE_KEY = "api:orchestration-jobs";
+const ORCHESTRATION_JOBS_CACHE_TTL_MS = 5_000;
+const STATUS_CACHE_KEYS = [
+  "api:orchestration",
+  "api:engine-status",
+  ORCHESTRATION_JOBS_CACHE_KEY,
+];
+
 export async function GET() {
   if (!jobsStoreConfigured()) {
     return NextResponse.json({
@@ -39,17 +48,24 @@ export async function GET() {
     });
   }
   try {
-    const [jobs, runs] = await Promise.all([
-      listRecentAuditJobs(30),
-      listRecentAuditRuns(20),
-    ]);
-    return NextResponse.json({
-      configured: true,
-      redis_configured: redisConfigured(),
-      enqueue_auth_optional: true,
-      jobs,
-      runs,
-    });
+    const payload = await getOrSetRuntimeCache(
+      ORCHESTRATION_JOBS_CACHE_KEY,
+      ORCHESTRATION_JOBS_CACHE_TTL_MS,
+      async () => {
+        const [jobs, runs] = await Promise.all([
+          listRecentAuditJobs(30),
+          listRecentAuditRuns(20),
+        ]);
+        return {
+          configured: true,
+          redis_configured: redisConfigured(),
+          enqueue_auth_optional: true,
+          jobs,
+          runs,
+        };
+      }
+    );
+    return NextResponse.json(payload);
   } catch (error) {
     console.error("GET /api/orchestration/jobs", error);
     return NextResponse.json(
@@ -114,7 +130,7 @@ export async function POST(request: Request) {
 
     const connection = bullmqConnectionFromEnv();
     if (connection) {
-      const queue = new Queue("lyra-audit", { connection });
+      const queue = requireLyraAuditQueue();
       try {
         await queue.add(
           "process",
@@ -132,13 +148,10 @@ export async function POST(request: Request) {
         } catch (dbErr) {
           console.error("[orchestration/jobs] Could not mark job failed:", dbErr);
         }
-        await queue.close();
         return NextResponse.json(
           { error: `Redis enqueue failed: ${msg}` },
           { status: 502 }
         );
-      } finally {
-        await queue.close();
       }
     }
 
@@ -149,6 +162,8 @@ export async function POST(request: Request) {
       summary: `Enqueued ${jobType} job ${row.id}`,
       payload: { job_id: row.id, bullmq: connection != null },
     });
+
+    invalidateRuntimeCache(...STATUS_CACHE_KEYS);
 
     return NextResponse.json(
       { job: row, bullmq_queued: connection != null },
@@ -181,6 +196,7 @@ export async function DELETE(request: Request) {
         { status: 404 }
       );
     }
+    invalidateRuntimeCache(...STATUS_CACHE_KEYS);
     return NextResponse.json({ job });
   } catch (error) {
     console.error("DELETE /api/orchestration/jobs", error);

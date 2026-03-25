@@ -13,8 +13,12 @@ const IoRedis = require("ioredis") as new (
 
 const redisUrl =
   process.env.REDIS_URL?.trim() || process.env.LYRA_REDIS_URL?.trim();
-const pollMs = Number(process.env.LYRA_JOB_POLL_MS?.trim() || "8000");
-const pollIdleMs = Number(process.env.LYRA_JOB_POLL_IDLE_MS?.trim() || "30000");
+const pollMs = Number(process.env.LYRA_JOB_POLL_MS?.trim() || "3000");
+const pollIdleMs = Number(process.env.LYRA_JOB_POLL_IDLE_MS?.trim() || "5000");
+const pollBatchSize = Math.max(
+  1,
+  Number.parseInt(process.env.LYRA_JOB_POLL_BATCH_SIZE?.trim() || "10", 10) || 10
+);
 
 async function main() {
   const pool = createPool();
@@ -76,7 +80,9 @@ async function main() {
       pollMs,
       "ms, idle backoff:",
       pollIdleMs,
-      "ms)"
+      "ms, batch size:",
+      pollBatchSize,
+      ")"
     );
     const scheduleNext = (afterMs: number) => {
       setTimeout(() => void poll(), afterMs);
@@ -84,10 +90,16 @@ async function main() {
     const poll = async () => {
       try {
         const r = await pool.query(
-          `SELECT id FROM lyra_audit_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`
+          `SELECT id FROM lyra_audit_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT $1`,
+          [pollBatchSize]
         );
-        if (r.rows[0]?.id) {
-          await runOne(String(r.rows[0].id));
+        const queuedIds = r.rows
+          .map((row) => row.id)
+          .filter((id): id is string => typeof id === "string" && id.length > 0);
+        if (queuedIds.length > 0) {
+          for (const queuedId of queuedIds) {
+            await runOne(queuedId);
+          }
           scheduleNext(pollMs);
         } else {
           scheduleNext(pollIdleMs);

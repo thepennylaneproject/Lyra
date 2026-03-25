@@ -1,4 +1,9 @@
-import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
+import {
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  fetchWithTimeout,
+} from "./base.js";
 
 /**
  * OpenAI LLM provider (GPT-4o, GPT-4o-mini, etc).
@@ -29,7 +34,7 @@ export class OpenAIProvider extends LLMProvider {
     const model =
       (this.models as Record<string, string>)[modelId] ?? modelId;
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetchWithTimeout(this.name, "https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,

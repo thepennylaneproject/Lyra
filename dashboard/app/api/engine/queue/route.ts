@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { Queue } from "bullmq";
-import { bullmqConnectionFromEnv } from "@/lib/redis-bullmq";
+import { bullmqConnectionFromEnv, requireLyraAuditQueue } from "@/lib/redis-bullmq";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import { readRepairQueue, writeRepairQueue } from "@/lib/audit-reader";
 import {
@@ -15,6 +14,14 @@ import {
 import { getRepository } from "@/lib/repository-instance";
 import type { RepairJob } from "@/lib/types";
 import { apiErrorMessage } from "@/lib/api-error";
+import { normalizeProjectName } from "@/lib/project-identity";
+import { invalidateRuntimeCache } from "@/lib/runtime-cache";
+
+const STATUS_CACHE_KEYS = [
+  "api:orchestration",
+  "api:engine-status",
+  "api:orchestration-jobs",
+];
 
 /**
  * GET    /api/engine/queue — return all jobs in the repair queue.
@@ -102,7 +109,7 @@ export async function POST(request: Request) {
 
       const connection = bullmqConnectionFromEnv();
       if (connection) {
-        const queue = new Queue("lyra-audit", { connection });
+        const queue = requireLyraAuditQueue();
         try {
           await queue.add(
             "process",
@@ -114,13 +121,10 @@ export async function POST(request: Request) {
           try {
             await updateAuditJobStatus(row.id, "failed", `Redis enqueue error: ${msg}`);
           } catch {}
-          await queue.close();
           return NextResponse.json(
             { error: `Redis enqueue failed: ${msg}` },
             { status: 502 }
           );
-        } finally {
-          await queue.close();
         }
       }
 
@@ -131,6 +135,8 @@ export async function POST(request: Request) {
         summary: `Enqueued repair_finding job ${row.id} for finding ${findingId}`,
         payload: { job_id: row.id, finding_id: findingId, bullmq: connection != null },
       });
+
+      invalidateRuntimeCache(...STATUS_CACHE_KEYS);
 
       return NextResponse.json({ job: row, added: true });
     }
@@ -199,16 +205,17 @@ export async function DELETE(request: Request) {
           [jobId]
         );
       } else if (projectName) {
+        const projectNameKey = normalizeProjectName(projectName);
         rows = await pool.query(
           `UPDATE lyra_repair_jobs
               SET status      = 'cancelled',
                   error       = 'Cancelled by user',
                   finished_at = now()
-            WHERE finding_id   = $1
-              AND lower(trim(project_name)) = lower(trim($2))
-              AND status IN ('queued', 'running')
-            RETURNING id, finding_id, project_name, status`,
-          [findingId, projectName]
+             WHERE finding_id   = $1
+               AND lower(trim(project_name)) = $2
+               AND status IN ('queued', 'running')
+             RETURNING id, finding_id, project_name, status`,
+          [findingId, projectNameKey]
         );
       } else {
         rows = await pool.query(
@@ -223,6 +230,7 @@ export async function DELETE(request: Request) {
         );
       }
 
+      invalidateRuntimeCache(...STATUS_CACHE_KEYS);
       return NextResponse.json({ removed: rows.length, cancelled: rows });
     }
 
@@ -242,6 +250,7 @@ export async function DELETE(request: Request) {
     }
     writeRepairQueue(next);
 
+    invalidateRuntimeCache(...STATUS_CACHE_KEYS);
     return NextResponse.json({ removed: queue.length - next.length });
   } catch (error) {
     console.error("DELETE /api/engine/queue", error);

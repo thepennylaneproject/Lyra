@@ -52,6 +52,7 @@ export class ProviderRegistry {
    */
   async call(models: string[], request: LLMRequest): Promise<LLMResponse> {
     const errors: string[] = [];
+    let attempts = 0;
 
     for (const modelRef of models) {
       const { provider: providerName, modelId } = this.parseModelRef(modelRef);
@@ -68,7 +69,13 @@ export class ProviderRegistry {
 
       try {
         this.logger(`[routing] calling ${modelRef}`);
-        return await provider.call(modelId, request);
+        attempts += 1;
+        const response = await provider.call(modelId, request);
+        return {
+          ...response,
+          attemptCount: attempts,
+          fallbackCount: Math.max(0, attempts - 1),
+        };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         this.logger(`[routing] ${modelRef} failed (${msg.slice(0, 120)}), trying next`);

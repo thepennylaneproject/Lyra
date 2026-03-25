@@ -1,4 +1,9 @@
-import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
+import {
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  fetchWithTimeout,
+} from "./base.js";
 
 /**
  * Anthropic LLM provider (Claude 3, Claude 3.5, etc).
@@ -30,7 +35,7 @@ export class AnthropicProvider extends LLMProvider {
     const model =
       (this.models as Record<string, string>)[modelId] ?? modelId;
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetchWithTimeout(this.name, "https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "x-api-key": this.apiKey,

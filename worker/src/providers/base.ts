@@ -2,6 +2,8 @@
  * Base LLM provider interface for multi-provider routing.
  */
 
+const DEFAULT_LLM_TIMEOUT_MS = 45_000;
+
 export interface LLMRequest {
   systemPrompt: string;
   userPrompt: string;
@@ -17,6 +19,38 @@ export interface LLMResponse {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  attemptCount?: number;
+  fallbackCount?: number;
+}
+
+export function resolveLlmTimeoutMs(): number {
+  const raw = process.env.LYRA_LLM_TIMEOUT_MS?.trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed) || parsed < 1_000) return DEFAULT_LLM_TIMEOUT_MS;
+  return parsed;
+}
+
+export async function fetchWithTimeout(
+  provider: string,
+  url: string,
+  init: RequestInit,
+  timeoutMs = resolveLlmTimeoutMs()
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`${provider} timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export abstract class LLMProvider {

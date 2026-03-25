@@ -29,6 +29,7 @@ export interface AuditScope {
   headRef?: string;
   maxFiles?: number;
   maxCharsPerFile?: number;
+  includeReportExcerpt?: boolean;
 }
 
 function findIntelligenceReportPath(scanRoot: string): string | null {
@@ -104,9 +105,11 @@ export function buildCodeContextForAudit(
 ): string {
   const maxFiles = scope.maxFiles ?? DEFAULT_MAX_FILES;
   const maxCharsPerFile = scope.maxCharsPerFile ?? DEFAULT_MAX_FILE_CHARS;
-  const report = scanRoots
-    .map((dir) => readIntelligenceReportExcerpt(repoRoot, dir))
-    .find(Boolean);
+  const report = scope.includeReportExcerpt === false
+    ? null
+    : scanRoots
+        .map((dir) => readIntelligenceReportExcerpt(repoRoot, dir))
+        .find(Boolean);
   const sampled = gatherCodeContext(repoRoot, scanRoots, scope);
   const declaredCount =
     Array.isArray(scope.files) && scope.files.length > 0

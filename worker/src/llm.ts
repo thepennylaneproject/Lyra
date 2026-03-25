@@ -27,6 +27,7 @@ export interface CoverageOut {
   incomplete_reason?: string;
 }
 
+import { createHash } from "node:crypto";
 import { getRegistry } from "./providers/registry.js";
 
 export interface AuditLlmResult {
@@ -36,7 +37,26 @@ export interface AuditLlmResult {
   provider: string;
   raw_response: string;
   costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  attemptCount?: number;
+  fallbackCount?: number;
+  cacheHit?: boolean;
 }
+
+const auditResponseCache = new Map<string, AuditLlmResult>();
+const DEFAULT_AUDIT_CACHE_MAX = Math.max(
+  1,
+  Number.parseInt(process.env.LYRA_AUDIT_CACHE_MAX?.trim() || "128", 10) || 128
+);
+const DEFAULT_SCOPE_FILE_LIST_LIMIT = Math.max(
+  1,
+  Number.parseInt(process.env.LYRA_SCOPE_FILE_LIST_LIMIT?.trim() || "80", 10) || 80
+);
+const DEFAULT_KNOWN_FINDING_LIST_LIMIT = Math.max(
+  1,
+  Number.parseInt(process.env.LYRA_KNOWN_FINDING_LIST_LIMIT?.trim() || "120", 10) || 120
+);
 
 /**
  * Build a priority-ordered model chain for a given audit kind and routing strategy.
@@ -158,6 +178,45 @@ function dedupe(arr: string[]): string[] {
   return arr.filter((x) => { if (seen.has(x)) return false; seen.add(x); return true; });
 }
 
+function formatBoundedList(
+  items: string[],
+  limit: number,
+  emptyMessage: string
+): string {
+  if (items.length === 0) return emptyMessage;
+  const bounded = items.slice(0, limit);
+  const omitted = items.length - bounded.length;
+  return omitted > 0
+    ? `${bounded.join("\n")}\n... (+${omitted} more omitted for token budget)`
+    : bounded.join("\n");
+}
+
+function computeAuditCacheKey(input: {
+  chain: string[];
+  systemPrompt: string;
+  userPrompt: string;
+  auditKind?: string;
+  appName: string;
+  visualOnly: boolean;
+}): string {
+  return createHash("sha256")
+    .update(JSON.stringify(input))
+    .digest("hex");
+}
+
+function cloneAuditResult(result: AuditLlmResult): AuditLlmResult {
+  return JSON.parse(JSON.stringify(result)) as AuditLlmResult;
+}
+
+function storeAuditCacheEntry(key: string, value: AuditLlmResult): void {
+  auditResponseCache.set(key, cloneAuditResult(value));
+  if (auditResponseCache.size <= DEFAULT_AUDIT_CACHE_MAX) return;
+  const oldestKey = auditResponseCache.keys().next().value;
+  if (typeof oldestKey === "string") {
+    auditResponseCache.delete(oldestKey);
+  }
+}
+
 /** @deprecated Use resolveModelChain() */
 export function resolveModel(): { primary: string; fallback: string | undefined } {
   const chain = resolveModelChain();
@@ -182,6 +241,17 @@ export async function auditWithLlm(
 ): Promise<AuditLlmResult> {
   const registry = getRegistry();
   const chain = resolveModelChain(auditKind);
+  const systemPrompt = `${corePrompt}\n\n---\n\n${auditAgentPrompt}`;
+  const scopeFileList = formatBoundedList(
+    extras?.filesInScope ?? [],
+    DEFAULT_SCOPE_FILE_LIST_LIMIT,
+    "(scope file list unavailable)"
+  );
+  const knownFindingList = formatBoundedList(
+    extras?.knownFindingIds ?? [],
+    DEFAULT_KNOWN_FINDING_LIST_LIMIT,
+    "(none provided)"
+  );
 
   // Check that at least one provider in the chain is configured
   const anyConfigured = chain.some((ref) => {
@@ -201,6 +271,7 @@ export async function auditWithLlm(
       model: "none",
       provider: "none",
       raw_response: "No LLM provider configured",
+      cacheHit: false,
       findings: [
         {
           finding_id: `${appName}-no-llm-provider`,
@@ -224,10 +295,10 @@ ${extras?.scopeLabel ? `Audit scope: ${extras.scopeLabel}\n` : ""}
 ${extras?.checklistId ? `Checklist: ${extras.checklistId}\n` : ""}
 
 ## Scope files
-${(extras?.filesInScope ?? []).length > 0 ? extras?.filesInScope?.join("\n") : "(scope file list unavailable)"}
+${scopeFileList}
 
 ## Already-known findings (do NOT re-report these IDs unless you have new evidence)
-${(extras?.knownFindingIds ?? []).length > 0 ? extras?.knownFindingIds?.join("\n") : "(none provided)"}
+${knownFindingList}
 
 ## Expectations document
 ${expectations}
@@ -243,10 +314,31 @@ ${codeContext}
 
 Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output contract.`;
 
+  const cacheKey = computeAuditCacheKey({
+    chain,
+    systemPrompt,
+    userPrompt: user,
+    auditKind,
+    appName,
+    visualOnly,
+  });
+  const cached = auditResponseCache.get(cacheKey);
+  if (cached) {
+    const cloned = cloneAuditResult(cached);
+    cloned.costUsd = 0;
+    cloned.inputTokens = 0;
+    cloned.outputTokens = 0;
+    cloned.attemptCount = 0;
+    cloned.fallbackCount = 0;
+    cloned.cacheHit = true;
+    console.log(`[lyra-worker] audit cache hit for ${appName} (${auditKind ?? "full"})`);
+    return cloned;
+  }
+
   let llmResponse;
   try {
     llmResponse = await registry.call(chain, {
-      systemPrompt: `${corePrompt}\n\n---\n\n${auditAgentPrompt}`,
+      systemPrompt,
       userPrompt: user,
       responseFormat: "json_object",
       temperature: 0.2,
@@ -264,6 +356,7 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
       model: "error",
       provider: "error",
       raw_response: String(error),
+      cacheHit: false,
       findings: [
         {
           finding_id: `${appName}-llm-error`,
@@ -294,6 +387,11 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
       provider: llmResponse.provider,
       raw_response: raw,
       costUsd: llmResponse.costUsd,
+      inputTokens: llmResponse.inputTokens,
+      outputTokens: llmResponse.outputTokens,
+      attemptCount: llmResponse.attemptCount,
+      fallbackCount: llmResponse.fallbackCount,
+      cacheHit: false,
       findings: [
         {
           finding_id: `${appName}-parse-error`,
@@ -309,10 +407,15 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
   }
   const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
   const coverage = parsed.coverage ?? {};
-  return {
+  const result: AuditLlmResult = {
     model: llmResponse.model,
     provider: llmResponse.provider,
     costUsd: llmResponse.costUsd,
+    inputTokens: llmResponse.inputTokens,
+    outputTokens: llmResponse.outputTokens,
+    attemptCount: llmResponse.attemptCount,
+    fallbackCount: llmResponse.fallbackCount,
+    cacheHit: false,
     raw_response: raw,
     coverage: {
       coverage_complete: Boolean(coverage.coverage_complete),
@@ -353,6 +456,8 @@ Return JSON: { "coverage": { ... }, "findings": [ ... ] } per audit-agent output
       duplicate_of: f.duplicate_of,
     })),
   };
+  storeAuditCacheEntry(cacheKey, result);
+  return result;
 }
 
 function normalizeSeverity(s: string): FindingOut["severity"] {

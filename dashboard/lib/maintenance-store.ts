@@ -1,4 +1,5 @@
 import { createPostgresPool } from "./postgres";
+import { normalizeProjectName } from "./project-identity";
 import type {
   MaintenanceBacklogItem,
   MaintenanceTask,
@@ -19,13 +20,14 @@ function asJsonObject(value: unknown): Record<string, unknown> {
 export async function getLatestManifestForProject(
   projectName: string
 ): Promise<ProjectManifest | null> {
+  const projectNameKey = normalizeProjectName(projectName);
   const rows = await pool().query(
     `SELECT manifest
        FROM lyra_project_manifests
-      WHERE lower(trim(project_name)) = lower(trim($1))
-      ORDER BY generated_at DESC
-      LIMIT 1`,
-    [projectName]
+       WHERE lower(trim(project_name)) = $1
+       ORDER BY generated_at DESC
+       LIMIT 1`,
+    [projectNameKey]
   );
   const manifest = rows[0]?.manifest;
   return manifest ? (manifest as ProjectManifest) : null;
@@ -35,13 +37,14 @@ export async function listRepairJobsForProject(
   projectName: string,
   limit = 50
 ): Promise<RepairJob[]> {
+  const projectNameKey = normalizeProjectName(projectName);
   const rows = await pool().query(
     `SELECT *
        FROM lyra_repair_jobs
-      WHERE lower(trim(project_name)) = lower(trim($1))
-      ORDER BY created_at DESC
-      LIMIT $2`,
-    [projectName, limit]
+       WHERE lower(trim(project_name)) = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+    [projectNameKey, limit]
   );
   return rows.map((row) => {
     const repairPolicy = asJsonObject(row.repair_policy);
@@ -90,14 +93,15 @@ export async function listRepairJobsForFinding(
   findingId: string,
   limit = 8
 ): Promise<RepairJob[]> {
+  const projectNameKey = normalizeProjectName(projectName);
   const rows = await pool().query(
     `SELECT *
        FROM lyra_repair_jobs
-      WHERE lower(trim(project_name)) = lower(trim($1))
-        AND finding_id = $2
-      ORDER BY created_at DESC
-      LIMIT $3`,
-    [projectName, findingId, limit]
+       WHERE lower(trim(project_name)) = $1
+         AND finding_id = $2
+       ORDER BY created_at DESC
+       LIMIT $3`,
+    [projectNameKey, findingId, limit]
   );
   return rows.map((row) => {
     const repairPolicy = asJsonObject(row.repair_policy);
@@ -262,13 +266,14 @@ export async function deleteActiveRepairJobsForFinding(args: {
   const findingId = args.finding_id.trim();
   const projectName = args.project_name?.trim() ?? "";
   if (projectName) {
+    const projectNameKey = normalizeProjectName(projectName);
     const rows = await pool().query(
       `DELETE FROM lyra_repair_jobs
         WHERE finding_id = $1
-          AND lower(trim(project_name)) = lower(trim($2))
+          AND lower(trim(project_name)) = $2
           AND status IN ('queued', 'running')
         RETURNING id`,
-      [findingId, projectName]
+      [findingId, projectNameKey]
     );
     return rows.length;
   }
@@ -338,15 +343,16 @@ export async function listMaintenanceBacklogForProject(
   projectName: string,
   limit = 100
 ): Promise<MaintenanceBacklogItem[]> {
+  const projectNameKey = normalizeProjectName(projectName);
   const rows = await pool().query(
     `SELECT *
        FROM lyra_maintenance_backlog
-      WHERE lower(trim(project_name)) = lower(trim($1))
-      ORDER BY
-        CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END,
-        updated_at DESC
-      LIMIT $2`,
-    [projectName, limit]
+       WHERE lower(trim(project_name)) = $1
+       ORDER BY
+         CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END,
+         updated_at DESC
+       LIMIT $2`,
+    [projectNameKey, limit]
   );
   return rows.map(rowToBacklog);
 }
@@ -355,13 +361,14 @@ export async function listMaintenanceTasksForProject(
   projectName: string,
   limit = 100
 ): Promise<MaintenanceTask[]> {
+  const projectNameKey = normalizeProjectName(projectName);
   const rows = await pool().query(
     `SELECT *
        FROM lyra_maintenance_tasks
-      WHERE lower(trim(project_name)) = lower(trim($1))
-      ORDER BY updated_at DESC
-      LIMIT $2`,
-    [projectName, limit]
+       WHERE lower(trim(project_name)) = $1
+       ORDER BY updated_at DESC
+       LIMIT $2`,
+    [projectNameKey, limit]
   );
   return rows.map(rowToTask);
 }
@@ -514,13 +521,14 @@ export async function markRepairJobRunning(
   findingId: string,
   projectName: string
 ): Promise<RepairJob | null> {
+  const projectNameKey = normalizeProjectName(projectName);
   const rows = await pool().query(
     `UPDATE lyra_repair_jobs
         SET status = 'running',
             payload = payload || jsonb_build_object('started_at', now()::text)
-      WHERE finding_id = $1 AND lower(trim(project_name)) = lower(trim($2)) AND status = 'queued'
-      RETURNING *`,
-    [findingId, projectName]
+       WHERE finding_id = $1 AND lower(trim(project_name)) = $2 AND status = 'queued'
+       RETURNING *`,
+    [findingId, projectNameKey]
   );
   if (!rows[0]) return null;
   const row = rows[0];
@@ -562,6 +570,7 @@ export async function updateRepairJobCompletion(args: {
   error?: string;
   run_id?: string;
 }): Promise<RepairJob> {
+  const projectNameKey = normalizeProjectName(args.project_name);
   const rows = await pool().query(
     `UPDATE lyra_repair_jobs
         SET status = $1,
@@ -572,8 +581,8 @@ export async function updateRepairJobCompletion(args: {
               'applied_files', COALESCE($4::jsonb, payload->'applied_files', '[]'::jsonb),
               'run_id', COALESCE($5, payload->>'run_id')
             ) || (payload - 'applied_files' - 'run_id')
-      WHERE finding_id = $6 AND lower(trim(project_name)) = lower(trim($7)) AND status IN ('queued', 'running')
-      RETURNING *`,
+       WHERE finding_id = $6 AND lower(trim(project_name)) = $7 AND status IN ('queued', 'running')
+       RETURNING *`,
     [
       args.status,
       args.patch_applied ?? null,
@@ -581,7 +590,7 @@ export async function updateRepairJobCompletion(args: {
       JSON.stringify(args.applied_files ?? []),
       args.run_id ?? null,
       args.finding_id,
-      args.project_name,
+      projectNameKey,
     ]
   );
 

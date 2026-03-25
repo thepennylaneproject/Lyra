@@ -13,15 +13,17 @@ On startup the worker loads, in order (later files override): repo `.env` / `.en
 | `REDIS_URL` / `LYRA_REDIS_URL` | No | If set, uses BullMQ; else polls DB. **Production:** set this to avoid steady DB QPS from polling. |
 | `LYRA_REPO_ROOT` | No | Path to Lyra repo root (expects `core_system_prompt`, `expectations/`, `the_penny_lane_project/`). Default: parent of `worker/`. |
 | `LYRA_AUDIT_MODEL` | No | Default `gpt-4o-mini`. |
-| `LYRA_JOB_POLL_MS` | No | Poll interval when Redis disabled (after a job ran). Default `8000`. |
-| `LYRA_JOB_POLL_IDLE_MS` | No | Idle backoff when queue empty (no job found). Default `30000`. |
+| `LYRA_JOB_POLL_MS` | No | Poll interval when Redis disabled after draining one batch. Default `3000`. |
+| `LYRA_JOB_POLL_IDLE_MS` | No | Idle backoff when queue empty (no job found). Default `5000`. |
+| `LYRA_JOB_POLL_BATCH_SIZE` | No | Max queued jobs to fetch and drain per DB poll cycle. Default `10`. |
+| `LYRA_LLM_TIMEOUT_MS` | No | Per-request timeout for worker LLM provider calls. Default `45000`. |
 
 ## Scripts
 
 - `npm run dev` — `tsx watch src/index.ts`
 - `npm run build && npm start` — compiled JS
 
-Deploy this process on any long-lived host (Railway, Fly, VPS, etc.) with repo checkout or mount. Without `REDIS_URL`, the worker falls back to polling `lyra_audit_jobs` every `LYRA_JOB_POLL_MS` (default 8s), which adds continuous DB load; use Redis in production when running one or more workers.
+Deploy this process on any long-lived host (Railway, Fly, VPS, etc.) with repo checkout or mount. Without `REDIS_URL`, the worker falls back to polling `lyra_audit_jobs` every `LYRA_JOB_POLL_MS` and drains up to `LYRA_JOB_POLL_BATCH_SIZE` queued jobs per cycle. This is safer than the old one-job/30-second-idle behavior, but Redis is still preferred in production when running one or more workers.
 
 ## Stuck in `queued`?
 

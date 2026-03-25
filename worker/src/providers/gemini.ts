@@ -1,4 +1,9 @@
-import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
+import {
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  fetchWithTimeout,
+} from "./base.js";
 
 /**
  * Google Gemini LLM provider.
@@ -70,7 +75,7 @@ export class GeminiProvider extends LLMProvider {
     };
 
     const url = `${this.baseUrl}/models/${model}:generateContent?key=${this.apiKey}`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(this.name, url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

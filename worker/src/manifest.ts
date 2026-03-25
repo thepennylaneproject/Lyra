@@ -89,7 +89,7 @@ function collectFiles(dir: string, out: string[]): void {
   }
 }
 
-function repoRevision(repoRoot: string): string {
+export function resolveRepoRevision(repoRoot: string): string {
   try {
     return execFileSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], {
       encoding: "utf8",
@@ -219,7 +219,7 @@ export function buildProjectManifest(
     });
   const resolvedEntrypoints = modules.filter((mod) => mod.entrypoint).map((mod) => mod.path);
   return {
-    revision: repoRevision(repoRoot),
+    revision: resolveRepoRevision(repoRoot),
     generated_at: new Date().toISOString(),
     source_root: repoRoot,
     exhaustiveness: "exhaustive",

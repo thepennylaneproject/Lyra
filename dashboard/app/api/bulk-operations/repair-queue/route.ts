@@ -3,8 +3,15 @@ import { createPostgresPool } from "@/lib/postgres";
 import { apiErrorMessage, isValidProjectName, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
 import { insertAuditJob, updateAuditJobStatus } from "@/lib/orchestration-jobs";
-import { Queue } from "bullmq";
-import { bullmqConnectionFromEnv } from "@/lib/redis-bullmq";
+import { normalizeProjectName } from "@/lib/project-identity";
+import { bullmqConnectionFromEnv, requireLyraAuditQueue } from "@/lib/redis-bullmq";
+import { invalidateRuntimeCache } from "@/lib/runtime-cache";
+
+const STATUS_CACHE_KEYS = [
+  "api:orchestration",
+  "api:engine-status",
+  "api:orchestration-jobs",
+];
 
 /**
  * POST /api/bulk-operations/repair-queue
@@ -68,6 +75,7 @@ export async function POST(request: Request) {
 
     const priorityMap: Record<string, string> = { high: "P1", normal: "P2", low: "P3" };
     const dbPriority = priorityMap[priorityInput] ?? "P2";
+    const projectNameKey = normalizeProjectName(projectName);
 
     const pool = createPostgresPool();
 
@@ -80,11 +88,11 @@ export async function POST(request: Request) {
          f->>'description' AS description,
          f->>'severity'    AS severity,
          f->'repair_policy' AS repair_policy
-       FROM lyra_projects,
-            jsonb_array_elements(COALESCE(project_json->'findings', '[]'::jsonb)) AS f
-       WHERE lower(trim(name)) = lower(trim($1))
-         AND f->>'finding_id' = ANY($2::text[])`,
-      [projectName, findingIds]
+        FROM lyra_projects,
+             jsonb_array_elements(COALESCE(project_json->'findings', '[]'::jsonb)) AS f
+       WHERE lower(trim(name)) = $1
+          AND f->>'finding_id' = ANY($2::text[])`,
+      [projectNameKey, findingIds]
     );
 
     // Index the enrichment data by finding_id
@@ -101,14 +109,12 @@ export async function POST(request: Request) {
     // the next audit run will update them via upsertMaintenanceBacklogFromFindings.
     let queuedCount = 0;
     const failedIds: string[] = [];
+    const connection = bullmqConnectionFromEnv();
+    const queue = connection ? requireLyraAuditQueue() : null;
 
     for (const fid of findingIds) {
       const meta = metaMap.get(fid);
       const title = meta ? String(meta.title ?? fid).trim() : fid;
-
-
-      const conn = bullmqConnectionFromEnv();
-      const bq = conn ? new Queue("lyra-audit", { connection: conn }) : null;
 
       try {
         const payload = {
@@ -126,9 +132,9 @@ export async function POST(request: Request) {
           payload,
         });
 
-        if (bq) {
+        if (queue) {
           try {
-            await bq.add(
+            await queue.add(
               "process",
               { dbJobId: row.id },
               { jobId: row.id, removeOnComplete: true, removeOnFail: false }
@@ -137,7 +143,7 @@ export async function POST(request: Request) {
             const msg = redisErr instanceof Error ? redisErr.message : String(redisErr);
             console.error(`[bulk-repair] Redis enqueue failed for ${row.id}:`, msg);
             await updateAuditJobStatus(row.id, "failed", `Redis enqueue error: ${msg}`);
-            // Count as failure if Redis fails 
+            // Count as failure if Redis fails.
             throw new Error(`Redis enqueue failed: ${msg}`);
           }
         }
@@ -145,8 +151,6 @@ export async function POST(request: Request) {
       } catch (err) {
         console.error(`[bulk-repair-queue] Failed to enqueue job for ${fid}:`, err);
         failedIds.push(fid);
-      } finally {
-        if (bq) await bq.close();
       }
     }
 
@@ -168,6 +172,8 @@ export async function POST(request: Request) {
         failed_ids: failedIds,
       },
     });
+
+    invalidateRuntimeCache(...STATUS_CACHE_KEYS);
 
     const enrichmentNote =
       enrichedCount < queuedCount

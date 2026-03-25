@@ -1,4 +1,9 @@
-import { LLMProvider, LLMRequest, LLMResponse } from "./base.js";
+import {
+  LLMProvider,
+  LLMRequest,
+  LLMResponse,
+  fetchWithTimeout,
+} from "./base.js";
 
 /**
  * DeepSeek LLM provider (DeepSeek V3 / R1).
@@ -35,7 +40,7 @@ export class DeepSeekProvider extends LLMProvider {
   async call(modelId: string, request: LLMRequest): Promise<LLMResponse> {
     const model = this.models[modelId] ?? modelId;
 
-    const res = await fetch("https://api.deepseek.com/v1/chat/completions", {
+    const res = await fetchWithTimeout(this.name, "https://api.deepseek.com/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,

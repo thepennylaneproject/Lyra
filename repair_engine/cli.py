@@ -38,6 +38,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--poll-interval", type=float, default=5.0,
         help="Seconds to sleep between polls when the queue is empty",
     )
+    dash_worker.add_argument(
+        "--batch-size", type=int, default=5,
+        help="Maximum dashboard jobs to claim per poll",
+    )
+    dash_worker.add_argument(
+        "--concurrency", type=int, default=1,
+        help="Maximum concurrent repairs when auto-apply is disabled",
+    )
 
     sub.add_parser("status", help="Print queue and config summary")
     return parser
@@ -112,6 +120,8 @@ def main() -> int:
             engine,
             poll_interval=args.poll_interval,
             max_jobs=args.limit,
+            batch_size=args.batch_size,
+            concurrency=args.concurrency,
         )
         print(json.dumps(stats, indent=2))
         return 0

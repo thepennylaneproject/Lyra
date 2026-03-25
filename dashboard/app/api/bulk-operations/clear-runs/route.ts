@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createPostgresPool } from "@/lib/postgres";
 import { apiErrorMessage, isValidProjectName, parseJsonBody } from "@/lib/api-error";
 import { recordDurableEventBestEffort } from "@/lib/durable-state";
+import { normalizeProjectName } from "@/lib/project-identity";
 
 /**
  * POST /api/bulk-operations/clear-runs
@@ -45,8 +46,8 @@ export async function POST(request: Request) {
     const params: unknown[] = [];
 
     if (projectName) {
-      query += " WHERE LOWER(TRIM(project_name)) = LOWER(TRIM($1))";
-      params.push(projectName);
+      query += " WHERE LOWER(TRIM(project_name)) = $1";
+      params.push(normalizeProjectName(projectName));
     }
 
     query += " RETURNING id";
