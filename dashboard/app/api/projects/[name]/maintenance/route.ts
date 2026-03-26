@@ -6,6 +6,7 @@ import {
   listMaintenanceBacklogForProject,
   listMaintenanceTasksForProject,
   updateMaintenanceBacklogStatus,
+  updateMaintenanceTaskStatus,
 } from "@/lib/maintenance-store";
 import { normalizeMaintenanceBacklog } from "@/lib/maintenance-backlog";
 import { hasSupabaseProjectsStore } from "@/lib/store-supabase";
@@ -90,7 +91,27 @@ export async function POST(request: Request, { params }: Params) {
       backlog_id?: string;
       title?: string;
       intended_outcome?: string;
+      action?: "create" | "promote";
+      task_id?: string;
     };
+
+    // Promote draft task to ready
+    if (body.action === "promote" && body.task_id) {
+      const tasks = await listMaintenanceTasksForProject(projectName);
+      const task = tasks.find((t) => t.id === body.task_id);
+      if (!task) {
+        return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      }
+      if (task.status !== "draft") {
+        return NextResponse.json(
+          { error: `Task already ${task.status}; can only promote draft tasks` },
+          { status: 400 }
+        );
+      }
+      const updated = await updateMaintenanceTaskStatus(body.task_id, "ready");
+      return NextResponse.json({ task: updated, status: "promoted" }, { status: 200 });
+    }
+
     if (!body.backlog_id || typeof body.backlog_id !== "string") {
       return NextResponse.json({ error: "backlog_id is required" }, { status: 400 });
     }

@@ -1,5 +1,7 @@
 import { createPostgresPool } from "./postgres";
+import { buildStaleRepairError, getRepairJobStaleTimeoutMs } from "./job-timeouts";
 import { normalizeProjectName } from "./project-identity";
+import { parseRepairProof } from "./repair-proof";
 import type {
   MaintenanceBacklogItem,
   MaintenanceTask,
@@ -15,6 +17,21 @@ function asJsonObject(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .map((item) => (typeof item === "string" ? item : String(item ?? "")).trim())
+        .filter((item) => item.length > 0)
+    : [];
+}
+
+function coerceTimestamp(value: unknown): string | undefined {
+  if (value instanceof Date) return value.toISOString();
+  if (value == null) return undefined;
+  const asString = String(value).trim();
+  return asString ? asString : undefined;
 }
 
 export async function getLatestManifestForProject(
@@ -57,6 +74,7 @@ export async function listRepairJobsForProject(
         row.created_at instanceof Date
           ? row.created_at.toISOString()
           : String(row.created_at),
+      started_at: coerceTimestamp(row.started_at ?? payload.started_at),
       status: String(row.status) as RepairJob["status"],
       patch_applied:
         typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
@@ -70,6 +88,7 @@ export async function listRepairJobsForProject(
       targeted_files: Array.isArray(row.targeted_files)
         ? (row.targeted_files as string[])
         : [],
+      applied_files: asStringArray(payload.applied_files),
       verification_commands: Array.isArray(row.verification_commands)
         ? (row.verification_commands as string[])
         : [],
@@ -83,6 +102,11 @@ export async function listRepairJobsForProject(
         row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
       backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
       provenance: asJsonObject(row.provenance),
+      reported_status:
+        typeof payload.reported_status === "string"
+          ? (payload.reported_status as RepairJob["reported_status"])
+          : undefined,
+      repair_proof: parseRepairProof(payload.repair_proof) ?? undefined,
     };
   });
 }
@@ -114,6 +138,7 @@ export async function listRepairJobsForFinding(
         row.created_at instanceof Date
           ? row.created_at.toISOString()
           : String(row.created_at),
+      started_at: coerceTimestamp(row.started_at ?? payload.started_at),
       status: String(row.status) as RepairJob["status"],
       patch_applied:
         typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
@@ -127,6 +152,7 @@ export async function listRepairJobsForFinding(
       targeted_files: Array.isArray(row.targeted_files)
         ? (row.targeted_files as string[])
         : [],
+      applied_files: asStringArray(payload.applied_files),
       verification_commands: Array.isArray(row.verification_commands)
         ? (row.verification_commands as string[])
         : [],
@@ -140,6 +166,11 @@ export async function listRepairJobsForFinding(
         row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
       backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
       provenance: asJsonObject(row.provenance),
+      reported_status:
+        typeof payload.reported_status === "string"
+          ? (payload.reported_status as RepairJob["reported_status"])
+          : undefined,
+      repair_proof: parseRepairProof(payload.repair_proof) ?? undefined,
     };
   });
 }
@@ -152,38 +183,48 @@ export async function listRecentRepairJobs(limit = 50): Promise<RepairJob[]> {
       LIMIT $1`,
     [limit]
   );
-  return rows.map((row) => ({
-    id: String(row.id),
-    finding_id: String(row.finding_id),
-    project_name: String(row.project_name),
-    queued_at:
-      row.created_at instanceof Date
-        ? row.created_at.toISOString()
-        : String(row.created_at),
-    status: String(row.status) as RepairJob["status"],
-    patch_applied:
-      typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
-    completed_at:
-      row.finished_at instanceof Date
-        ? row.finished_at.toISOString()
-        : row.finished_at != null
-          ? String(row.finished_at)
+  return rows.map((row) => {
+    const payload = asJsonObject(row.payload);
+    return {
+      id: String(row.id),
+      finding_id: String(row.finding_id),
+      project_name: String(row.project_name),
+      queued_at:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+      started_at: coerceTimestamp(row.started_at ?? payload.started_at),
+      status: String(row.status) as RepairJob["status"],
+      patch_applied:
+        typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
+      completed_at:
+        row.finished_at instanceof Date
+          ? row.finished_at.toISOString()
+          : row.finished_at != null
+            ? String(row.finished_at)
+            : undefined,
+      error: row.error != null ? String(row.error) : undefined,
+      targeted_files: Array.isArray(row.targeted_files)
+        ? (row.targeted_files as string[])
+        : [],
+      applied_files: asStringArray(payload.applied_files),
+      verification_commands: Array.isArray(row.verification_commands)
+        ? (row.verification_commands as string[])
+        : [],
+      rollback_notes:
+        row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+      repair_policy: asJsonObject(row.repair_policy),
+      maintenance_task_id:
+        row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
+      backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
+      provenance: asJsonObject(row.provenance),
+      reported_status:
+        typeof payload.reported_status === "string"
+          ? (payload.reported_status as RepairJob["reported_status"])
           : undefined,
-    error: row.error != null ? String(row.error) : undefined,
-    targeted_files: Array.isArray(row.targeted_files)
-      ? (row.targeted_files as string[])
-      : [],
-    verification_commands: Array.isArray(row.verification_commands)
-      ? (row.verification_commands as string[])
-      : [],
-    rollback_notes:
-      row.rollback_notes != null ? String(row.rollback_notes) : undefined,
-    repair_policy: asJsonObject(row.repair_policy),
-    maintenance_task_id:
-      row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
-    backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
-    provenance: asJsonObject(row.provenance),
-  }));
+      repair_proof: parseRepairProof(payload.repair_proof) ?? undefined,
+    };
+  });
 }
 
 export async function insertRepairJobRecord(args: {
@@ -236,6 +277,7 @@ export async function insertRepairJobRecord(args: {
       row.created_at instanceof Date
         ? row.created_at.toISOString()
         : String(row.created_at ?? new Date().toISOString()),
+    started_at: coerceTimestamp(row.started_at),
     status: String(row.status ?? "queued") as RepairJob["status"],
     targeted_files: Array.isArray(row.targeted_files)
       ? (row.targeted_files as string[])
@@ -248,6 +290,7 @@ export async function insertRepairJobRecord(args: {
         ? String(row.rollback_notes)
         : args.rollback_notes,
     repair_policy: args.repair_policy,
+    applied_files: [],
     maintenance_task_id:
       row.maintenance_task_id != null ? String(row.maintenance_task_id) : args.maintenance_task_id,
     backlog_id: row.backlog_id != null ? String(row.backlog_id) : args.backlog_id,
@@ -513,6 +556,24 @@ export async function updateMaintenanceBacklogStatus(
   );
 }
 
+export async function updateMaintenanceTaskStatus(
+  id: string,
+  status: string
+): Promise<MaintenanceTask> {
+  const rows = await pool().query(
+    `UPDATE lyra_maintenance_tasks
+        SET status = $2,
+            updated_at = now()
+      WHERE id = $1
+      RETURNING *`,
+    [id, status]
+  );
+  if (!rows[0]) {
+    throw new Error(`Maintenance task not found: ${id}`);
+  }
+  return rowToTask(rows[0]);
+}
+
 /**
  * Mark a queued repair job as running.
  * Called by the repair engine when it dequeues and begins processing a job.
@@ -524,10 +585,11 @@ export async function markRepairJobRunning(
   const projectNameKey = normalizeProjectName(projectName);
   const rows = await pool().query(
     `UPDATE lyra_repair_jobs
-        SET status = 'running',
-            payload = payload || jsonb_build_object('started_at', now()::text)
-       WHERE finding_id = $1 AND lower(trim(project_name)) = $2 AND status = 'queued'
-       RETURNING *`,
+         SET status = 'running',
+             started_at = COALESCE(started_at, now()),
+             payload = payload || jsonb_build_object('started_at', now()::text)
+        WHERE finding_id = $1 AND lower(trim(project_name)) = $2 AND status = 'queued'
+        RETURNING *`,
     [findingId, projectNameKey]
   );
   if (!rows[0]) return null;
@@ -540,6 +602,7 @@ export async function markRepairJobRunning(
       row.created_at instanceof Date
         ? row.created_at.toISOString()
         : String(row.created_at),
+    started_at: coerceTimestamp(row.started_at),
     status: "running",
     targeted_files: Array.isArray(row.targeted_files)
       ? (row.targeted_files as string[])
@@ -564,11 +627,13 @@ export async function markRepairJobRunning(
 export async function updateRepairJobCompletion(args: {
   finding_id: string;
   project_name: string;
-  status: "completed" | "failed" | "applied";
+  status: "completed" | "failed";
+  reported_status?: "completed" | "failed" | "applied";
   patch_applied?: boolean;
   applied_files?: string[];
   error?: string;
   run_id?: string;
+  repair_proof?: RepairJob["repair_proof"];
 }): Promise<RepairJob> {
   const projectNameKey = normalizeProjectName(args.project_name);
   const rows = await pool().query(
@@ -579,16 +644,20 @@ export async function updateRepairJobCompletion(args: {
             finished_at = now(),
             payload = jsonb_build_object(
               'applied_files', COALESCE($4::jsonb, payload->'applied_files', '[]'::jsonb),
-              'run_id', COALESCE($5, payload->>'run_id')
-            ) || (payload - 'applied_files' - 'run_id')
-       WHERE finding_id = $6 AND lower(trim(project_name)) = $7 AND status IN ('queued', 'running')
-       RETURNING *`,
+              'run_id', COALESCE($5, payload->>'run_id'),
+              'repair_proof', COALESCE($6::jsonb, payload->'repair_proof', '{}'::jsonb),
+              'reported_status', COALESCE($7, payload->>'reported_status')
+            ) || (payload - 'applied_files' - 'run_id' - 'repair_proof' - 'reported_status')
+        WHERE finding_id = $8 AND lower(trim(project_name)) = $9 AND status IN ('queued', 'running')
+        RETURNING *`,
     [
       args.status,
       args.patch_applied ?? null,
       args.error ?? null,
       JSON.stringify(args.applied_files ?? []),
       args.run_id ?? null,
+      JSON.stringify(args.repair_proof ?? {}),
+      args.reported_status ?? args.status,
       args.finding_id,
       projectNameKey,
     ]
@@ -601,6 +670,7 @@ export async function updateRepairJobCompletion(args: {
   }
 
   const row = rows[0];
+  const payload = asJsonObject(row.payload);
   return {
     id: row.id != null ? String(row.id) : undefined,
     finding_id: String(row.finding_id),
@@ -609,6 +679,7 @@ export async function updateRepairJobCompletion(args: {
       row.created_at instanceof Date
         ? row.created_at.toISOString()
         : String(row.created_at),
+    started_at: coerceTimestamp(row.started_at ?? payload.started_at),
     status: String(row.status) as RepairJob["status"],
     patch_applied:
       typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
@@ -622,6 +693,7 @@ export async function updateRepairJobCompletion(args: {
     targeted_files: Array.isArray(row.targeted_files)
       ? (row.targeted_files as string[])
       : [],
+    applied_files: asStringArray(payload.applied_files),
     verification_commands: Array.isArray(row.verification_commands)
       ? (row.verification_commands as string[])
       : [],
@@ -632,5 +704,71 @@ export async function updateRepairJobCompletion(args: {
       row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
     backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
     provenance: asJsonObject(row.provenance),
+    reported_status:
+      typeof payload.reported_status === "string"
+        ? (payload.reported_status as RepairJob["reported_status"])
+        : undefined,
+    repair_proof: parseRepairProof(payload.repair_proof) ?? undefined,
   };
+}
+
+export async function recoverStaleRepairJobs(
+  timeoutMs = getRepairJobStaleTimeoutMs()
+): Promise<RepairJob[]> {
+  const rows = await pool().query(
+    `UPDATE lyra_repair_jobs
+        SET status = 'failed',
+            error = COALESCE(error, $2),
+            finished_at = now(),
+            started_at = COALESCE(started_at, NULLIF(payload->>'started_at', '')::timestamptz),
+            payload = jsonb_set(
+              jsonb_set(COALESCE(payload, '{}'::jsonb), '{recovery_reason}', to_jsonb('stale_timeout'::text), true),
+              '{stale_recovered_at}',
+              to_jsonb(now()::text),
+              true
+            )
+      WHERE status = 'running'
+        AND COALESCE(started_at, NULLIF(payload->>'started_at', '')::timestamptz, created_at)
+            < now() - ($1 * interval '1 millisecond')
+      RETURNING *`,
+    [timeoutMs, buildStaleRepairError(timeoutMs)]
+  );
+
+  return rows.map((row) => {
+    const payload = asJsonObject(row.payload);
+    return {
+      id: String(row.id),
+      finding_id: String(row.finding_id),
+      project_name: String(row.project_name),
+      queued_at:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+      started_at: coerceTimestamp(row.started_at ?? payload.started_at),
+      status: String(row.status) as RepairJob["status"],
+      patch_applied:
+        typeof row.patch_applied === "boolean" ? row.patch_applied : undefined,
+      completed_at: coerceTimestamp(row.finished_at),
+      error: row.error != null ? String(row.error) : undefined,
+      targeted_files: Array.isArray(row.targeted_files)
+        ? (row.targeted_files as string[])
+        : [],
+      applied_files: asStringArray(payload.applied_files),
+      verification_commands: Array.isArray(row.verification_commands)
+        ? (row.verification_commands as string[])
+        : [],
+      rollback_notes:
+        row.rollback_notes != null ? String(row.rollback_notes) : undefined,
+      repair_policy: asJsonObject(row.repair_policy),
+      maintenance_task_id:
+        row.maintenance_task_id != null ? String(row.maintenance_task_id) : undefined,
+      backlog_id: row.backlog_id != null ? String(row.backlog_id) : undefined,
+      provenance: asJsonObject(row.provenance),
+      reported_status:
+        typeof payload.reported_status === "string"
+          ? (payload.reported_status as RepairJob["reported_status"])
+          : undefined,
+      repair_proof: parseRepairProof(payload.repair_proof) ?? undefined,
+    };
+  });
 }
