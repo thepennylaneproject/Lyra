@@ -272,9 +272,10 @@ function mergeFindings2(
   repoRevision?: string
 ): { merged: Array<Record<string, unknown>>; added: number } {
   const byId = new Map<string, Record<string, unknown>>();
-  // Secondary index: normalized title → canonical finding_id
+  // Secondary indices for deduplication: normalized title + category
   // Used to catch duplicates the LLM emits under different IDs.
   const byTitle = new Map<string, string>();
+  const byTitleCategory = new Map<string, string>();
   const now = new Date().toISOString();
 
   for (const f of existing) {
@@ -282,7 +283,11 @@ function mergeFindings2(
     if (!id) continue;
     byId.set(id, { ...f });
     const nt = normalizeTitle(f.title);
+    const cat = String(f.category ?? f.rule_id ?? "");
     if (nt && !byTitle.has(nt)) byTitle.set(nt, id);
+    if (nt && cat && !byTitleCategory.has(`${nt}|${cat}`)) {
+      byTitleCategory.set(`${nt}|${cat}`, id);
+    }
   }
 
   let added = 0;
@@ -292,9 +297,20 @@ function mergeFindings2(
     const id = String(f.finding_id ?? "");
     if (!id) continue;
 
-    // Check for a title-collision duplicate: same title, different ID.
+    // Check for duplicates: same title+category, different ID.
+    // This catches noisy findings from low-confidence rebuilds.
     const nt = normalizeTitle(f.title);
-    const canonicalId = byId.has(id) ? id : (nt ? byTitle.get(nt) : undefined);
+    const cat = String(f.category ?? f.rule_id ?? "");
+    let canonicalId = byId.has(id) ? id : undefined;
+
+    if (!canonicalId && nt && cat) {
+      // First try title+category match (most specific)
+      canonicalId = byTitleCategory.get(`${nt}|${cat}`);
+    }
+    if (!canonicalId && nt) {
+      // Fall back to title-only match
+      canonicalId = byTitle.get(nt);
+    }
 
     if (canonicalId && canonicalId !== id) {
       // Incoming finding is a duplicate of an existing one under a different ID.
@@ -321,6 +337,9 @@ function mergeFindings2(
         last_seen_revision: repoRevision ?? f.last_seen_revision,
       });
       if (nt && !byTitle.has(nt)) byTitle.set(nt, id);
+      if (nt && cat && !byTitleCategory.has(`${nt}|${cat}`)) {
+        byTitleCategory.set(`${nt}|${cat}`, id);
+      }
       added++;
     } else {
       // Upsert audit content fields but preserve local workflow state
@@ -478,6 +497,29 @@ function normalizeScopePaths(
   }
   const resolved = resolveScopePathsFromManifest(manifest, scope);
   return resolved.length > 0 ? resolved : manifest.modules.map((mod) => mod.path);
+}
+
+/**
+ * Determine optimal exhaustiveness based on finding accumulation.
+ * If findings are accumulating too fast (coverage_complete=false) and we're
+ * doing a full rebuild, use sampled mode to reduce noise.
+ */
+function selectExhaustiveness(
+  manifestReused: boolean,
+  existingFindingsCount: number,
+  previouslyRebuilt: boolean
+): "exhaustive" | "sampled" {
+  // If manifest was reused, keep exhaustive
+  if (manifestReused) return "exhaustive";
+
+  // If we have many findings AND this would be a full rebuild, use sampled mode
+  // to avoid duplicate noise from re-checking everything
+  if (existingFindingsCount > 5 && !previouslyRebuilt) {
+    return "sampled";
+  }
+
+  // Otherwise use exhaustive for complete coverage
+  return "exhaustive";
 }
 
 function buildDomainPasses(
