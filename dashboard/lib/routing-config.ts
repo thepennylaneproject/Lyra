@@ -126,7 +126,8 @@ function mergeCatalog(base: ModelCatalog, override?: Partial<ModelCatalog>): Mod
 
 function routeForStrategy(strategy: RoutingStrategy, catalog: ModelCatalog): string {
   if (strategy === "aggressive") return catalog.huggingface.nano;
-  if (strategy === "precision") return catalog.openai.mini;
+  if (strategy === "precision") return catalog.anthropic.sonnet;
+  if (strategy === "balanced") return catalog.openai.mini;
   return catalog.gemini.flash;
 }
 
@@ -179,14 +180,14 @@ export function buildRoutingConfig(fileConfig?: Partial<RoutingConfig>): Routing
       max_retries: 1,
     },
     balanced: {
-      max_cost_per_task: 0.1,
-      confidence_threshold: 0.7,
+      max_cost_per_task: 0.15,
+      confidence_threshold: 0.75,
       auto_escalate: true,
       max_retries: 2,
     },
     precision: {
-      max_cost_per_task: 0.25,
-      confidence_threshold: 0.85,
+      max_cost_per_task: 0.3,
+      confidence_threshold: 0.90,
       auto_escalate: true,
       max_retries: 3,
     },
