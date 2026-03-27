@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api-fetch";
+import { isStaleRecoveryError } from "@/lib/job-timeouts";
 import type { RepairJob } from "@/lib/types";
 import type { LyraAuditJobRow, LyraAuditRunRow } from "@/lib/orchestration-jobs";
+import { repairProofState } from "@/lib/repair-proof";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "applied";
 
 interface UnifiedJob {
   id: string;
@@ -40,12 +42,13 @@ const STATUS_MARK: Record<JobStatus, { symbol: string; color: string }> = {
   queued:    { symbol: "·",  color: "var(--ink-text-4)" },
   running:   { symbol: "◎",  color: "var(--ink-blue)" },
   completed: { symbol: "✓",  color: "var(--ink-green)" },
+  applied:   { symbol: "✓",  color: "var(--ink-green)" },
   failed:    { symbol: "✗",  color: "var(--ink-red)" },
   cancelled: { symbol: "⊘",  color: "var(--ink-text-4)" },
 };
 
 const STATUS_ORDER: Record<JobStatus, number> = {
-  running: 0, queued: 1, completed: 2, failed: 2, cancelled: 2,
+  running: 0, queued: 1, completed: 2, applied: 2, failed: 2, cancelled: 2,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -101,7 +104,7 @@ function toUnified(
     projectName: job.project_name,
     label: `repair · ${job.finding_id.slice(0, 10)}`,
     queuedAt: job.queued_at,
-    startedAt: null,
+    startedAt: job.started_at ?? null,
     finishedAt: job.completed_at ?? null,
     error: job.error ?? null,
     costUsd: job.cost_usd ?? null,
@@ -176,7 +179,11 @@ function AuditJobDetail({
       )}
       {run?.exhaustiveness  && <DetailRow label="exhaustive" value={run.exhaustiveness} />}
       {job.error && (
-        <DetailRow label="error" value={job.error} color="var(--ink-red)" />
+        <DetailRow
+          label={isStaleRecoveryError(job.error) ? "recovery" : "error"}
+          value={job.error}
+          color={isStaleRecoveryError(job.error) ? "var(--ink-amber)" : "var(--ink-red)"}
+        />
       )}
     </div>
   );
@@ -185,6 +192,7 @@ function AuditJobDetail({
 function RepairJobDetail({ job }: { job: RepairJob }) {
   const policyRisk = job.repair_policy?.risk_class;
   const policyEligibility = job.repair_policy?.autofix_eligibility;
+  const proofState = repairProofState(job);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
       <DetailRow label="finding"  value={job.finding_id} />
@@ -225,9 +233,36 @@ function RepairJobDetail({ job }: { job: RepairJob }) {
       {job.patch_applied && (
         <DetailRow label="patch" value="applied" color="var(--ink-green)" />
       )}
+      {job.reported_status && (
+        <DetailRow label="reported" value={job.reported_status} />
+      )}
+      {proofState !== "none" && (
+        <DetailRow
+          label="proof"
+          value={
+            proofState === "reviewable"
+              ? "reviewable"
+              : "missing reviewable proof"
+          }
+          color={proofState === "reviewable" ? "var(--ink-green)" : "var(--ink-amber)"}
+        />
+      )}
+      {job.repair_proof?.artifacts?.summary_path && (
+        <DetailRow label="summary" value={job.repair_proof.artifacts.summary_path} />
+      )}
+      {job.repair_proof?.artifacts?.tree_path && (
+        <DetailRow label="tree" value={job.repair_proof.artifacts.tree_path} />
+      )}
+      {job.repair_proof?.verification?.summary && (
+        <DetailRow label="verify" value={job.repair_proof.verification.summary} />
+      )}
       {job.rollback_notes && <DetailRow label="rollback" value={job.rollback_notes} />}
       {job.error && (
-        <DetailRow label="error" value={job.error} color="var(--ink-red)" />
+        <DetailRow
+          label={isStaleRecoveryError(job.error) ? "recovery" : "error"}
+          value={job.error}
+          color={isStaleRecoveryError(job.error) ? "var(--ink-amber)" : "var(--ink-red)"}
+        />
       )}
     </div>
   );
@@ -239,6 +274,7 @@ export function JobQueueView() {
   const [jobs,        setJobs]        = useState<UnifiedJob[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [fetchError,  setFetchError]  = useState<string | null>(null);
+  const [recoveredNotice, setRecoveredNotice] = useState<string | null>(null);
   const [expandedId,  setExpandedId]  = useState<string | null>(null);
   const [cancelling,  setCancelling]  = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -253,9 +289,18 @@ export function JobQueueView() {
         apiFetch("/api/orchestration/jobs"),
         apiFetch("/api/engine/queue"),
       ]);
-      const orch  = orchRes.ok  ? (await orchRes.json()  as { jobs?: LyraAuditJobRow[]; runs?: LyraAuditRunRow[] }) : {};
-      const queue = queueRes.ok ? (await queueRes.json() as { queue?: RepairJob[] })                               : {};
+      const orch  = orchRes.ok  ? (await orchRes.json()  as { jobs?: LyraAuditJobRow[]; runs?: LyraAuditRunRow[]; recovered_stale_jobs?: number }) : {};
+      const queue = queueRes.ok ? (await queueRes.json() as { queue?: RepairJob[]; recovered_stale_jobs?: number }) : {};
       setJobs(toUnified(orch.jobs ?? [], orch.runs ?? [], queue.queue ?? []));
+      const recoveredCount = Math.max(
+        Number(orch.recovered_stale_jobs ?? 0),
+        Number(queue.recovered_stale_jobs ?? 0)
+      );
+      setRecoveredNotice(
+        recoveredCount > 0
+          ? `Recovered ${recoveredCount} stale ${recoveredCount === 1 ? "job" : "jobs"} that timed out while marked running.`
+          : null
+      );
       setFetchError(null);
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : "Failed to load jobs");
@@ -329,6 +374,7 @@ export function JobQueueView() {
     .filter(
       (j) =>
         j.status === "completed" ||
+        j.status === "applied" ||
         j.status === "failed" ||
         j.status === "cancelled"
     )
@@ -341,6 +387,7 @@ export function JobQueueView() {
     const canCancel  = job.status === "queued" || job.status === "running";
     const isExpanded = expandedId === job.id;
     const isCancel   = cancelling === job.id;
+    const staleRecovery = isStaleRecoveryError(job.error);
 
     void tick; // subscribe to tick so running timers update
     const timing =
@@ -431,7 +478,7 @@ export function JobQueueView() {
                 style={{
                   fontSize:   "9px",
                   fontFamily: "var(--font-mono)",
-                  color:      "var(--ink-red)",
+                  color:      staleRecovery ? "var(--ink-amber)" : "var(--ink-red)",
                   marginTop:  "1px",
                 }}
               >
@@ -629,6 +676,22 @@ export function JobQueueView() {
           }}
         >
           {fetchError}
+        </div>
+      )}
+      {recoveredNotice && (
+        <div
+          style={{
+            marginBottom:  "1rem",
+            padding:       "0.65rem 0.85rem",
+            fontSize:      "11px",
+            fontFamily:    "var(--font-mono)",
+            color:         "var(--ink-amber)",
+            background:    "var(--ink-bg-sunken)",
+            border:        "0.5px solid var(--ink-border-faint)",
+            borderRadius:  "var(--radius-md)",
+          }}
+        >
+          {recoveredNotice}
         </div>
       )}
       {cancelError && (

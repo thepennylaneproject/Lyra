@@ -1,13 +1,12 @@
 -- Portfolio-scale constraint audit tables
 -- Supports auditing across 13 projects with full history and violation tracking
 
--- Enable required extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Enable required extensions (uuid defaults use gen_random_uuid(); no uuid-ossp)
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- Main portfolio audit history table
 CREATE TABLE IF NOT EXISTS lyra_portfolio_audits (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id TEXT NOT NULL UNIQUE,
   timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -48,14 +47,14 @@ CREATE TABLE IF NOT EXISTS lyra_portfolio_audits (
 );
 
 -- Index on commonly queried fields
-CREATE INDEX idx_portfolio_audits_timestamp ON lyra_portfolio_audits(timestamp DESC);
-CREATE INDEX idx_portfolio_audits_run_id ON lyra_portfolio_audits(run_id);
-CREATE INDEX idx_portfolio_audits_sla_status ON lyra_portfolio_audits(sla_status);
-CREATE INDEX idx_portfolio_audits_created_at ON lyra_portfolio_audits(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_portfolio_audits_timestamp ON lyra_portfolio_audits(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_portfolio_audits_run_id ON lyra_portfolio_audits(run_id);
+CREATE INDEX IF NOT EXISTS idx_portfolio_audits_sla_status ON lyra_portfolio_audits(sla_status);
+CREATE INDEX IF NOT EXISTS idx_portfolio_audits_created_at ON lyra_portfolio_audits(created_at DESC);
 
 -- Per-project compliance tracking
 CREATE TABLE IF NOT EXISTS lyra_project_compliance_history (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   audit_id UUID NOT NULL REFERENCES lyra_portfolio_audits(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL,
 
@@ -79,13 +78,13 @@ CREATE TABLE IF NOT EXISTS lyra_project_compliance_history (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_project_compliance_project_id ON lyra_project_compliance_history(project_id);
-CREATE INDEX idx_project_compliance_audit_id ON lyra_project_compliance_history(audit_id);
-CREATE INDEX idx_project_compliance_created_at ON lyra_project_compliance_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_compliance_project_id ON lyra_project_compliance_history(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_compliance_audit_id ON lyra_project_compliance_history(audit_id);
+CREATE INDEX IF NOT EXISTS idx_project_compliance_created_at ON lyra_project_compliance_history(created_at DESC);
 
 -- Portfolio-wide violations table (for aggregation and trending)
 CREATE TABLE IF NOT EXISTS lyra_portfolio_violations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   audit_id UUID NOT NULL REFERENCES lyra_portfolio_audits(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL,
 
@@ -116,15 +115,15 @@ CREATE TABLE IF NOT EXISTS lyra_portfolio_violations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_portfolio_violations_audit_id ON lyra_portfolio_violations(audit_id);
-CREATE INDEX idx_portfolio_violations_project_id ON lyra_portfolio_violations(project_id);
-CREATE INDEX idx_portfolio_violations_constraint_id ON lyra_portfolio_violations(constraint_id);
-CREATE INDEX idx_portfolio_violations_severity ON lyra_portfolio_violations(severity);
-CREATE INDEX idx_portfolio_violations_created_at ON lyra_portfolio_violations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_portfolio_violations_audit_id ON lyra_portfolio_violations(audit_id);
+CREATE INDEX IF NOT EXISTS idx_portfolio_violations_project_id ON lyra_portfolio_violations(project_id);
+CREATE INDEX IF NOT EXISTS idx_portfolio_violations_constraint_id ON lyra_portfolio_violations(constraint_id);
+CREATE INDEX IF NOT EXISTS idx_portfolio_violations_severity ON lyra_portfolio_violations(severity);
+CREATE INDEX IF NOT EXISTS idx_portfolio_violations_created_at ON lyra_portfolio_violations(created_at DESC);
 
 -- SLA breach tracking
 CREATE TABLE IF NOT EXISTS lyra_sla_breaches (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   audit_id UUID NOT NULL REFERENCES lyra_portfolio_audits(id) ON DELETE CASCADE,
 
   -- Breach details
@@ -147,13 +146,13 @@ CREATE TABLE IF NOT EXISTS lyra_sla_breaches (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_sla_breaches_audit_id ON lyra_sla_breaches(audit_id);
-CREATE INDEX idx_sla_breaches_status ON lyra_sla_breaches(status);
-CREATE INDEX idx_sla_breaches_project_id ON lyra_sla_breaches(project_id);
+CREATE INDEX IF NOT EXISTS idx_sla_breaches_audit_id ON lyra_sla_breaches(audit_id);
+CREATE INDEX IF NOT EXISTS idx_sla_breaches_status ON lyra_sla_breaches(status);
+CREATE INDEX IF NOT EXISTS idx_sla_breaches_project_id ON lyra_sla_breaches(project_id);
 
 -- Escalation actions
 CREATE TABLE IF NOT EXISTS lyra_escalation_actions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   violation_id UUID REFERENCES lyra_portfolio_violations(id) ON DELETE SET NULL,
   sla_breach_id UUID REFERENCES lyra_sla_breaches(id) ON DELETE SET NULL,
 
@@ -178,14 +177,14 @@ CREATE TABLE IF NOT EXISTS lyra_escalation_actions (
   metadata JSONB
 );
 
-CREATE INDEX idx_escalations_project_id ON lyra_escalation_actions(project_id);
-CREATE INDEX idx_escalations_status ON lyra_escalation_actions(status);
-CREATE INDEX idx_escalations_level ON lyra_escalation_actions(level);
-CREATE INDEX idx_escalations_created_at ON lyra_escalation_actions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_escalations_project_id ON lyra_escalation_actions(project_id);
+CREATE INDEX IF NOT EXISTS idx_escalations_status ON lyra_escalation_actions(status);
+CREATE INDEX IF NOT EXISTS idx_escalations_level ON lyra_escalation_actions(level);
+CREATE INDEX IF NOT EXISTS idx_escalations_created_at ON lyra_escalation_actions(created_at DESC);
 
 -- Constraint performance metrics (for trending and analytics)
 CREATE TABLE IF NOT EXISTS lyra_constraint_performance_metrics (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   constraint_id TEXT NOT NULL,
   project_id TEXT NOT NULL,
 
@@ -212,9 +211,9 @@ CREATE TABLE IF NOT EXISTS lyra_constraint_performance_metrics (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_metrics_constraint_id ON lyra_constraint_performance_metrics(constraint_id);
-CREATE INDEX idx_metrics_project_id ON lyra_constraint_performance_metrics(project_id);
-CREATE INDEX idx_metrics_constraint_project ON lyra_constraint_performance_metrics(constraint_id, project_id);
+CREATE INDEX IF NOT EXISTS idx_metrics_constraint_id ON lyra_constraint_performance_metrics(constraint_id);
+CREATE INDEX IF NOT EXISTS idx_metrics_project_id ON lyra_constraint_performance_metrics(project_id);
+CREATE INDEX IF NOT EXISTS idx_metrics_constraint_project ON lyra_constraint_performance_metrics(constraint_id, project_id);
 
 -- Views for common queries
 
@@ -287,14 +286,17 @@ ALTER TABLE lyra_sla_breaches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lyra_escalation_actions ENABLE ROW LEVEL SECURITY;
 
 -- Allow authenticated users to read all data (modify as needed for security)
+DROP POLICY IF EXISTS "Allow authenticated users to read portfolio audits" ON lyra_portfolio_audits;
 CREATE POLICY "Allow authenticated users to read portfolio audits"
   ON lyra_portfolio_audits FOR SELECT
   USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Allow authenticated users to read project compliance" ON lyra_project_compliance_history;
 CREATE POLICY "Allow authenticated users to read project compliance"
   ON lyra_project_compliance_history FOR SELECT
   USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Allow authenticated users to read violations" ON lyra_portfolio_violations;
 CREATE POLICY "Allow authenticated users to read violations"
   ON lyra_portfolio_violations FOR SELECT
   USING (auth.role() = 'authenticated');
@@ -308,15 +310,19 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_portfolio_audits_updated_at ON lyra_portfolio_audits;
 CREATE TRIGGER update_portfolio_audits_updated_at BEFORE UPDATE
     ON lyra_portfolio_audits FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_portfolio_violations_updated_at ON lyra_portfolio_violations;
 CREATE TRIGGER update_portfolio_violations_updated_at BEFORE UPDATE
     ON lyra_portfolio_violations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_sla_breaches_updated_at ON lyra_sla_breaches;
 CREATE TRIGGER update_sla_breaches_updated_at BEFORE UPDATE
     ON lyra_sla_breaches FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_escalations_updated_at ON lyra_escalation_actions;
 CREATE TRIGGER update_escalations_updated_at BEFORE UPDATE
     ON lyra_escalation_actions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

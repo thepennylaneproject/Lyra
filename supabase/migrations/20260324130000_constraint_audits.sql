@@ -31,9 +31,9 @@ CREATE TABLE IF NOT EXISTS lyra_constraint_audits (
 );
 
 -- Create index for fast lookups
-CREATE INDEX idx_constraint_audits_project ON lyra_constraint_audits(project);
-CREATE INDEX idx_constraint_audits_timestamp ON lyra_constraint_audits(timestamp DESC);
-CREATE INDEX idx_constraint_audits_run_id ON lyra_constraint_audits(run_id);
+CREATE INDEX IF NOT EXISTS idx_constraint_audits_project ON lyra_constraint_audits(project);
+CREATE INDEX IF NOT EXISTS idx_constraint_audits_timestamp ON lyra_constraint_audits(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_constraint_audits_run_id ON lyra_constraint_audits(run_id);
 
 -- Create constraint violations table (denormalized for query efficiency)
 CREATE TABLE IF NOT EXISTS lyra_constraint_violations (
@@ -58,9 +58,9 @@ CREATE TABLE IF NOT EXISTS lyra_constraint_violations (
 );
 
 -- Create index for violations
-CREATE INDEX idx_violations_audit_id ON lyra_constraint_violations(audit_id);
-CREATE INDEX idx_violations_constraint_id ON lyra_constraint_violations(constraint_id);
-CREATE INDEX idx_violations_severity ON lyra_constraint_violations(severity);
+CREATE INDEX IF NOT EXISTS idx_violations_audit_id ON lyra_constraint_violations(audit_id);
+CREATE INDEX IF NOT EXISTS idx_violations_constraint_id ON lyra_constraint_violations(constraint_id);
+CREATE INDEX IF NOT EXISTS idx_violations_severity ON lyra_constraint_violations(severity);
 
 -- Create constraint audit history view
 CREATE OR REPLACE VIEW constraint_audit_history AS
@@ -103,14 +103,18 @@ ALTER TABLE lyra_constraint_audits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lyra_constraint_violations ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies (allow authenticated users to read/write)
+DROP POLICY IF EXISTS "Allow authenticated to read audits" ON lyra_constraint_audits;
 CREATE POLICY "Allow authenticated to read audits" ON lyra_constraint_audits
   FOR SELECT USING (auth.role() = 'authenticated_user');
 
+DROP POLICY IF EXISTS "Allow authenticated to write audits" ON lyra_constraint_audits;
 CREATE POLICY "Allow authenticated to write audits" ON lyra_constraint_audits
   FOR INSERT WITH CHECK (auth.role() = 'authenticated_user');
 
+DROP POLICY IF EXISTS "Allow authenticated to read violations" ON lyra_constraint_violations;
 CREATE POLICY "Allow authenticated to read violations" ON lyra_constraint_violations
   FOR SELECT USING (auth.role() = 'authenticated_user');
 
+DROP POLICY IF EXISTS "Allow authenticated to write violations" ON lyra_constraint_violations;
 CREATE POLICY "Allow authenticated to write violations" ON lyra_constraint_violations
   FOR INSERT WITH CHECK (auth.role() = 'authenticated_user');

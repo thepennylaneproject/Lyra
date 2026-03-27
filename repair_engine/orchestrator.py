@@ -92,6 +92,7 @@ class RepairOrchestrator:
         touched_files: list[str],
         apply_msg: str,
         patch_applied: bool,
+        repair_proof: dict[str, Any] | None,
     ) -> None:
         """Report repair completion to dashboard if configured."""
         if not self.dashboard_client:
@@ -108,12 +109,59 @@ class RepairOrchestrator:
                 status=status if status in ("completed", "failed", "applied") else "completed",
                 patch_applied=applied,
                 applied_files=touched_files,
+                repair_proof=repair_proof,
                 error=apply_msg if not applied else None,
                 message=apply_msg,
             )
         except Exception as e:
             # Log error but don't fail the repair run
             print(f"Failed to report repair to dashboard: {e}")
+
+    def _build_repair_proof(
+        self,
+        run: RepairRun,
+        selected: Any,
+        touched_files: list[str],
+        verification_commands: list[str],
+        run_dir: Path,
+    ) -> dict[str, Any] | None:
+        if selected is None or selected.eval_summary is None or not touched_files:
+            return None
+
+        eval_result = selected.eval_summary.result
+        score = selected.eval_summary.score
+        return {
+            "source": "repair_engine",
+            "generated_at": run.started_at,
+            "selected_node_id": selected.node_id,
+            "artifacts": {
+                "summary_path": str(
+                    Path(self.config.artifacts.runs_root) / run.run_id / "summary.json"
+                ),
+                "tree_path": str(
+                    Path(self.config.artifacts.runs_root) / run.run_id / "tree.json"
+                ),
+            },
+            "evaluation": {
+                "candidate_passed": bool(score.passed),
+                "apply_ok": bool(eval_result.apply_ok),
+                "compile_ok": bool(eval_result.compile_ok),
+                "lint_ok": bool(eval_result.lint_ok),
+                "tests_ok": bool(eval_result.tests_ok),
+                "warnings": int(eval_result.warnings),
+                "exit_code": int(eval_result.exit_code),
+                "reasons": list(score.reasons),
+            },
+            "verification": {
+                "status": "passed" if score.passed else "failed",
+                "summary": (
+                    "Evaluator checks passed; review artifacts before final verification."
+                    if score.passed
+                    else "Evaluator checks did not fully pass; manual review is required."
+                ),
+                "commands_declared": verification_commands,
+            },
+        }
 
     def run_for_finding(self, finding: Finding) -> dict[str, Any]:
         run_id = f"repair-{finding.finding_id}-{uuid.uuid4().hex[:8]}"
@@ -200,6 +248,7 @@ class RepairOrchestrator:
 
         touched_files: list[str] = []
         apply_msg = "no candidate selected"
+        repair_proof: dict[str, Any] | None = None
         if selected:
             run.selected_node_id = selected.node_id
             candidate_passed = bool(selected.eval_summary and selected.eval_summary.result.passed)
@@ -225,6 +274,33 @@ class RepairOrchestrator:
                             self.memory.remember_success(finding, selected.candidate, selected.score)
                         except Exception:
                             pass
+                        verification_commands = []
+                        raw_policy = finding.raw.get("repair_policy", {})
+                        if isinstance(raw_policy, dict):
+                            commands = raw_policy.get("verification_commands", [])
+                            if isinstance(commands, list):
+                                verification_commands = [
+                                    str(command).strip()
+                                    for command in commands
+                                    if str(command).strip()
+                                ]
+                        if not verification_commands:
+                            suggested_fix = finding.raw.get("suggested_fix", {})
+                            if isinstance(suggested_fix, dict):
+                                commands = suggested_fix.get("verification_commands", [])
+                                if isinstance(commands, list):
+                                    verification_commands = [
+                                        str(command).strip()
+                                        for command in commands
+                                        if str(command).strip()
+                                    ]
+                        repair_proof = self._build_repair_proof(
+                            run,
+                            selected,
+                            touched_files,
+                            verification_commands,
+                            run_dir,
+                        )
                     else:
                         run.status = "failed"
             else:
@@ -235,7 +311,7 @@ class RepairOrchestrator:
         # Report completion to dashboard if configured
         patch_applied = run.status == "applied" and len(touched_files) > 0
         self._report_to_dashboard(
-            finding, run_id, run.status, touched_files, apply_msg, patch_applied
+            finding, run_id, run.status, touched_files, apply_msg, patch_applied, repair_proof
         )
 
         return {

@@ -72,6 +72,7 @@ class DashboardClient:
         status: str,
         patch_applied: bool = False,
         applied_files: list[str] | None = None,
+        repair_proof: dict[str, Any] | None = None,
         error: str | None = None,
         message: str | None = None,
     ) -> dict[str, Any]:
@@ -85,6 +86,7 @@ class DashboardClient:
             status: One of "completed", "failed", or "applied"
             patch_applied: Whether a patch was successfully applied
             applied_files: List of files modified by the patch
+            repair_proof: Structured evidence for reviewable patch application
             error: Error message if the repair failed
             message: Human-readable message about the outcome
 
@@ -101,6 +103,7 @@ class DashboardClient:
             "status": status,
             "patch_applied": patch_applied,
             "applied_files": applied_files or [],
+            "repair_proof": repair_proof,
             "error": error,
             "message": message,
         }

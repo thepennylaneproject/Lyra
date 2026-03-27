@@ -5,6 +5,7 @@ import { STATUS_GROUPS } from "@/lib/constants";
 import { isInQueuedSet } from "@/lib/finding-validation";
 import { UI_COPY } from "@/lib/ui-copy";
 import { apiFetch } from "@/lib/api-fetch";
+import { repairLedgerCaption } from "@/lib/repair-proof";
 
 interface FindingLifecyclePayload {
   linear: {
@@ -16,20 +17,7 @@ interface FindingLifecyclePayload {
 }
 
 function repairStatusCaption(jobs: RepairJob[], queuedInUi: boolean): string {
-  const j = jobs[0];
-  if (j) {
-    if (j.status === "queued") return UI_COPY.lifecycleRepairQueued;
-    if (j.status === "running") return UI_COPY.lifecycleRepairRunning;
-    if (j.status === "completed") {
-      return j.patch_applied
-        ? `${UI_COPY.lifecycleRepairCompleted} (patch applied reported)`
-        : UI_COPY.lifecycleRepairCompleted;
-    }
-    if (j.status === "failed") return UI_COPY.lifecycleRepairFailed;
-    return `Ledger row: ${j.status}`;
-  }
-  if (queuedInUi) return UI_COPY.lifecycleRepairIntentOnly;
-  return UI_COPY.lifecycleRepairNone;
+  return repairLedgerCaption(jobs[0], queuedInUi);
 }
 
 const WORKFLOW_HINTS: Record<FindingStatus, string> = {

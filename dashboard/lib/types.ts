@@ -99,6 +99,37 @@ export interface SuggestedFix {
   verification_commands?: string[];
 }
 
+export interface RepairProofArtifacts {
+  summary_path: string;
+  tree_path: string;
+}
+
+export interface RepairProofEvaluation {
+  candidate_passed: boolean;
+  apply_ok: boolean;
+  compile_ok: boolean;
+  lint_ok: boolean;
+  tests_ok: boolean;
+  warnings?: number;
+  exit_code?: number;
+  reasons?: string[];
+}
+
+export interface RepairProofVerification {
+  status: "passed" | "failed" | "not_run";
+  summary: string;
+  commands_declared?: string[];
+}
+
+export interface RepairProof {
+  source: "repair_engine";
+  generated_at: string;
+  selected_node_id: string;
+  artifacts: RepairProofArtifacts;
+  evaluation: RepairProofEvaluation;
+  verification: RepairProofVerification;
+}
+
 export interface HistoryEvent {
   timestamp: string;
   actor: string;
@@ -420,16 +451,20 @@ export interface RepairJob {
   finding_id: string;
   project_name: string;
   queued_at: string;
+  started_at?: string;
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  reported_status?: "completed" | "failed" | "applied";
   patch_applied?: boolean;
   cost_usd?: number;
   provider_used?: string;
   completed_at?: string;
   error?: string;
   targeted_files?: string[];
+  applied_files?: string[];
   verification_commands?: string[];
   rollback_notes?: string;
   repair_policy?: RepairPolicy;
+  repair_proof?: RepairProof;
   maintenance_task_id?: string;
   backlog_id?: string;
   provenance?: ProvenanceRef;
