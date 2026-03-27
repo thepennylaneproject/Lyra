@@ -12,9 +12,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
-import { EMBR_CONSTRAINTS, getConstraintsByDifficulty } from "@/dashboard/lib/constraints/embr-constraints";
-import { runConstraintAudit } from "@/dashboard/lib/constraint-validator";
-import { saveConstraintAudit } from "@/dashboard/lib/constraint-audit-repository";
+import { EMBR_CONSTRAINTS, getConstraintsByDifficulty } from "@/lib/constraints/embr-constraints";
+import { runConstraintAudit } from "@/lib/constraint-validator";
+import { saveConstraintAudit } from "@/lib/constraint-audit-repository";
 
 export async function POST(req: NextRequest) {
   try {
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
  * Returns available constraint checks info
  */
 export async function GET(req: NextRequest) {
-  const searchParams = req.nextSearchParams;
+  const searchParams = req.nextUrl.searchParams;
   const format = searchParams.get("format") || "summary";
 
   const easyCount = getConstraintsByDifficulty("easy").length;

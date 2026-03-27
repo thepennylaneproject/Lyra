@@ -54,7 +54,7 @@ async function main() {
   // Display results by constraint
   console.log("📝 CONSTRAINT RESULTS\n");
 
-  for (const constraint of easyConstraints) {
+  for (const constraint of constraints) {
     const checkResults = result.violations.filter(
       (v) => v.constraint_id === constraint.id
     );

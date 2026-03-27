@@ -58,11 +58,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const storeStatus: "completed" | "failed" =
+      status === "failed" ? "failed" : "completed";
+
     // Update repair job record
     const updatedJob = await updateRepairJobCompletion({
       finding_id: findingId,
       project_name: projectName,
-      status,
+      status: storeStatus,
+      reported_status: status,
       patch_applied: patchApplied,
       applied_files: appliedFiles,
       error,

@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import type { ConstraintCheck } from "@/lib/constraint-types";
 import { ConstraintAuditRepository } from "@/lib/constraint-audit-repository";
 import { PortfolioOrchestrator, getDefaultPortfolioSLA } from "@/lib/portfolio-orchestrator";
 
@@ -28,6 +29,14 @@ export async function POST(request: NextRequest) {
     if (projectId) {
       // Audit single project
       const result = await orchestrator.auditProject(projectId, difficulty);
+      const projectStatus: "pass" | "warning" | "fail" =
+        result.compliancePercentage >= 90
+          ? "pass"
+          : result.compliancePercentage >= 75
+            ? "warning"
+            : "fail";
+      const portfolioSlaStatus: "pass" | "warning" | "fail" =
+        result.compliancePercentage >= 90 ? "pass" : "fail";
       summary = {
         timestamp: new Date(),
         totalProjects: 1,
@@ -35,28 +44,29 @@ export async function POST(request: NextRequest) {
           {
             projectId: result.projectId,
             projectName: result.projectName,
-            totalConstraints: result.total,
+            totalConstraints: result.total_constraints,
             passed: result.passed,
             failed: result.failed,
             warnings: result.warnings,
             compliancePercentage: result.compliancePercentage,
-            status:
-              result.compliancePercentage >= 90
-                ? "pass"
-                : result.compliancePercentage >= 75
-                  ? "warning"
-                  : "fail"
+            status: projectStatus
           }
         ],
         aggregatedStats: {
-          totalConstraints: result.total,
+          totalConstraints: result.total_constraints,
           totalPassed: result.passed,
           totalFailed: result.failed,
           totalWarnings: result.warnings,
           portfolioCompliance: result.compliancePercentage,
-          slaStatus: result.compliancePercentage >= 90 ? "pass" : "fail"
+          slaStatus: portfolioSlaStatus
         },
-        criticalViolations: result.violations?.filter(v => v.severity === "critical") || [],
+        criticalViolations: (
+          result.violations?.filter((v) => v.severity === "critical") ?? []
+        ).map((v) => ({
+          projectId: result.projectId,
+          constraint: { id: v.constraint_id } as unknown as ConstraintCheck,
+          violation: v
+        })),
         trending: {
           complianceTrend: [],
           commonFailures: []

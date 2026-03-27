@@ -340,7 +340,10 @@ export default function AdminSettingsPage() {
           {saving ? "Saving..." : "Save Settings"}
         </button>
         <button
-          onClick={() => setSettings(null) || loadSettings()}
+          onClick={() => {
+            setSettings(null);
+            void loadSettings();
+          }}
           className="px-6 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
         >
           Reset

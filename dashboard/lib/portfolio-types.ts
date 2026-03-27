@@ -45,7 +45,8 @@ export interface PortfolioSLA {
 /**
  * Constraint audit result with portfolio context
  */
-export interface PortfolioAuditResult extends ConstraintAuditResult {
+export interface PortfolioAuditResult
+  extends Omit<ConstraintAuditResult, "timestamp"> {
   projectId: string;
   projectName: string;
   runId: string;

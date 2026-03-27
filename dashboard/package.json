@@ -17,6 +17,7 @@
     "setup": "npm run migrate && npm run build"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
     "@sentry/nextjs": "^10.44.0",
     "bullmq": "^5.71.0",
     "next": "^16.1.7",

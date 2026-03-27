@@ -6,7 +6,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import type { ConstraintAuditResult, ConstraintViolation } from "@/dashboard/lib/constraint-types";
+import type { ConstraintAuditResult, ConstraintViolation } from "@/lib/constraint-types";
 
 interface ConstraintAuditPanelProps {
   projectPath?: string;
@@ -25,7 +25,9 @@ export default function ConstraintAuditPanel({
   const [selectedDifficulty, setSelectedDifficulty] = useState(difficulty);
 
   // Run audit
-  const runAudit = async (diff: string) => {
+  const runAudit = async (
+    diff: "easy" | "moderate" | "complex" | "all"
+  ) => {
     setLoading(true);
     setError(null);
 
@@ -62,7 +64,9 @@ export default function ConstraintAuditPanel({
     runAudit(selectedDifficulty);
   }, []);
 
-  const handleDifficultyChange = (newDiff: string) => {
+  const handleDifficultyChange = (
+    newDiff: "easy" | "moderate" | "complex" | "all"
+  ) => {
     setSelectedDifficulty(newDiff);
     runAudit(newDiff);
   };
@@ -86,7 +90,7 @@ export default function ConstraintAuditPanel({
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Constraint Audit</h2>
         <div className="flex gap-2">
-          {["easy", "moderate", "complex", "all"].map((diff) => (
+          {(["easy", "moderate", "complex", "all"] as const).map((diff) => (
             <button
               key={diff}
               onClick={() => handleDifficultyChange(diff)}

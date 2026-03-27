@@ -6,12 +6,12 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { ConstraintDefinition } from "./constraint-types";
+import type { ConstraintCheck } from "./constraint-types";
 import { ConstraintTemplates } from "./constraint-templates";
 
 export interface ConstraintConfig {
   projectId: string;
-  constraints: ConstraintDefinition[];
+  constraints: ConstraintCheck[];
   lastModified: Date;
   modifiedBy?: string;
 }
@@ -33,7 +33,7 @@ export class ConstraintManager {
   /**
    * Get constraints for a project
    */
-  async getProjectConstraints(projectId: string): Promise<ConstraintDefinition[]> {
+  async getProjectConstraints(projectId: string): Promise<ConstraintCheck[]> {
     const filePath = this.getConstraintFilePath(projectId);
 
     if (!fs.existsSync(filePath)) {
@@ -55,7 +55,7 @@ export class ConstraintManager {
    */
   async saveConstraint(
     projectId: string,
-    constraint: ConstraintDefinition,
+    constraint: ConstraintCheck,
     modifiedBy?: string
   ): Promise<void> {
     const constraints = await this.getProjectConstraints(projectId);
@@ -103,8 +103,8 @@ export class ConstraintManager {
   applyTemplate(
     projectId: string,
     templatePath: string,
-    overrides?: Partial<ConstraintDefinition>
-  ): ConstraintDefinition {
+    overrides?: Partial<ConstraintCheck>
+  ): ConstraintCheck {
     // Parse template path: "security.jwtRequired"
     const [category, templateName] = templatePath.split(".");
 
@@ -164,7 +164,7 @@ export class ConstraintManager {
    */
   async bulkUpsertConstraints(
     projectId: string,
-    constraints: ConstraintDefinition[],
+    constraints: ConstraintCheck[],
     modifiedBy?: string
   ): Promise<void> {
     const existing = await this.getProjectConstraints(projectId);
@@ -210,7 +210,7 @@ export class ConstraintManager {
       c.name,
       c.category,
       c.severity,
-      c.difficulty,
+      c.check_type,
       c.description || ""
     ]);
 
@@ -222,11 +222,11 @@ export class ConstraintManager {
   /**
    * Import constraints from CSV
    */
-  async importFromCSV(projectId: string, csvContent: string): Promise<ConstraintDefinition[]> {
+  async importFromCSV(projectId: string, csvContent: string): Promise<ConstraintCheck[]> {
     const lines = csvContent.trim().split("\n");
     const headers = lines[0].split(",").map(h => h.toLowerCase());
 
-    const constraints: ConstraintDefinition[] = lines.slice(1).map(line => {
+    const constraints: ConstraintCheck[] = lines.slice(1).map(line => {
       const values = line.split(",").map(v => v.trim().replace(/^"|"$/g, ""));
       const obj: any = {};
 
@@ -234,16 +234,19 @@ export class ConstraintManager {
         obj[header] = values[i];
       });
 
+      const checkType = (obj.difficulty ||
+        obj.check_type ||
+        "easy") as ConstraintCheck["check_type"];
       return {
         id: obj.id || `${projectId}-${Date.now()}`,
-        name: obj.name,
-        category: obj.category,
-        severity: obj.severity as any,
-        difficulty: obj.difficulty as any,
-        description: obj.description,
-        pattern: obj.pattern || "",
-        checks: [],
-        sla: obj.sla || ""
+        name: obj.name || "Unnamed",
+        category: (obj.category ||
+          "operational-policy") as ConstraintCheck["category"],
+        severity: (obj.severity || "warning") as ConstraintCheck["severity"],
+        description: obj.description || "",
+        why_required: obj.why_required || "",
+        how_to_verify: obj.how_to_verify || "",
+        check_type: checkType
       };
     });
 
@@ -254,7 +257,7 @@ export class ConstraintManager {
   /**
    * Validate constraint definition
    */
-  validateConstraint(constraint: ConstraintDefinition): {
+  validateConstraint(constraint: ConstraintCheck): {
     valid: boolean;
     errors: string[];
   } {
@@ -264,29 +267,35 @@ export class ConstraintManager {
     if (!constraint.name) errors.push("Name is required");
     if (!constraint.category) errors.push("Category is required");
     if (!constraint.severity) errors.push("Severity is required");
-    if (!constraint.difficulty) errors.push("Difficulty is required");
+    if (!constraint.check_type) errors.push("check_type is required");
 
-    const validCategories = [
-      "security",
-      "data-integrity",
-      "performance",
-      "code-quality",
-      "operations",
+    const validCategories: ConstraintCheck["category"][] = [
+      "architecture",
+      "infrastructure",
       "business-logic",
-      "infrastructure"
+      "operational-policy",
+      "security",
+      "product-strategy"
     ];
     if (!validCategories.includes(constraint.category)) {
       errors.push(`Invalid category: ${constraint.category}`);
     }
 
-    const validSeverities = ["critical", "high", "medium", "low"];
+    const validSeverities: ConstraintCheck["severity"][] = [
+      "critical",
+      "warning"
+    ];
     if (!validSeverities.includes(constraint.severity)) {
       errors.push(`Invalid severity: ${constraint.severity}`);
     }
 
-    const validDifficulties = ["easy", "moderate", "complex"];
-    if (!validDifficulties.includes(constraint.difficulty)) {
-      errors.push(`Invalid difficulty: ${constraint.difficulty}`);
+    const validCheckTypes: ConstraintCheck["check_type"][] = [
+      "easy",
+      "moderate",
+      "complex"
+    ];
+    if (!validCheckTypes.includes(constraint.check_type)) {
+      errors.push(`Invalid check_type: ${constraint.check_type}`);
     }
 
     return {
@@ -305,14 +314,12 @@ export class ConstraintManager {
       total: constraints.length,
       bySeverity: {
         critical: constraints.filter(c => c.severity === "critical").length,
-        high: constraints.filter(c => c.severity === "high").length,
-        medium: constraints.filter(c => c.severity === "medium").length,
-        low: constraints.filter(c => c.severity === "low").length
+        warning: constraints.filter(c => c.severity === "warning").length
       },
       byDifficulty: {
-        easy: constraints.filter(c => c.difficulty === "easy").length,
-        moderate: constraints.filter(c => c.difficulty === "moderate").length,
-        complex: constraints.filter(c => c.difficulty === "complex").length
+        easy: constraints.filter(c => c.check_type === "easy").length,
+        moderate: constraints.filter(c => c.check_type === "moderate").length,
+        complex: constraints.filter(c => c.check_type === "complex").length
       },
       byCategory: constraints.reduce(
         (acc, c) => {

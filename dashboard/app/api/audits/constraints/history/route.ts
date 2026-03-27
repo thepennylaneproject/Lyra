@@ -8,11 +8,11 @@ import {
   getLatestConstraintAudit,
   getConstraintAuditHistory,
   getViolationsSummary,
-} from "@/dashboard/lib/constraint-audit-repository";
+} from "@/lib/constraint-audit-repository";
 
 export async function GET(req: NextRequest) {
   try {
-    const searchParams = req.nextSearchParams;
+    const searchParams = req.nextUrl.searchParams;
     const project = searchParams.get("project");
     const limit = parseInt(searchParams.get("limit") || "10");
     const format = searchParams.get("format") || "summary";

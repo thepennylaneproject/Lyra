@@ -12,6 +12,10 @@ import type {
   ConstraintCheck,
   ConstraintViolation,
 } from "./constraint-types";
+import {
+  EMBR_CONSTRAINTS,
+  getConstraintsByDifficulty,
+} from "./constraints/embr-constraints";
 
 /**
  * Run a single constraint check
@@ -252,4 +256,21 @@ export function createFailingResultMultiple(
       constraint_id: constraintId,
     })),
   };
+}
+
+/**
+ * Portfolio orchestration entry: run EMBR constraints for a project path by difficulty.
+ */
+export class ConstraintValidator {
+  async runConstraintAudit(
+    projectPath: string,
+    difficulty: "easy" | "moderate" | "complex" | "all",
+    projectId: string
+  ): Promise<ConstraintAuditResult> {
+    let constraints: ConstraintCheck[] = EMBR_CONSTRAINTS;
+    if (difficulty !== "all") {
+      constraints = getConstraintsByDifficulty(difficulty);
+    }
+    return runConstraintAudit(constraints, projectPath, projectId);
+  }
 }

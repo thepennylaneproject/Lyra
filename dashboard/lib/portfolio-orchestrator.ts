@@ -93,11 +93,15 @@ export class PortfolioOrchestrator {
       previousAudit && previousAudit.coverage_percentage
         ? {
             previous: previousAudit.coverage_percentage,
-            change: auditResult.coverage - previousAudit.coverage_percentage,
+            change:
+              auditResult.coverage_percentage -
+              previousAudit.coverage_percentage,
             direction:
-              auditResult.coverage > previousAudit.coverage_percentage
+              auditResult.coverage_percentage >
+              previousAudit.coverage_percentage
                 ? ("up" as const)
-                : auditResult.coverage < previousAudit.coverage_percentage
+                : auditResult.coverage_percentage <
+                    previousAudit.coverage_percentage
                   ? ("down" as const)
                   : ("stable" as const)
           }
@@ -111,21 +115,26 @@ export class PortfolioOrchestrator {
       timestamp: new Date(),
       auditedBy: "portfolio-orchestrator",
       duration,
-      compliancePercentage: auditResult.coverage,
+      compliancePercentage: auditResult.coverage_percentage,
       trend
     };
 
-    // Save to database
     await this.repository.saveConstraintAudit({
       project: projectId,
-      total_constraints: auditResult.total,
+      run_id: auditResult.run_id,
+      timestamp: auditResult.timestamp,
+      total_constraints: auditResult.total_constraints,
       passed: auditResult.passed,
       failed: auditResult.failed,
       warnings: auditResult.warnings,
-      coverage_percentage: auditResult.coverage,
-      summary: JSON.stringify(auditResult),
-      violations: JSON.stringify(auditResult.violations),
-      metadata: JSON.stringify({ projectName: project.name, stack: project.stack })
+      coverage_percentage: auditResult.coverage_percentage,
+      summary: auditResult.summary,
+      violations: auditResult.violations,
+      metadata: {
+        ...auditResult.metadata,
+        projectName: project.name,
+        stack: project.stack
+      }
     });
 
     return portfolioResult;
@@ -150,7 +159,7 @@ export class PortfolioOrchestrator {
         const result = await this.auditProject(projectId, difficulty);
         results.push(result);
         console.log(
-          `  ✅ ${projectId}: ${result.compliancePercentage}% compliant (${result.passed}/${result.total})`
+          `  ✅ ${projectId}: ${result.compliancePercentage}% compliant (${result.passed}/${result.total_constraints})`
         );
       } catch (error) {
         console.error(`  ❌ ${projectId}: ${error}`);
@@ -171,32 +180,42 @@ export class PortfolioOrchestrator {
    * Generate portfolio audit summary
    */
   private generateSummary(results: PortfolioAuditResult[]): PortfolioAuditSummary {
-    const projectResults = results.map(r => ({
-      projectId: r.projectId,
-      projectName: r.projectName,
-      totalConstraints: r.total,
-      passed: r.passed,
-      failed: r.failed,
-      warnings: r.warnings,
-      compliancePercentage: r.compliancePercentage,
-      status: r.compliancePercentage >= 90 ? "pass" : r.compliancePercentage >= 75 ? "warning" : "fail"
-    }));
+    const projectResults = results.map((r) => {
+      const status: "pass" | "warning" | "fail" =
+        r.compliancePercentage >= 90
+          ? "pass"
+          : r.compliancePercentage >= 75
+            ? "warning"
+            : "fail";
+      return {
+        projectId: r.projectId,
+        projectName: r.projectName,
+        totalConstraints: r.total_constraints,
+        passed: r.passed,
+        failed: r.failed,
+        warnings: r.warnings,
+        compliancePercentage: r.compliancePercentage,
+        status
+      };
+    });
+
+    const portfolioCompliance =
+      projectResults.length > 0
+        ? projectResults.reduce((sum, p) => sum + p.compliancePercentage, 0) /
+          projectResults.length
+        : 0;
+    const aggregatedSlaStatus: "pass" | "warning" | "fail" =
+      portfolioCompliance >= this.sla.minimumCompliance.portfolio * 100
+        ? "pass"
+        : "fail";
 
     const aggregated = {
       totalConstraints: projectResults.reduce((sum, p) => sum + p.totalConstraints, 0),
       totalPassed: projectResults.reduce((sum, p) => sum + p.passed, 0),
       totalFailed: projectResults.reduce((sum, p) => sum + p.failed, 0),
       totalWarnings: projectResults.reduce((sum, p) => sum + p.warnings, 0),
-      portfolioCompliance:
-        projectResults.length > 0
-          ? projectResults.reduce((sum, p) => sum + p.compliancePercentage, 0) /
-            projectResults.length
-          : 0,
-      slaStatus:
-        projectResults.reduce((sum, p) => sum + p.compliancePercentage, 0) / projectResults.length >=
-        this.sla.minimumCompliance.portfolio
-          ? "pass"
-          : "fail"
+      portfolioCompliance,
+      slaStatus: aggregatedSlaStatus
     };
 
     // Collect critical violations

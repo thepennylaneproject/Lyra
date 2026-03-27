@@ -56,7 +56,7 @@ async function checkTurborepoStructure(
     });
   } else {
     // Validate turbo.json is valid JSON
-    const turbo = readJSON<Record<string, unknown>>(turboPath, null);
+    const turbo = readJSON<Record<string, unknown> | null>(turboPath, null);
     if (turbo === null) {
       violations.push({
         violation_type: "incorrect_value" as const,

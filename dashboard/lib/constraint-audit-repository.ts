@@ -5,6 +5,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import type { ConstraintAuditResult, ConstraintViolation } from "./constraint-types";
+import type { PortfolioAuditSummary } from "./portfolio-types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -300,5 +301,19 @@ export async function constraintAuditExists(
     return !error && data && data.length > 0;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Class wrapper for portfolio orchestrator (delegates to module functions).
+ */
+export class ConstraintAuditRepository {
+  getLatestConstraintAudit = getLatestConstraintAudit;
+  saveConstraintAudit = saveConstraintAudit;
+
+  async getPortfolioAuditHistory(
+    _limit: number
+  ): Promise<{ summary: PortfolioAuditSummary }[]> {
+    return [];
   }
 }

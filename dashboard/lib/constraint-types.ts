@@ -151,6 +151,9 @@ export interface ConstraintAuditResult {
     complex_failed?: number;
     duration_ms?: number;
     auditor?: string;
+    critical_violations?: number;
+    projectName?: string;
+    stack?: string[];
   };
 }
 
@@ -176,4 +179,19 @@ export interface CheckResult {
   passed: boolean;
   violations: ConstraintViolation[];
   execution_time_ms?: number;
+}
+
+/**
+ * Legacy template entries in constraint-templates (severity/difficulty strings vary).
+ */
+export interface ConstraintDefinition {
+  id: string;
+  name: string;
+  category: string;
+  severity: string;
+  difficulty: string;
+  description: string;
+  pattern?: string;
+  checks?: string[];
+  sla?: string;
 }

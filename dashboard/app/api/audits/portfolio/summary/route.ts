@@ -26,6 +26,12 @@ export async function GET(request: NextRequest) {
       try {
         const latestAudit = await repository.getLatestConstraintAudit(project.id);
         if (latestAudit) {
+          const rowStatus: "pass" | "warning" | "fail" =
+            latestAudit.coverage_percentage >= 90
+              ? "pass"
+              : latestAudit.coverage_percentage >= 75
+                ? "warning"
+                : "fail";
           results.push({
             projectId: project.id,
             projectName: project.name,
@@ -34,13 +40,7 @@ export async function GET(request: NextRequest) {
             failed: latestAudit.failed,
             warnings: latestAudit.warnings,
             compliancePercentage: latestAudit.coverage_percentage,
-            status:
-              latestAudit.coverage_percentage >= 90
-                ? "pass"
-                : latestAudit.coverage_percentage >= 75
-                  ? "warning"
-                  : "fail",
-            timestamp: latestAudit.created_at
+            status: rowStatus
           });
         }
       } catch (error) {
@@ -49,6 +49,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Generate summary from results
+    const portfolioCompliance =
+      results.length > 0
+        ? results.reduce((sum, r) => sum + r.compliancePercentage, 0) /
+          results.length
+        : 0;
+    const summarySlaStatus: "pass" | "warning" | "fail" =
+      portfolioCompliance >= sla.minimumCompliance.portfolio * 100
+        ? "pass"
+        : "fail";
+
     const summary = {
       timestamp: new Date(),
       totalProjects: results.length,
@@ -58,17 +68,8 @@ export async function GET(request: NextRequest) {
         totalPassed: results.reduce((sum, r) => sum + r.passed, 0),
         totalFailed: results.reduce((sum, r) => sum + r.failed, 0),
         totalWarnings: results.reduce((sum, r) => sum + r.warnings, 0),
-        portfolioCompliance:
-          results.length > 0
-            ? results.reduce((sum, r) => sum + r.compliancePercentage, 0) /
-              results.length
-            : 0,
-        slaStatus:
-          results.reduce((sum, r) => sum + r.compliancePercentage, 0) /
-            results.length >=
-          sla.minimumCompliance.portfolio * 100
-            ? "pass"
-            : "fail"
+        portfolioCompliance,
+        slaStatus: summarySlaStatus
       },
       criticalViolations: [],
       trending: {
