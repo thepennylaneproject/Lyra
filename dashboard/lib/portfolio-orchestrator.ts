@@ -3,7 +3,6 @@
  * Manages constraint audits across all 13 projects
  */
 
-import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -15,6 +14,7 @@ import {
   PortfolioHealthMetrics,
   PortfolioAuditHistoryEntry
 } from "./portfolio-types";
+import type { ConstraintCheck } from "./constraint-types";
 import { ConstraintValidator } from "./constraint-validator";
 import { ConstraintAuditRepository } from "./constraint-audit-repository";
 
@@ -218,14 +218,14 @@ export class PortfolioOrchestrator {
       slaStatus: aggregatedSlaStatus
     };
 
-    // Collect critical violations
-    const criticalViolations: any[] = [];
-    results.forEach(r => {
-      r.violations?.forEach(v => {
+    const criticalViolations: PortfolioAuditSummary["criticalViolations"] =
+      [];
+    results.forEach((r) => {
+      r.violations?.forEach((v) => {
         if (v.severity === "critical") {
           criticalViolations.push({
             projectId: r.projectId,
-            constraint: { id: v.constraint_id },
+            constraint: { id: v.constraint_id } as ConstraintCheck,
             violation: v
           });
         }

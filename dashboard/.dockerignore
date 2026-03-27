@@ -1,0 +1,29 @@
+# Dependencies & build output
+node_modules
+.next
+out
+dist
+
+# Env & secrets (never bake local secrets into images)
+.env
+.env.*
+!.env.example
+
+# Git & tooling
+.git
+.gitignore
+*.md
+.DS_Store
+
+# Tests & coverage
+coverage
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+vitest.config.ts
+
+# Misc
+tsconfig.tsbuildinfo
+Untitled
+eslint.config.mjs
+.eslintrc.json

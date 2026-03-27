@@ -4,7 +4,6 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { ConstraintAuditRepository } from "@/lib/constraint-audit-repository";
 
 interface VerificationInput {
   violationId: string;
@@ -16,8 +15,6 @@ interface VerificationInput {
     suggestedFix?: string;
   };
 }
-
-const repository = new ConstraintAuditRepository();
 
 export async function POST(request: NextRequest) {
   try {

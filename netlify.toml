@@ -9,6 +9,14 @@
   command = "npm run build"
   publish = ".next"
 
+# Next inlines NEXT_PUBLIC_* into bundles; Supabase URL is public by design.
+# LYRA_VLLM_BASE_URL is a service base URL, not an API key; the scanner still
+# flags any env value that appears under .netlify/ artifacts.
+# https://ntl.fyi/configure-secrets-scanning
+[build.environment]
+  # Public URLs/keys Next embeds; anon key is client-safe by Supabase design.
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY,NEXT_PUBLIC_SENTRY_DSN,NEXT_PUBLIC_LYRA_WORKFLOWS_DOC_URL,LYRA_VLLM_BASE_URL"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 

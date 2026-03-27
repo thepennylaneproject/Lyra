@@ -6,8 +6,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as fs from "fs";
 import * as path from "path";
+import type { ConstraintDefinition } from "@/lib/constraint-types";
 import { ConstraintManager } from "@/lib/constraint-manager";
-import { ConstraintTemplates } from "@/lib/constraint-templates";
 
 const manager = new ConstraintManager();
 
@@ -297,7 +297,7 @@ async function suggestConstraints(
     category: string;
     severity: string;
   }>
-): Promise<Array<any>> {
+): Promise<ConstraintDefinition[]> {
   return findings.map(finding => ({
     id: `${projectId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: finding.finding,

@@ -5,11 +5,11 @@
  * Returns the latest portfolio audit summary with all projects' constraint status
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { ConstraintAuditRepository } from "@/lib/constraint-audit-repository";
 import { PortfolioOrchestrator, getDefaultPortfolioSLA } from "@/lib/portfolio-orchestrator";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Initialize repository
     const repository = new ConstraintAuditRepository();

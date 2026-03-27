@@ -519,7 +519,7 @@ export const ConstraintTemplates = {
  * Use this when creating project-specific constraints from templates
  */
 export function applyTemplate(
-  template: any,
+  template: ConstraintDefinition,
   projectId: string,
   overrides?: Partial<ConstraintDefinition>
 ): ConstraintDefinition {
@@ -534,18 +534,18 @@ export function applyTemplate(
  * Get all templates by category
  */
 export function getTemplatesByCategory(category: string) {
-  const all = Object.values(ConstraintTemplates).flatMap(section =>
-    Object.values(section as Record<string, any>)
+  const all = Object.values(ConstraintTemplates).flatMap((section) =>
+    Object.values(section as Record<string, ConstraintDefinition>)
   );
-  return all.filter(t => t.category === category);
+  return all.filter((t) => t.category === category);
 }
 
 /**
  * Get all templates by severity
  */
 export function getTemplatesBySeverity(severity: string) {
-  const all = Object.values(ConstraintTemplates).flatMap(section =>
-    Object.values(section as Record<string, any>)
+  const all = Object.values(ConstraintTemplates).flatMap((section) =>
+    Object.values(section as Record<string, ConstraintDefinition>)
   );
-  return all.filter(t => t.severity === severity);
+  return all.filter((t) => t.severity === severity);
 }

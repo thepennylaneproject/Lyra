@@ -50,7 +50,11 @@ export default function ExtractConstraintsPage() {
 
       const data = await response.json();
       setResult(data.results);
-      setSelectedConstraints(data.results.suggestedConstraints.map((_: any, i: number) => i.toString()));
+      setSelectedConstraints(
+        data.results.suggestedConstraints.map((_c: unknown, i: number) =>
+          i.toString()
+        )
+      );
     } catch (error) {
       console.error("Extraction failed:", error);
     } finally {

@@ -6,7 +6,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import type { ConstraintCheck } from "./constraint-types";
+import type { ConstraintCheck, ConstraintDefinition } from "./constraint-types";
 import { ConstraintTemplates } from "./constraint-templates";
 
 export interface ConstraintConfig {
@@ -108,29 +108,42 @@ export class ConstraintManager {
     // Parse template path: "security.jwtRequired"
     const [category, templateName] = templatePath.split(".");
 
-    const templates = ConstraintTemplates as any;
+    const templates = ConstraintTemplates as Record<
+      string,
+      Record<string, ConstraintDefinition>
+    >;
     const template = templates[category]?.[templateName];
 
     if (!template) {
       throw new Error(`Template not found: ${templatePath}`);
     }
 
-    // Apply to project
-    return {
+    const base = {
       ...template,
       id: template.id.replace("template", projectId),
+      check_type: template.difficulty as ConstraintCheck["check_type"],
+      why_required: template.description,
+      how_to_verify: template.description,
       ...overrides
     };
+    return base as ConstraintCheck;
   }
 
   /**
    * Get available templates
    */
   getAvailableTemplates() {
-    const templates: any = {};
+    const templates: Record<
+      string,
+      Array<{ name: string; template: string; description: string; path: string }>
+    > = {};
 
-    Object.entries(ConstraintTemplates).forEach(([category, items]: [string, any]) => {
-      templates[category] = Object.entries(items).map(([key, template]: [string, any]) => ({
+    const grouped = ConstraintTemplates as Record<
+      string,
+      Record<string, ConstraintDefinition>
+    >;
+    Object.entries(grouped).forEach(([category, items]) => {
+      templates[category] = Object.entries(items).map(([key, template]) => ({
         name: key,
         template: template.name,
         description: template.description,
@@ -228,7 +241,7 @@ export class ConstraintManager {
 
     const constraints: ConstraintCheck[] = lines.slice(1).map(line => {
       const values = line.split(",").map(v => v.trim().replace(/^"|"$/g, ""));
-      const obj: any = {};
+      const obj: Record<string, string> = {};
 
       headers.forEach((header, i) => {
         obj[header] = values[i];
