@@ -737,8 +737,10 @@ export async function processJob(pool: pg.Pool, dbJobId: string): Promise<void> 
     const projects = await resolveProjectsForJob(pool, job.project_name);
 
     for (const project of projects) {
-      if ((project.status ?? "active") !== "active") {
-        throw new Error(`Project "${project.name}" is not active and cannot be audited`);
+      const projectStatus = project.status ?? "active";
+      // Allow auditing of both active and draft projects
+      if (!["active", "draft"].includes(projectStatus)) {
+        throw new Error(`Project "${project.name}" has status "${projectStatus}" and cannot be audited`);
       }
       const execution = await executeProjectAudit(project, payload, pool);
       try {
