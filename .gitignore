@@ -46,6 +46,10 @@ build_web_output.txt
 .archive/
 skills-lock.json
 
+# Editor scratch files — these are local workspace buffers, never source
+Untitled
+Untitled-*
+
 # Python
 __pycache__/
 *.py[cod]
