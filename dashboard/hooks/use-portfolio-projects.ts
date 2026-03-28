@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import type { Project } from "@/lib/types";
 import { apiFetch } from "@/lib/api-fetch";
-import { DASHBOARD_MISCONFIGURED_MESSAGE } from "@/lib/dashboard-secret";
+import { DASHBOARD_MISCONFIGURED_MESSAGE } from "@/lib/dashboard-messages";
 
 export function usePortfolioProjects() {
   const [projects, setProjects] = useState<Project[]>([]);

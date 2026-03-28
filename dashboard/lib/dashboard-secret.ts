@@ -1,3 +1,5 @@
+export { DASHBOARD_MISCONFIGURED_MESSAGE } from "./dashboard-messages";
+
 /**
  * Single secret for dashboard API auth and orchestration enqueue.
  * Set DASHBOARD_API_SECRET or reuse ORCHESTRATION_ENQUEUE_SECRET.
@@ -13,10 +15,6 @@ export function getDashboardApiSecret(): string {
 export function isDashboardApiAuthConfigured(): boolean {
   return getDashboardApiSecret().length > 0;
 }
-
-/** Shown in 503 responses when production has no API secret configured. */
-export const DASHBOARD_MISCONFIGURED_MESSAGE =
-  "Set DASHBOARD_API_SECRET or ORCHESTRATION_ENQUEUE_SECRET on the host.";
 
 /**
  * When no secret is configured: allow unauthenticated `/api/*` (legacy local DX).
