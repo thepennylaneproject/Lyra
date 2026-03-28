@@ -11,7 +11,8 @@ On startup the worker loads, in order (later files override): repo `.env` / `.en
 | `DATABASE_URL` | Yes | Same Postgres as dashboard (Supabase). Alias: `LYRA_DATABASE_URL`. |
 | `OPENAI_API_KEY` | For real audits | Without it, jobs complete with a config finding only. |
 | `REDIS_URL` / `LYRA_REDIS_URL` | No | If set, uses BullMQ; else polls DB. **Production:** set this to avoid steady DB QPS from polling. |
-| `LYRA_REPO_ROOT` | No | Path to Lyra repo root (expects `core_system_prompt`, `expectations/`, `the_penny_lane_project/`). Default: parent of `worker/`. |
+| `LYRA_REPO_ROOT` | No | Optional override: directory that contains `core_system_prompt.md` and `audits/prompts/`. If unset or invalid, the worker uses **`dist/prompt-bundle/`** (filled by `npm run build`) or walks up from `dist/` / `src/`. **Railway:** use the **repository root** as the Docker build context (see `railway.toml` + `Dockerfile.worker`), not a service root of only `worker/`, *or* rely on the bundled prompts from a full-context image build. |
+| `LYRA_PROMPT_SOURCE` | No | Build-only: path to Lyra repo root when copying prompts into `dist/prompt-bundle/`. Set in `Dockerfile.worker` for the image build. |
 | `LYRA_AUDIT_MODEL` | No | Default `gpt-4o-mini`. |
 | `LYRA_JOB_POLL_MS` | No | Poll interval when Redis disabled after draining one batch. Default `3000`. |
 | `LYRA_JOB_POLL_IDLE_MS` | No | Idle backoff when queue empty (no job found). Default `5000`. |
@@ -21,7 +22,7 @@ On startup the worker loads, in order (later files override): repo `.env` / `.en
 ## Scripts
 
 - `npm run dev` — `tsx watch src/index.ts`
-- `npm run build && npm start` — compiled JS
+- `npm run build && npm start` — compiled JS (`build` runs `sync-prompt-bundle.mjs` so `dist/prompt-bundle/` contains prompts; required for production).
 
 Deploy this process on any long-lived host (Railway, Fly, VPS, etc.) with repo checkout or mount. Without `REDIS_URL`, the worker falls back to polling `lyra_audit_jobs` every `LYRA_JOB_POLL_MS` and drains up to `LYRA_JOB_POLL_BATCH_SIZE` queued jobs per cycle. This is safer than the old one-job/30-second-idle behavior, but Redis is still preferred in production when running one or more workers.
 

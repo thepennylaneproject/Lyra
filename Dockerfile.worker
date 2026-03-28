@@ -10,6 +10,12 @@ RUN npm ci
 
 COPY worker/tsconfig.json ./
 COPY worker/src ./src
+COPY worker/scripts ./scripts
+
+# Prompt sources for sync-prompt-bundle (WORKDIR is worker root = /app)
+COPY core_system_prompt.md /lyra-root/core_system_prompt.md
+COPY audits/prompts /lyra-root/audits/prompts
+ENV LYRA_PROMPT_SOURCE=/lyra-root
 
 RUN npm run build
 

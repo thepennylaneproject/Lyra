@@ -2,7 +2,7 @@ import "./load-env.js";
 import { createRequire } from "node:module";
 import { Worker } from "bullmq";
 import { completeJob, createPool } from "./db.js";
-import { processJob } from "./process-job.js";
+import { getLyraInstallRoot, processJob } from "./process-job.js";
 
 const require = createRequire(import.meta.url);
 // CJS default export — avoids ESM construct signature issues
@@ -22,7 +22,19 @@ const pollBatchSize = Math.max(
 
 async function main() {
   const pool = createPool();
-  console.log("[lyra-worker] started, repo root:", process.env.LYRA_REPO_ROOT || "(auto)");
+  console.log(
+    "[lyra-worker] LYRA_REPO_ROOT env:",
+    process.env.LYRA_REPO_ROOT?.trim() || "(unset)"
+  );
+  try {
+    console.log("[lyra-worker] resolved prompts root:", getLyraInstallRoot());
+  } catch (e) {
+    console.error(
+      "[lyra-worker] FATAL: cannot load Lyra prompts (core_system_prompt.md). Rebuild/redeploy the worker image or set LYRA_REPO_ROOT to the directory that contains that file.",
+      e
+    );
+    process.exit(1);
+  }
 
   const runOne = async (dbJobId: string) => {
     try {

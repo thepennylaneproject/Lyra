@@ -42,10 +42,38 @@ function readCachedPrompt(filePath: string): string {
   return text;
 }
 
+/** Lyra install root: contains core_system_prompt.md and audits/prompts/. */
+export function getLyraInstallRoot(): string {
+  return repoRoot();
+}
+
 function repoRoot(): string {
+  const coreName = "core_system_prompt.md";
   const env = process.env.LYRA_REPO_ROOT?.trim();
-  if (env && existsSync(env)) return env;
-  return join(__dirname, "..", "..");
+  if (env && existsSync(env) && existsSync(join(env, coreName))) {
+    return env;
+  }
+  // 1) Bundled with dist/ (npm run build + sync-prompt-bundle) — survives worker-only deploys.
+  // 2) tsx dev: src/ → use sibling dist/prompt-bundle after one `npm run build`.
+  // 3) Docker / conventional: repo files next to or above dist/.
+  const autoCandidates = [
+    join(__dirname, "prompt-bundle"),
+    join(__dirname, "..", "dist", "prompt-bundle"),
+    join(__dirname, ".."),
+    join(__dirname, "..", ".."),
+  ];
+  for (const dir of autoCandidates) {
+    if (existsSync(join(dir, coreName))) return dir;
+  }
+  const tried = [
+    env && existsSync(env) ? `${env} (missing ${coreName})` : null,
+    ...autoCandidates,
+  ]
+    .filter(Boolean)
+    .join("; ");
+  throw new Error(
+    `Could not resolve Lyra prompts (${coreName} not found). Rebuild the worker (npm run build in worker/) so dist/prompt-bundle exists, or set LYRA_REPO_ROOT to the Lyra repo root. Tried: ${tried}`
+  );
 }
 
 /**
@@ -60,9 +88,6 @@ function repoRoot(): string {
 function loadClusterPrompts(auditKind?: string): { core: string; auditAgent: string } {
   const root = repoRoot();
   const corePath = join(root, "core_system_prompt.md");
-  if (!existsSync(corePath)) {
-    throw new Error(`core_system_prompt.md not found at ${corePath}`);
-  }
   const core = readCachedPrompt(corePath);
 
   const promptsDir = join(root, "audits", "prompts");

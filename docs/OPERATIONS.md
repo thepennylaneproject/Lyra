@@ -519,7 +519,7 @@ LYRA_ROUTING_STRATEGY=balanced
 
 # Worker
 LYRA_JOB_POLL_MS=5000
-LYRA_REPO_ROOT=/workspace
+LYRA_REPO_ROOT=/app
 
 # Dashboard
 LYRA_DASHBOARD_URL=http://localhost:3000

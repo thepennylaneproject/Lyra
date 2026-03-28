@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/sync-prompt-bundle.mjs",
     "admin": "tsx src/scripts/admin.ts",
     "admin:health": "tsx src/scripts/admin.ts health",
     "admin:queue": "tsx src/scripts/admin.ts queue",

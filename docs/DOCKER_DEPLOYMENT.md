@@ -243,7 +243,7 @@ DATABASE_URL=postgresql://user:pass@postgres:5432/lyra
 REDIS_URL=redis://redis:6379
 
 # Repository
-LYRA_REPO_ROOT=/workspace
+LYRA_REPO_ROOT=/app
 
 # Job Processing
 LYRA_JOB_POLL_MS=5000
