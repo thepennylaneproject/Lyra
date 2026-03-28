@@ -7,7 +7,7 @@ the Anthropic Message Batches API at 50% cost, then writes patch files
 you can review and apply.
 
 Setup:
-  export ANTHROPIC_API_KEY="sk-ant-..."
+  export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
 
 Usage:
   python3 batch_fix.py plan                    # Show what would be batched (dry run)
