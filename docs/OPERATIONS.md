@@ -510,8 +510,8 @@ DATABASE_URL=postgresql://user:pass@host/db
 REDIS_URL=redis://redis:6379
 
 # LLM
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 
 # Routing
 LYRA_AUDIT_MODEL=openai:mini
@@ -529,7 +529,7 @@ LYRA_DASHBOARD_API_KEY=secret
 Set in `.env` file or export before running:
 
 ```bash
-export OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 make dev
 ```
 

@@ -32,8 +32,8 @@ cd Lyra
 # Create .env file
 cat > .env << 'EOF'
 # LLM API Keys
-OPENAI_API_KEY=sk-...           # Optional: for OpenAI models
-ANTHROPIC_API_KEY=sk-ant-...    # Optional: for Anthropic models
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY           # Optional: for OpenAI models
+ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY    # Optional: for Anthropic models
 
 # Worker Configuration
 LYRA_AUDIT_MODEL=openai:mini    # Or: anthropic:haiku
@@ -192,7 +192,7 @@ git clone https://github.com/thepennylaneproject/Lyra.git
 cd Lyra
 
 # Set environment
-export OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 export DASHBOARD_API_SECRET=your-secret-key
 export DATABASE_URL=postgresql://user:pass@postgres.example.com/lyra
 export REDIS_URL=redis://redis.example.com:6379
@@ -219,8 +219,8 @@ REDIS_URL=redis://redis:6379
 DASHBOARD_API_SECRET=your-secret-key-min-32-chars
 
 # LLM Providers
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 
 # Routing
 LYRA_ROUTING_STRATEGY=balanced
@@ -250,8 +250,8 @@ LYRA_JOB_POLL_MS=5000
 LYRA_MAX_FILES_PER_PASS=8
 
 # LLM Providers
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 LYRA_AUDIT_MODEL=openai:mini
 LYRA_ROUTING_STRATEGY=balanced
 

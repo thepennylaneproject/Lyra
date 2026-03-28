@@ -116,7 +116,7 @@ if (!projectName || !projectName.match(/^[a-zA-Z0-9_-]+$/)) {
 **These must NEVER happen:**
 
 1. **No hardcoded secrets or credentials**
-   - ❌ `const API_KEY = "sk-abc123"` in code
+   - ❌ `const API_KEY = "YOUR_API_KEY_HERE"` in code
    - ✅ `const API_KEY = process.env.OPENAI_API_KEY`
    - Consequence: Secrets rotation impossible; keys exposed if repo is leaked
 

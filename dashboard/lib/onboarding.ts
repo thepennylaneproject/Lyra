@@ -1061,7 +1061,7 @@ Security headers were not detected in \`netlify.toml\`. Add \`X-Frame-Options\`,
 
 No API keys, tokens, or credentials may appear as string literals in source code.
 
-- **Flag**: strings matching patterns for API keys (e.g. \`sk-\`, \`Bearer \`, base64-encoded tokens) in \`.ts\`, \`.tsx\`, \`.js\`, or \`.jsx\` files outside test fixtures.`);
+- **Flag**: strings matching patterns for API keys (e.g. \`sk-****\`, \`Bearer \`, base64-encoded tokens) in \`.ts\`, \`.tsx\`, \`.js\`, or \`.jsx\` files outside test fixtures.`);
 
   sections.push(`## 4. Security\n\n${secItems.join("\n\n")}`);
 

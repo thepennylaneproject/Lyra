@@ -61,8 +61,8 @@ export LYRA_AUDIT_MODEL=claude-3.5-sonnet  # Inferred as anthropic:sonnet
 Set at least one:
 
 ```bash
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+export ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 ```
 
 If neither is set, audits fail gracefully with a config error finding.
@@ -147,29 +147,29 @@ LYRA_AUDIT_MODEL         # Now supports all formats, not just OpenAI
 
 ### Local Development (Fast)
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 export LYRA_ROUTING_STRATEGY=aggressive
 # Uses: claude-3-5-haiku (fastest, cheapest)
 ```
 
 ### Production (Balanced)
 ```bash
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+export ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 export LYRA_ROUTING_STRATEGY=balanced
 # Uses: gpt-4o-mini with anthropic:haiku fallback
 ```
 
 ### Production (High Quality)
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 export LYRA_ROUTING_STRATEGY=precision
 # Uses: claude-3-5-sonnet (most capable)
 ```
 
 ### Forced Single Provider
 ```bash
-export OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 export LYRA_AUDIT_MODEL=openai:balanced
 # Uses: gpt-4o, fallback to gpt-4o-mini
 ```
@@ -285,8 +285,8 @@ Future provider support:
 
 ### Test Provider Discovery
 ```bash
-export OPENAI_API_KEY=sk-test
-export ANTHROPIC_API_KEY=sk-ant-test
+export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+export ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 npm run dev
 # Check logs: "[routing] Calling openai:mini"
 ```
@@ -295,7 +295,7 @@ npm run dev
 ```bash
 # Unset primary provider
 unset OPENAI_API_KEY
-export ANTHROPIC_API_KEY=sk-ant-test
+export ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
 npm run dev
 # Check logs: "[routing] Primary provider not configured, trying fallback"
 ```

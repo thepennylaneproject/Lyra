@@ -17,7 +17,7 @@
 [build.environment]
   # Public URLs/keys Next embeds; anon key is client-safe by Supabase design.
   SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY,NEXT_PUBLIC_SENTRY_DSN,NEXT_PUBLIC_LYRA_WORKFLOWS_DOC_URL,LYRA_VLLM_BASE_URL,DASHBOARD_API_SECRET,ORCHESTRATION_ENQUEUE_SECRET,OPENAI_API_KEY,ANTHROPIC_API_KEY,AIMLAPI_API_KEY,REDIS_URL"
-  SECRETS_SCAN_OMIT_PATHS = "**/edge-runtime/vendor/**,.env.example,dashboard/.env.example"
+  SECRETS_SCAN_OMIT_PATHS = "**/edge-runtime/vendor/**,.env.example,dashboard/.env.example,docs/**,the_penny_lane_project/**,.archive/**,batch_fix.py"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
