@@ -80,6 +80,16 @@ Payment integration — Stripe, PayPal, or other payment processing?
 Subscription/billing logic — Recurring payments? Trial periods? Plan limits?
 Feature gates — What features are restricted by plan/tier?
 Usage limits — Any rate limits, quotas, or credit systems?
+
+For each item found above, extract the SPECIFIC RULE — not just that it exists, but what value it enforces:
+- Revenue splits: What percentage? (e.g., "85% creator / 15% platform" — search for decimal constants near payment logic)
+- Cost budgets: What are the per-request and daily limits? (search CostTracker, budget checks, rate limiters)
+- Workflow ordering: What must happen before what? (e.g., "wallet verified BEFORE payout" — trace execution dependencies)
+- Feature gating: Which features are intentionally hidden and why? (search feature flags, UI conditionals, phase comments)
+- Send/rate limits: What are the actual numeric thresholds? (search for rateLimit, maxPerDay, perRequest constants)
+
+If code evidence exists for a business rule but the exact constraint value is unclear or undocumented, flag it as:
+UNDOCUMENTED CONSTRAINT: [description of what exists] — value/policy unclear, needs owner input
 SECTION 7: CODE QUALITY & MATURITY SIGNALS
 Code organization — Is there a clear separation of concerns? Are there well-defined modules/layers?
 Patterns and conventions — What design patterns are used? (facade, repository, dependency injection, etc.) Are naming conventions consistent?
@@ -101,8 +111,73 @@ Gaps for a production-ready product — What would need to be built to serve rea
 Gaps for investor readiness — What metrics, documentation, or infrastructure is missing that an investor would expect?
 Gaps in the codebase itself — Dead code, unused dependencies, incomplete migrations, orphaned files?
 Recommended next steps — If you had to prioritize the top 5 things to work on next, what would they be and why?
-SECTION 10: EXECUTIVE SUMMARY
-Write a 3-paragraph summary of this project suitable for an investor audience:
+
+MATURITY CLASSIFICATION
+Classify the project as one of:
+- ALPHA: Core features partially working, significant gaps, not user-ready
+- BETA: Feature-complete for v1, known rough edges, limited production use
+- PRODUCTION: Deployed, handling real users, incident response in place
+
+Then assess INVESTOR READINESS. List each item as PRESENT or MISSING:
+- Core flow works end-to-end
+- No P0 security vulnerabilities
+- Error monitoring configured (Sentry, Bugsnag, or equivalent)
+- Conversion/retention metrics available
+- Uptime monitoring in place
+- Technical debt quantified and tracked
+
+SECTION 10: CONSTRAINT CATALOG
+This section is the primary input for the project's expectations document. Produce a structured catalog of every enforceable rule you can infer from the codebase. This is not a summary — it is a constraint engineering output.
+
+For each constraint, use this exact format:
+CONSTRAINT: [specific, falsifiable rule — not a description of what exists, but what must always be true]
+DOMAIN: [Architecture | Database | Security | API | Business Logic | Operations | Quality]
+SEVERITY: [CRITICAL — blocks deployment | WARNING — needs approval | SUGGESTION — best practice]
+EVIDENCE: [file path or pattern that proves this rule is in use]
+VERIFY BY: [how an auditor would check compliance — grep pattern, schema check, test, etc.]
+VIOLATION: [what to flag and at what severity if this rule is broken]
+
+Cover all of these domains — if a domain has no constraints discoverable, write "No constraints found — needs owner input":
+
+Architecture Constraints:
+- Framework/runtime locks (e.g., "All server logic must run as Netlify Functions — no standalone Node server")
+- API routing patterns (e.g., "All API routes must be prefixed /v1")
+- Service abstraction rules (e.g., "All AI provider calls must route through AIRouter — no direct SDK calls in UI")
+- Media/upload handling (e.g., "All uploads through S3 presigned URLs only")
+
+Database & Data Layer Constraints:
+- ORM/query rules (e.g., "All queries through Prisma — no raw SQL in application code")
+- RLS requirements (e.g., "RLS must be enabled on every Supabase table")
+- Migration rules (e.g., "Every schema change requires a numbered migration file")
+- Schema enforcement (e.g., "All foreign keys must have explicit ON DELETE behavior")
+
+Security & Authentication Constraints:
+- Auth guard requirements (e.g., "All protected routes must have JwtAuthGuard")
+- Secrets management (e.g., "No API keys in client-side code — all secrets in server env vars only")
+- Token handling (e.g., "Refresh tokens must be httpOnly cookies — never localStorage")
+- Credential rotation (e.g., "Service account keys must not be committed")
+
+Business Logic Constraints (extract from code, do NOT invent):
+- Revenue/split rules (e.g., "Creator payout rate must be 0.85 — never below")
+- Workflow ordering (e.g., "Wallet must be verified before any payout is processed")
+- Cost controls (e.g., "Per-request AI cost must not exceed $0.05 — enforced in CostTracker")
+- Feature gating (e.g., "Phase-2 music features must remain behind ENABLE_MUSIC_PHASE2 flag")
+- Send/rate limits (e.g., "Campaign send rate must not exceed 500/hour per account")
+
+Operational Policy Constraints:
+- Technical debt gates (e.g., "TypeScript compilation must have 0 errors — @ts-ignore additions banned")
+- Quality gates (e.g., "Test coverage must not fall below 70%")
+- Deployment requirements (e.g., "Error monitoring must be active before any production deploy")
+- Rollback procedures (e.g., "Every deploy must have a documented rollback path")
+
+If you find code evidence for a constraint but cannot determine the exact rule value (e.g., CostTracker exists but no budget constant is set), output:
+CONSTRAINT: [description of what should be constrained]
+DOMAIN: [domain]
+SEVERITY: CRITICAL
+EVIDENCE: [file where the mechanism exists]
+VERIFY BY: Owner must define and document this value
+VIOLATION: Cannot audit until constraint value is defined — flag as UNDOCUMENTED CONSTRAINT
+SECTION 11: EXECUTIVE SUMMARY
 
 Paragraph 1: What this is, what problem it solves, and for whom
 Paragraph 2: Technical credibility — what's built, how it's built, and what it signals about the builder's capabilities

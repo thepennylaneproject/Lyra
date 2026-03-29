@@ -30,6 +30,8 @@ Read this project's expectations document (`audits/expectations.md`) and systema
 
 This is the "did we break our own rules?" audit.
 
+**Secondary mission:** evaluate whether the expectations document itself provides adequate coverage. A thin or generic expectations doc is itself an audit finding — it means future audits are flying blind.
+
 ## Required Inputs
 
 - `audits/expectations.md` (the project's expectations document -- READ THIS FIRST)
@@ -73,6 +75,35 @@ The expectations doc ends with "Out-of-Scope Constraints." Verify none of these 
 
 Check `audits/open_findings.json` for existing expectations violations. If a prior violation is now fixed, note it. If it persists, do not create a duplicate.
 
+### Step 5: Audit the Expectations Document Itself
+
+After auditing the codebase, evaluate the expectations document for coverage gaps. Check whether each of the following constraint domains is covered with at least one specific, enforceable, falsifiable rule. If a domain is completely absent or only covered by generic procedural language (e.g., "review required before action" — not a constraint), emit a `debt` finding at `major` / `P1`:
+
+| Domain | Adequate if... |
+|--------|---------------|
+| Architecture | At least one locked-in framework/runtime rule with enforcement |
+| Database & data layer | At least one ORM, RLS, or migration rule |
+| Security & auth | At least one auth guard or secrets management rule |
+| Business logic | At least one revenue, cost, workflow-ordering, or feature-gating rule |
+| Operational policy | At least one quality gate (test coverage, type safety, debt limit, or deploy requirement) |
+
+Use category `expectations-coverage-gap` and severity `major` / `P1` for missing domains. Title format: `[E-COVERAGE] No [domain] constraints documented`.
+
+Include a `coverage_gap_summary` in your output:
+
+```json
+"coverage_gap_summary": {
+  "architecture": "covered | missing",
+  "database": "covered | missing",
+  "security": "covered | missing",
+  "business_logic": "covered | missing",
+  "operations": "covered | missing",
+  "total_gaps": 0
+}
+```
+
+A `total_gaps` of 3 or more should be flagged as a `blocker` in the compliance summary: the expectations document is too thin to support reliable auditing.
+
 ## Proof Hook Requirements
 
 Every violation finding MUST include:
@@ -89,6 +120,7 @@ Use these categories:
 - `expectations-suggestion` -- violation of a rule marked `suggestion`
 - `expectations-oos` -- out-of-scope constraint violated
 - `expectations-question` -- cannot verify from code alone
+- `expectations-coverage-gap` -- entire constraint domain is undocumented in the expectations doc
 
 ## Finding ID Format
 
@@ -128,5 +160,20 @@ Include a `compliance_summary` object in the output:
   "suggestion_violations": 0
 }
 ```
+
+Include a `coverage_gap_summary` object alongside `compliance_summary`:
+
+```json
+"coverage_gap_summary": {
+  "architecture": "covered",
+  "database": "missing",
+  "security": "covered",
+  "business_logic": "missing",
+  "operations": "missing",
+  "total_gaps": 3
+}
+```
+
+If `total_gaps` is 3 or more, add a `blocker` finding with category `expectations-coverage-gap`, title `[E-COVERAGE] Expectations document too thin to support reliable auditing`, and list every missing domain in the description.
 
 Coverage, findings, rollups, next_actions as standard. No text outside JSON.
