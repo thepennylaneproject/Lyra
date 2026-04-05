@@ -1,0 +1,6 @@
+Metric,Dashboard,Manual,Difference,Insight
+Total findings,69,19,50,Dashboard reports 3.6x more findings
+Finding overlap,N/A,N/A,0 findings,Zero shared findings - different audits
+Primary audit goal,Code quality & security,Pipeline validation,Complementary,Both necessary for quality
+P0/P1 findings,54,2,+52,Dashboard finds urgent code issues
+Synth-debt findings,0,16,+16,Manual detects auditor validation failures

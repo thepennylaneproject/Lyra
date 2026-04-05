@@ -2,6 +2,8 @@
 
 Processes `lyra_audit_jobs` from BullMQ queue **lyra-audit** (or polls the DB every `LYRA_JOB_POLL_MS` if `REDIS_URL` is unset).
 
+Configure each project in the dashboard with a **Repository URL** (saved as `source_type: git_url`) so this process **clones** that remote. Audits then do not depend on a path on your laptop.
+
 ## Env
 
 On startup the worker loads, in order (later files override): repo `.env` / `.env.local`, `dashboard/.env` / `dashboard/.env.local`, then `worker/.env` / `worker/.env.local`. So you can keep a single `dashboard/.env.local` and run `npm run dev` from `worker/` without copying `DATABASE_URL`.

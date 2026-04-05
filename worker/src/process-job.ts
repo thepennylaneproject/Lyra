@@ -77,6 +77,73 @@ function repoRoot(): string {
 }
 
 /**
+ * Root used to resolve relative project paths (e.g. `the_penny_lane_project/Codra`).
+ * Must not be `dist/prompt-bundle` — that subtree has prompts only, not mirror apps.
+ */
+function lyraMonorepoRootForProjectPaths(): string {
+  const env = process.env.LYRA_REPO_ROOT?.trim();
+  if (env && existsSync(env)) return env;
+
+  let dir = repoRoot();
+  for (let i = 0; i < 14; i++) {
+    if (existsSync(join(dir, "the_penny_lane_project"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return dirname(dirname(repoRoot()));
+}
+
+function looksLikeGitRemote(s: string): boolean {
+  const t = s.trim().toLowerCase();
+  return (
+    t.startsWith("git@") ||
+    t.startsWith("https://") ||
+    t.startsWith("http://") ||
+    t.startsWith("ssh://")
+  );
+}
+
+function cloneGitRepoToTemp(
+  remoteUrl: string,
+  repoRef?: string
+): { repoRoot: string; cleanup?: () => void } {
+  const target = mkdtempSync(join(tmpdir(), "lyra-worker-"));
+  try {
+    execFileSync("git", ["clone", "--depth", "1", remoteUrl, target], {
+      encoding: "utf8",
+      stdio: "pipe",
+      timeout: 120_000,
+    });
+    if (repoRef?.trim()) {
+      execFileSync("git", ["-C", target, "checkout", repoRef.trim()], {
+        encoding: "utf8",
+        stdio: "pipe",
+        timeout: 60_000,
+      });
+    }
+  } catch (e) {
+    try {
+      execFileSync("rm", ["-rf", target], { stdio: "ignore" });
+    } catch {
+      /* ignore */
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Could not clone ${remoteUrl}: ${msg}`);
+  }
+  return {
+    repoRoot: target,
+    cleanup: () => {
+      try {
+        execFileSync("rm", ["-rf", target], { stdio: "ignore" });
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+}
+
+/**
  * Maps audit_kind to the prompt file(s) that should be loaded for that pass.
  *
  * Standard cluster: individual per-domain agent files when they exist, fallback to audit-agent.md
@@ -1122,6 +1189,20 @@ async function resolveProjectsForJob(
 }
 
 function normalizeProjectConfig(project: StoredProject): StoredProject {
+  // Remote workers clone from Git — prefer explicit git_url over a stale laptop localPath.
+  if (project.sourceType === "git_url") {
+    const ref =
+      project.repositoryUrl?.trim() ||
+      project.repoAccess?.cloneRef?.trim() ||
+      project.sourceRef?.trim() ||
+      "";
+    return {
+      ...project,
+      status: project.status ?? "active",
+      sourceType: "git_url",
+      sourceRef: ref,
+    };
+  }
   if (project.repoAccess?.localPath) {
     return {
       ...project,
@@ -1200,46 +1281,43 @@ function resolveProjectRepo(
     project.repositoryUrl ??
     "";
   if (sourceType === "local_path" || sourceType === "portfolio_mirror") {
+    const pathBase = lyraMonorepoRootForProjectPaths();
     const repoPath = sourceRef
-      ? resolve(sourceRef.startsWith("/") ? "/" : repoRoot(), sourceRef)
-      : repoRoot();
-    if (!existsSync(repoPath)) {
-      throw new Error(`Project source path not found: ${repoPath}`);
+      ? resolve(sourceRef.startsWith("/") ? "/" : pathBase, sourceRef)
+      : pathBase;
+    if (existsSync(repoPath)) {
+      return { repoRoot: repoPath };
     }
-    return { repoRoot: repoPath };
+    const gitFallback =
+      [project.repositoryUrl, project.repoAccess?.cloneRef]
+        .map((s) => (typeof s === "string" ? s.trim() : ""))
+        .find((s) => s && looksLikeGitRemote(s)) ?? "";
+    if (gitFallback) {
+      console.warn(
+        `[lyra-worker] Project "${project.name}" local path missing (${repoPath}); cloning ${gitFallback}`
+      );
+      return cloneGitRepoToTemp(gitFallback, repoRef);
+    }
+    const portfolioDir = PORTFOLIO_SCAN_DIRS[project.name];
+    if (portfolioDir) {
+      const mirrorPath = resolve(pathBase, portfolioDir);
+      if (existsSync(mirrorPath)) {
+        console.warn(
+          `[lyra-worker] Project "${project.name}" local path missing (${repoPath}); using bundled mirror ${mirrorPath}`
+        );
+        return { repoRoot: mirrorPath };
+      }
+    }
+    throw new Error(
+      `Project source path not found: ${repoPath}. ` +
+        `A path on your laptop is not visible to the worker — set a git **repository URL** on the project (dashboard) or clear **local path** so the bundled portfolio mirror can be used, or run the worker on the same machine as that folder.`
+    );
   }
   if (sourceType === "git_url") {
     if (!sourceRef) {
       throw new Error(`Project "${project.name}" is missing repository URL`);
     }
-    const target = mkdtempSync(join(tmpdir(), "lyra-worker-"));
-    try {
-      execFileSync("git", ["clone", "--depth", "1", sourceRef, target], {
-        encoding: "utf8",
-        stdio: "pipe",
-        timeout: 60_000,
-      });
-      if (repoRef?.trim()) {
-        execFileSync("git", ["-C", target, "checkout", repoRef.trim()], {
-          encoding: "utf8",
-          stdio: "pipe",
-          timeout: 60_000,
-        });
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      throw new Error(`Could not clone ${sourceRef}: ${msg}`);
-    }
-    return {
-      repoRoot: target,
-      cleanup: () => {
-        try {
-          execFileSync("rm", ["-rf", target], { stdio: "ignore" });
-        } catch {
-          /* ignore */
-        }
-      },
-    };
+    return cloneGitRepoToTemp(sourceRef, repoRef);
   }
   throw new Error(
     `Project "${project.name}" does not have auditable source access configured`

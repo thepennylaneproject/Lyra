@@ -2,6 +2,11 @@
 
 import { useState, useEffect } from "react";
 import type { Project } from "@/lib/types";
+import { looksLikeGitRepositoryUrl } from "@/lib/git-remote";
+import {
+  defaultNonGitSourceType,
+  portfolioScanDirForName,
+} from "@/lib/project-defaults";
 
 interface ProjectManagementPanelProps {
   project: Project;
@@ -102,19 +107,48 @@ export function ProjectManagementPanel({
     setError(null);
     setStatus(null);
     try {
-      const body = {
+      const trimmedRepo = repoUrl.trim();
+      const useGit = looksLikeGitRepositoryUrl(trimmedRepo);
+      const parsedRoots = scanRoots
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const rootsLookLikeBundledMirror = parsedRoots.some((r) =>
+        r.includes("the_penny_lane_project")
+      );
+      const scanRootsNext =
+        useGit && rootsLookLikeBundledMirror
+          ? ["./"]
+          : parsedRoots.length > 0
+            ? parsedRoots
+            : ["./"];
+
+      const trimmedLocal = localPath.trim();
+      const body: Project = {
         ...project,
-        repositoryUrl: repoUrl.trim() || undefined,
-        repoAccess: {
-          ...project.repoAccess,
-          localPath: localPath.trim() || undefined,
-        },
+        repositoryUrl: trimmedRepo || undefined,
+        sourceType: useGit
+          ? "git_url"
+          : trimmedLocal
+            ? "local_path"
+            : defaultNonGitSourceType(project.name),
+        sourceRef: useGit
+          ? trimmedRepo
+          : trimmedLocal
+            ? trimmedLocal
+            : portfolioScanDirForName(project.name) ?? project.sourceRef,
+        repoAccess: useGit
+          ? {
+              cloneRef: trimmedRepo,
+              mirrorPath: project.repoAccess?.mirrorPath,
+            }
+          : {
+              ...project.repoAccess,
+              localPath: trimmedLocal || undefined,
+            },
         auditConfig: {
           ...project.auditConfig,
-          scanRoots: scanRoots
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
+          scanRoots: scanRootsNext,
         },
       };
       const res = await fetch(
@@ -232,7 +266,7 @@ export function ProjectManagementPanel({
         </div>
 
         <div style={rowStyle}>
-          <label style={labelStyle}>Repository URL</label>
+          <label style={labelStyle}>Repository URL (remote audits)</label>
           <input
             id="pm-repo-url"
             type="url"
@@ -241,17 +275,31 @@ export function ProjectManagementPanel({
             placeholder="https://github.com/org/repo"
             style={inputStyle}
           />
+          <p
+            style={{
+              fontSize: "10px",
+              fontFamily: "var(--font-mono)",
+              color: "var(--ink-text-4)",
+              margin: "4px 0 0",
+              lineHeight: 1.45,
+            }}
+          >
+            When this looks like a Git remote, Save sets the worker to clone this repo — your
+            laptop path is not saved. Scan roots default to <code>./</code> at the clone root if
+            they still pointed at a bundled mirror path.
+          </p>
         </div>
 
         <div style={rowStyle}>
-          <label style={labelStyle}>Local path (for portfolio mirror)</label>
+          <label style={labelStyle}>Local path (optional — same machine as worker only)</label>
           <input
             id="pm-local-path"
             type="text"
             value={localPath}
             onChange={(e) => setLocalPath(e.target.value)}
-            placeholder="/absolute/path/to/repo"
+            placeholder="Leave empty if using Repository URL above"
             style={inputStyle}
+            disabled={looksLikeGitRepositoryUrl(repoUrl)}
           />
         </div>
 

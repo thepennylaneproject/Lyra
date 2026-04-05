@@ -1,0 +1,6 @@
+Audit Goal,Manual Approach,LYRA Approach,Finding Quality,Example Gap
+Architecture validation,"8 specific rules (serverless, AIRouter, Stripe isolation, JWT)",None - only generic stack list,Manual: HIGH | LYRA: NONE,LYRA misses that Stripe must be serverless-only
+Security enforcement,"6 specific rules (encryption, headers, secrets, RLS)",Implicit in ESLint rules only,Manual: HIGH | LYRA: LOW (indirect),LYRA misses RLS coverage validation
+Feature completeness,"Coded gaps list with severity (Lyra suggest endpoint, CORS, auth)",None,Manual: HIGH | LYRA: NONE,LYRA has no way to detect missing API endpoints
+Maturity assessment,Alpha classification + production-readiness checklist,None,Manual: HIGH | LYRA: NONE,LYRA cannot classify project stage
+Investment readiness,Investor conversation readiness assessment + recommendations,None,Manual: HIGH | LYRA: NONE,LYRA has zero investment framework

@@ -14,6 +14,17 @@ const PORTFOLIO_DEFAULTS: Record<string, { scanDir: string }> = {
   "sarahsahl.pro": { scanDir: "the_penny_lane_project/sarahsahl_pro" },
 };
 
+export const PORTFOLIO_PROJECT_NAMES = new Set(Object.keys(PORTFOLIO_DEFAULTS));
+
+/** Source type when the project is not using Git URL or an explicit local path. */
+export function defaultNonGitSourceType(projectName: string): "portfolio_mirror" | "import" {
+  return projectName in PORTFOLIO_DEFAULTS ? "portfolio_mirror" : "import";
+}
+
+export function portfolioScanDirForName(projectName: string): string | undefined {
+  return PORTFOLIO_DEFAULTS[projectName]?.scanDir;
+}
+
 export function applyProjectDefaults(project: Project): Project {
   if (project.sourceType && project.auditConfig?.scanRoots?.length) {
     return project;
